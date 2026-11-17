@@ -93,11 +93,13 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 
 | 파일 | 인코딩 | 줄 끝 |
 |------|--------|-------|
-| `.cs`, `.xaml`, `.csproj`, `.props`, `.xshd`, `.json` | UTF-8 (BOM 없음) | CRLF |
+| `.cs`, `.xaml`, `.csproj`, `.props`, `.xshd`, `.json`, `.html`, `.css` | UTF-8 (BOM 없음) | CRLF |
 | 문서 `.md`, `History.txt` | UTF-8 (BOM 없음) | 규칙 없음 |
 | `.bat`, `.cmd` (생기면) | CP949(ANSI) | CRLF, 주석은 영어 |
 
-- `.editorconfig`에 위 규칙과 들여쓰기(C#·XAML 공백 4칸, 프로젝트 파일·XML·JSON 2칸)를 적는다.
+- `.editorconfig`에 위 규칙과 들여쓰기(C#·XAML 공백 4칸, 프로젝트 파일·XML·JSON·HTML·CSS 2칸)를 적는다.
+- 파일 쓰기 도구로 C# 문자열에 ` ` 같은 유니코드 이스케이프를 쓰면 실제 문자로 저장될 수 있다(2026-11-17, U+2028이 컴파일 오류를 냄).
+  보이지 않는 문자·줄 구분 문자는 `char.ConvertFromUtf32(0x2028)`처럼 코드 값으로 만든다.
 - `dotnet new` 템플릿은 BOM이 붙은 파일을 만들므로, 템플릿으로 만든 파일은 BOM을 지우고 CRLF로 맞춘다.
 
 ## 5. Git
@@ -143,3 +145,4 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-17: 최초 작성 — 폴더 구조, C# 명명·스타일, 인코딩, Git, 테스트·의존성·문서 규칙.
 - 2026-11-17: Phase 1 반영 — 솔루션 파일 `MDFileViewer.slnx`, E2E 폴더 확정, XAML 들여쓰기·템플릿 BOM 처리 규칙.
 - 2026-11-17: Phase 2 반영 — `AsyncRelayCommand`의 `async void` 예외(§3.2), Git 현재 상태(§5), 임시 폴더 정리·접근 거부 테스트·표본 확인 규칙(§6).
+- 2026-11-17: Phase 3 반영 — `.html`·`.css` 인코딩·줄 끝·들여쓰기, 유니코드 이스케이프 주의(§4).

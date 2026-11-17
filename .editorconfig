@@ -6,7 +6,7 @@ indent_style = space
 charset = utf-8
 
 # Code and project files use CRLF (.claude/04-conventions.md section 4)
-[*.{cs,xaml,csproj,props,targets,slnx,xshd,json}]
+[*.{cs,xaml,csproj,props,targets,slnx,xshd,json,html,css}]
 end_of_line = crlf
 
 # XAML uses 4-space indent like C#
@@ -28,6 +28,10 @@ indent_size = 2
 
 # Xml config files
 [*.{props,targets,config,nuspec}]
+indent_size = 2
+
+# Viewer template and stylesheet (src/MDFileViewer.Core/Resources)
+[*.{html,css}]
 indent_size = 2
 
 [*.json]

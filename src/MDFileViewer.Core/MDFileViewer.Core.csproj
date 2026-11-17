@@ -9,4 +9,10 @@
     <PackageReference Include="Markdig" Version="1.6.0" />
   </ItemGroup>
 
+  <!-- WebView2 가상 호스트(appassets.example)가 출력 폴더의 Resources를 매핑한다 (.claude/02-specs.md §6.2).
+       참조하는 앱·테스트 프로젝트의 출력 폴더에도 같은 경로로 복사된다. -->
+  <ItemGroup>
+    <None Update="Resources\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

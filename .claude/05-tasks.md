@@ -14,7 +14,7 @@
 | 0 | 명세 작성·검토 | ✅ |
 | 1 | 솔루션 골격 + PoC | ✅ |
 | 2 | Core — 파일 시스템·텍스트·명령줄 | ✅ |
-| 3 | Core — 렌더링·링크 | ⬜ |
+| 3 | Core — 렌더링·링크 | ✅ |
 | 4 | 메인 창 (보기 모드) | ⬜ |
 | 5 | 줌 | ⬜ |
 | 6 | 테마 | ⬜ |
@@ -64,9 +64,13 @@
 
 | # | 작업 | 산출물 | 검증 방법 | 상태 | 비고 |
 |---|------|--------|-----------|------|------|
-| 3-1 | `MarkdownRenderer` — Markdig 파이프라인 | `Core/Services/` | 단위 테스트 통과 (표, 작업 목록, 각주, 제목 id, front matter 미출력) | ⬜ | |
-| 3-2 | `viewer.html` + `viewer.css`(밝게/어둡게) + `HtmlPageBuilder` | `Core/Resources/`, `Core/Services/` | 단위 테스트 통과 (CSP, `data-theme`, `<base href>` 인코딩) | ⬜ | |
-| 3-3 | `LinkClassifier` | `Core/Services/` | 단위 테스트 통과 (01 F-05 표의 모든 종류) | ⬜ | |
+| 3-1 | `MarkdownRenderer` — Markdig 파이프라인 | `Core/Services/` | 단위 테스트 통과 (표, 작업 목록, 각주, 제목 id, front matter 미출력) | ✅ | 2026-11-17 14개 통과(한글·중복 제목 id 포함), 커버리지 100% |
+| 3-2 | `viewer.html` + `viewer.css`(밝게/어둡게) + `DocumentUrlMapper`·`ViewerScriptBuilder` (처음 설계의 `HtmlPageBuilder`를 나눔, 02 §6.2) | `Core/Resources/`, `Core/Services/` | 단위 테스트 통과 (CSP, `data-theme`, `<base href>` 인코딩) | ✅ | 2026-11-17 `ViewerTemplateTests` 23개 + `DocumentUrlMapperTests` 43개 + `ViewerScriptBuilderTests` 14개 통과, 커버리지 89%·100%. 실제 WebView2 표시는 4-4에서 확인 |
+| 3-3 | `LinkClassifier` | `Core/Services/` | 단위 테스트 통과 (01 F-05 표의 모든 종류) | ✅ | 2026-11-17 33개 통과(외부·현재 문서 앵커·다른 md·로컬 파일·폴더·없는 파일·차단), 커버리지 100% |
+
+- Phase 3 전체 검증 (2026-11-17): `dotnet build` 경고 0·오류 0, Core 251/251 통과(Git Bash·PowerShell), Core 줄 94.6%·분기 93.5%,
+  E2E 스모크 1/1 통과. code-reviewer 지적 반영: DOM clobbering(HIGH, Chromium에서 재현 후 수정), `%00` 예외, 점·공백 조각, 루트 정규화,
+  끝 점 호스트·포트. meta refresh는 Phase 4 요구사항으로 넘김(4-6).
 
 ## Phase 4 — 메인 창 (보기 모드)
 
@@ -75,9 +79,9 @@
 | 4-1 | `MainWindow` 레이아웃 — 툴바, 3열, 구분선, 상태 표시줄 | `App/Views/` | 실행해 03 §2.1과 비교, 최소 크기에서 겹침 없음 | ⬜ | |
 | 4-2 | `FolderTreeViewModel` + 트리 View (지연 로딩) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ⬜ | |
 | 4-3 | `FileListViewModel` + 목록 View (토글, 정렬, 빈 상태, 취소) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ⬜ | |
-| 4-4 | `MarkdownView`(WebView2 래퍼) + `WebViewHost` | `App/Controls/`, `App/Services/` | 샘플 문서 표시, 스크립트 미실행 확인 | ⬜ | |
+| 4-4 | `MarkdownView`(WebView2 래퍼) + `WebViewHost` | `App/Controls/`, `App/Services/` | 샘플 문서 표시, 스크립트 미실행 확인, `<img name="getElementById">`가 든 문서 뒤에도 다른 문서·테마 전환 동작 | ⬜ | |
 | 4-5 | `DocumentViewModel` 열기 흐름, 큰 파일 경고, 읽기 실패 안내 | Core | 단위 테스트 통과 | ⬜ | |
-| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작 | ⬜ | |
+| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작, `<meta http-equiv="refresh">` 문서를 열어도 브라우저·탐색기가 열리지 않음(`IsUserInitiated` 확인) | ⬜ | |
 | 4-7 | 시작 폴더 자동 펼침·선택, 파일 인수 처리 | Core, App | 인수 3종(없음/폴더/파일)으로 실행해 01 F-01 수용 기준 확인, 문서 영역 포커스 상태의 `Ctrl+O` 동작 E2E 확인 | ⬜ | |
 | 4-8 | 전역 예외 처리, WebView2 Runtime 확인, 프로세스 실패 복구 | `App.xaml.cs` | 강제 예외로 로그·대화상자 확인 | ⬜ | |
 
@@ -159,3 +163,4 @@
 - 2026-11-17: 0-2·0-3 완료(검토 항목 확정, FlaUI 승인). 1-2에 E2E 프로젝트·스모크 테스트 추가, 11-3을 FlaUI 자동화로 확정.
 - 2026-11-17: Phase 1 완료(1-2~1-9). 1-1 Git 초기화는 사용자 요청 대기(⏸). 4-7에 `Ctrl+O` E2E 확인 추가.
 - 2026-11-17: 1-1 완료(Git 초기화, 첫 커밋 `739459f`). Phase 2 완료(2-1~2-6) — 테스트 124개, 커버리지 94.4%.
+- 2026-11-17: Phase 3 완료(3-1~3-3) — 테스트 251개, 커버리지 94.6%. 3-2 산출물 이름 변경, 4-4·4-6 검증 항목 추가(DOM clobbering, meta refresh).

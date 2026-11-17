@@ -23,3 +23,13 @@ A: git init(main), 사용자 승인 후 첫 커밋 739459f(문서+골격). Phase
    환경 확인: Git Bash 프로세스는 SeBackupPrivilege가 켜져 ACL 거부가 무시됨(테스트에서 권한 끔), .NET 10 정션 재귀 삭제 IOException, CP949 ReplacementFallback 기본값 '?'.
    검증: 빌드 경고 0·오류 0, Core 124/124(Git Bash·PowerShell), 줄 94.4%·분기 93.2%, E2E 1/1. 문서 00·01·02·04·05 갱신.
    미결: F-10 CP949로 나타낼 수 없는 문자 → UTF-8 저장 제안(Phase 7 전 결정).
+
+[2026-11-17 17:55]
+Q: Phase 2 커밋하고 계속 진행 (Phase 3 — Core 렌더링·링크).
+A: Phase 2 커밋 0da809a, main fast-forward. Phase 3은 feature/phase3-rendering에서 진행(미커밋).
+   src/MDFileViewer.Core: MarkdownRenderer(GitHub 제목 id — UseAdvancedExtensions보다 먼저 넣어야 한글 id 유지), DocumentUrlMapper, ViewerScriptBuilder,
+   LinkClassifier, Models(LinkTarget·EffectiveTheme), Resources(viewer.html·viewer.css, 출력 폴더 복사), AppConstants(호스트·리소스 이름).
+   처음 설계의 HtmlPageBuilder는 안 A에 맞춰 DocumentUrlMapper·ViewerScriptBuilder로 나눔. .editorconfig·04에 html·css 규칙 추가.
+   code-reviewer 지적 반영: DOM clobbering(<img name="getElementById">가 document.getElementById를 덮음 — Playwright Chromium으로 재현) → 프로토타입 call 방식,
+   %00 예외·점/공백 조각·루트 정규화·끝 점 호스트·포트 거부. meta refresh가 클릭 없이 탐색함을 Chromium으로 확인 → Phase 4에서 IsUserInitiated만 처리(02 §6.4, 05 4-6).
+   검증: 빌드 경고 0·오류 0, Core 251/251(Git Bash·PowerShell), 줄 94.6%·분기 93.5%, E2E 1/1. 문서 00·01·02·03·04·05 갱신.

@@ -22,4 +22,19 @@ public static class AppConstants
 
     /// <summary>로그 파일 보관 일수 (02 §13).</summary>
     public const int LogRetentionDays = 7;
+
+    /// <summary>앱 리소스 폴더(viewer.html·viewer.css)를 매핑하는 WebView2 가상 호스트 (02 §6.2).</summary>
+    public const string AppAssetsHostName = "appassets.example";
+
+    /// <summary>문서가 있는 드라이브·UNC 공유 루트를 매핑하는 WebView2 가상 호스트 (02 §6.2).</summary>
+    public const string DocumentRootHostName = "docroot.example";
+
+    /// <summary>출력 폴더 안 리소스 폴더 이름. Core의 Resources 폴더가 그대로 복사된다.</summary>
+    public const string ResourcesFolderName = "Resources";
+
+    /// <summary>한 번만 로드하는 문서 표시 템플릿 (02 §6.2).</summary>
+    public const string ViewerTemplateFileName = "viewer.html";
+
+    /// <summary>문서 표시 스타일 (03 §4~6).</summary>
+    public const string ViewerStylesheetFileName = "viewer.css";
 }

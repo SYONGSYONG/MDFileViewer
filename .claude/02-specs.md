@@ -67,11 +67,13 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 │ ViewModels   MainViewModel, FolderTreeViewModel(FolderNodeViewModel),     │
 │              FileListViewModel, DocumentViewModel, ZoomViewModel          │
 │ Services     FolderTreeService, MarkdownFileFinder, TextFileCodec,        │
-│              MarkdownRenderer, HtmlPageBuilder, LinkClassifier,           │
+│              MarkdownRenderer, DocumentUrlMapper, ViewerScriptBuilder,    │
+│              LinkClassifier,                                              │
 │              JsonSettingsStore, ShellIntegrationService,                  │
 │              CommandLineParser, FileAppLogger                             │
 │ Models       StartupRequest, MarkdownFileItem, TextFileFormat,            │
-│              LinkTarget, AppSettings, ThemeMode, ShellRegistrationStatus  │
+│              LinkTarget, EffectiveTheme, AppSettings, ThemeMode,          │
+│              ShellRegistrationStatus                                      │
 │ 인터페이스    IFolderTreeService, IMarkdownFileFinder, ITextFileCodec,     │
 │              IDialogService, IShellLauncher, IViewerHost,                 │
 │              IRegistryAccess, ISettingsStore, IAppLogger                  │
@@ -136,8 +138,13 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 
 ### 6.1 Markdig 파이프라인
 
-- `UseAdvancedExtensions()` — 표, 작업 목록, 각주, 자동 링크, 제목 id(auto identifiers), 강조 확장 등.
-- `UseYamlFrontMatter()` — front matter를 파싱하고 HTML로 출력하지 않는다.
+- `UseAutoIdentifiers(AutoIdentifierOptions.GitHub)` → `UseAdvancedExtensions()` → `UseYamlFrontMatter()` 순서로 만든다(`MarkdownRenderer`).
+  - `UseAdvancedExtensions()` — 표, 작업 목록, 각주, 자동 링크, 제목 id, 강조 확장 등.
+  - 제목 id는 GitHub 방식(`# 설치 방법` → `설치-방법`, 같은 제목은 `-1`을 붙임). 기본 옵션은 한글을 지워 id가 `section`이 된다.
+    자동 id 확장은 이미 있으면 다시 넣지 않으므로 `UseAdvancedExtensions()`보다 **먼저** 넣어야 한다(뒤에 넣으면 무시됨, 2026-11-17 확인).
+  - `UseYamlFrontMatter()` — front matter를 파싱하고 HTML로 출력하지 않는다.
+- 원시 HTML(`<script>` 포함)은 렌더러가 걸러 내지 않는다. 스크립트·프레임·폼은 표시 단계(§6.3 설정, §6.5 CSP)가 막는다.
+- 작업 목록은 `<ul class="contains-task-list">`·`<li class="task-list-item">` + 비활성 체크박스로 나온다. `viewer.css`가 이 클래스 이름을 쓴다.
 - 파이프라인은 한 번 만들어 재사용한다(스레드 안전하게 읽기 전용으로 쓴다).
 
 ### 6.2 표시 방식 (안 A — PoC-1·2·5·6으로 확정, 2026-11-17)
@@ -156,6 +163,25 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 4. 문서 안 스크립트는 `IsScriptEnabled = false`와 CSP `script-src 'none'`으로 막는다. 이 상태에서도 `ExecuteScriptAsync`는
    동작한다(본문 교체, 값 읽기, `scrollIntoView`, `scrollTo`). 템플릿의 인라인 `<script>`, 본문에 넣은 `<script>`,
    `onerror` 속성은 모두 실행되지 않았고, 앱 호스트의 CSS는 CSP 아래에서도 적용되었다 (PoC-1).
+
+**Core 구성 (Phase 3):**
+
+| 구성 요소 | 역할 |
+|-----------|------|
+| `Resources/viewer.html` | 템플릿. CSP 메타, `<base id="docbase" href="https://docroot.example/">`, `<main id="content">`, 절대 URL로 `viewer.css` 참조. 스크립트 없음 |
+| `Resources/viewer.css` | 문서 스타일, `data-theme`별 색 토큰(03 §4·§6) |
+| `DocumentUrlMapper` | 매핑할 루트(`C:\` 또는 `\\server\share\`), 문서 경로 → 문서 URL(경로 조각마다 퍼센트 인코딩), 문서 URL → 로컬 경로(루트 밖·인코딩된 구분자·드라이브 문자 거부) |
+| `ViewerScriptBuilder` | `ExecuteScriptAsync`용 스크립트: 문서 표시(`<base>` → 본문 → 맨 위로), 본문만 교체, 앵커 스크롤, 테마. 값은 JSON 문자열로 넣는다. `document.x` 대신 프로토타입 메서드를 `call`로 부른다(아래 DOM clobbering) |
+
+- **DOM clobbering (2026-11-17 Chromium 확인):** 본문 원시 HTML의 `<img name="getElementById">`는 `document.getElementById`를,
+  `<img name="documentElement">`는 `document.documentElement`를 그 요소로 덮어, 이후 스크립트가 모두 실패한다(다음 문서를 열 수 없음).
+  폼 안 `<input name="scrollIntoView">`는 그 폼 요소의 메서드를 덮는다. 그래서 스크립트는 `Document.prototype.getElementById.call(document, …)`,
+  `Element.prototype.scrollIntoView.call(…)`, `documentElement` 속성 getter를 쓴다. 전역 생성자(`Document`·`Element`·`Object`)와
+  `window.scrollTo`는 같은 방법으로 덮이지 않았다. 템플릿의 `<base>`·`<main>`은 본문보다 문서 순서가 앞이라 본문에 같은 id가 있어도 템플릿 요소가 잡힌다.
+- **본문 안 `<base>`는 무시된다:** 문서 순서상 첫 `<base>`(템플릿)가 쓰인다(2026-11-17 Chromium 확인).
+
+- `Resources/` 파일은 Core 출력 폴더로 복사되고(`CopyToOutputDirectory`), 참조하는 앱·테스트 출력 폴더의 `Resources\`에도 같이 복사된다(2026-11-17 확인).
+- 처음 설계의 `HtmlPageBuilder`는 안 A에서 HTML을 조립할 일이 없어(템플릿은 고정 파일) `DocumentUrlMapper`와 `ViewerScriptBuilder`로 나눴다.
 
 **안 B (보류 — PoC-1이 통과해 쓰지 않는다):** `IsScriptEnabled = true`로 두고, CSP `script-src https://appassets.example`(인라인 금지)로
 템플릿의 앱 스크립트만 허용한다. `innerHTML`로 넣은 `<script>`는 실행되지 않고, 인라인 이벤트 속성(`onerror` 등)은 CSP가 막는다.
@@ -186,13 +212,37 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 
 ### 6.4 탐색 가로채기
 
-- `NavigationStarting`: 템플릿 최초 로드를 뺀 모든 탐색을 취소(`Cancel = true`)하고 URL을 `LinkClassifier`로 넘긴다.
+- `NavigationStarting`: 템플릿 최초 로드를 뺀 모든 탐색을 취소(`Cancel = true`)한다. **사용자가 시작한 탐색(`IsUserInitiated == true`)만**
+  URL을 `LinkClassifier`로 넘긴다. 본문의 `<meta http-equiv="refresh" content="0;url=…">`는 `innerHTML`로 넣어도 클릭 없이 탐색을 일으키고
+  (2026-11-17 Chromium 확인) CSP로 막을 수 없으므로, 그대로 넘기면 문서를 여는 것만으로 브라우저·탐색기가 열린다.
+  WebView2에서 meta refresh의 `IsUserInitiated`가 실제로 `false`인지는 Phase 4(4-6)에서 확인한다.
 - `NewWindowRequested`: `Handled = true`로 새 창을 막고 같은 처리를 한다(`target="_blank"` 링크).
 - `<base href>`가 있으면 `#앵커`도 `<base href>` 기준 URL로 해석되어 `NavigationStarting`이 발생한다(PoC-6에서 확인 — 이때 본문은 그대로 남는다).
   `<base href>`를 문서 파일 URL로 두므로 `<현재 문서 URL>#앵커` 형태가 되고, `LinkClassifier`가 "현재 문서 + 앵커"로 판별해
   `ScrollToAnchorAsync`로 처리한다.
 - `target="_blank"` 링크는 `NavigationStarting` 없이 `NewWindowRequested`만 발생한다. `javascript:` 링크는 어떤 이벤트도 발생하지 않는다 (PoC-6).
 - `docroot.example` URL은 로컬 경로로 되돌려(URL 디코딩 포함) 파일 존재 여부와 확장자로 판별한다.
+
+**`LinkClassifier` 분류 규칙 (Phase 3):**
+
+| 순서 | 조건 | 결과 (`LinkTarget`) |
+|------|------|---------------------|
+| 1 | 절대 URL로 해석할 수 없음 | `Blocked` |
+| 2 | 호스트가 `docroot.example`(끝 점 포함)인데 https 기본 포트가 아니거나, 로컬 경로로 되돌릴 수 없음(루트 밖, 인코딩된 `/`·`\`·`:`, 제어 문자, 점·공백만 있는 조각) | `Blocked` |
+| 3 | 현재 문서와 같은 경로 | `CurrentDocumentAnchor` — 디코딩한 앵커, `#`만 있거나 없으면 빈 문자열(문서 처음으로) |
+| 4 | 폴더가 있음 | `LocalFile` (탐색기에서 선택) |
+| 5 | 파일이 없음 | `MissingFile` |
+| 6 | `.md`·`.markdown` 파일 | `MarkdownDocument` — 디코딩한 앵커(없으면 null) |
+| 7 | 그 밖의 파일 | `LocalFile` — 실행하지 않는다 |
+| 8 | 호스트가 `appassets.example`(끝 점 포함) | `Blocked` |
+| 9 | `http`·`https`·`mailto` | `External` |
+| 10 | 그 밖의 스킴(`javascript:`, `file:`, `data:`, `ms-settings:` 등) | `Blocked` |
+
+- `..`(퍼센트 인코딩 포함)는 `System.Uri`가 브라우저처럼 루트에서 멈춰 정리하므로 루트 밖으로 나가지 않는다(2026-11-17 확인).
+  인코딩된 `/`·`\`·`:`가 디코딩 뒤 조각에 생기면 거부한다.
+- 장치 이름(`CON`, `NUL.md`)은 .NET 10 `GetFullPath`가 그대로 두고 파일로 존재하지 않아 `MissingFile`이 된다. 끝의 점·공백은 Windows가 지운다
+  (`a.md.` → `a.md`). 둘 다 루트를 벗어나지 않는다(2026-11-17 확인). `DocumentUrlMapper.TryGetLocalPath`는 예외를 내지 않는다.
+- `mailto:` 링크의 매개변수(`subject`·`body`·`cc` 등)는 메일 앱이 그대로 받는다. 사용자가 링크를 누를 때만 열리므로 걸러 내지 않는다.
 
 ### 6.5 보안 (템플릿 CSP 초안)
 
@@ -366,6 +416,9 @@ MDFileViewer.exe --unregister
 | `DefaultEditorSplitRatio` | 0.5 | 편집기:미리보기 기본 비율 |
 | `AppAssetsHostName` | `appassets.example` | 앱 리소스 가상 호스트 |
 | `DocumentRootHostName` | `docroot.example` | 문서 루트 가상 호스트 |
+| `ResourcesFolderName` | `Resources` | 출력 폴더 안 리소스 폴더 (§6.2) |
+| `ViewerTemplateFileName` | `viewer.html` | 문서 표시 템플릿 |
+| `ViewerStylesheetFileName` | `viewer.css` | 문서 스타일 |
 | `ShellVerbKeyName` | `MDFileViewer` | 레지스트리 verb 키 이름 |
 | `ShellMenuText` | `MDFileViewer로 열기` | 우클릭 메뉴 문구 |
 | `LogRetentionDays` | 7 | 로그 파일 보관 일수 |
@@ -391,9 +444,11 @@ MDFileViewer.exe --unregister
 |------|-----------|
 | `CommandLineParser` | 인수 없음/폴더/파일/없는 경로/상대 경로/`C:"` 보정/`--register`/알 수 없는 옵션 |
 | `ZoomViewModel` (+ `ZoomSteps`) | 다음·이전 단계, 단계 사이 값에서 이동, 범위 끝에서 버튼 비활성, 100% 리셋 |
-| `MarkdownRenderer` | 표·작업 목록·각주·제목 id 출력, front matter 미출력, 빈 문서 |
-| `HtmlPageBuilder` | CSP 메타 포함, `data-theme`, `<base href>` URL 인코딩(공백·한글·`#` 포함 경로) |
-| `LinkClassifier` | 외부/앵커/현재 문서 앵커/다른 md(앵커 포함)/로컬 파일/없는 파일/차단 스킴/URL 디코딩 |
+| `MarkdownRenderer` | 표·작업 목록·각주·제목 id(한글, 중복) 출력, front matter 미출력, 빈 문서, 원시 HTML 유지 |
+| `DocumentUrlMapper` | 루트(드라이브·UNC), 문서 URL 인코딩(공백·한글·`#`·`%` 포함 경로), 왕복 변환, 루트 밖·다른 호스트 거부 |
+| `ViewerScriptBuilder` | 값의 JSON 인코딩(따옴표·`</script>`·비ASCII·U+2028), 문서 표시 순서(`<base>` → 본문 → 맨 위로), 본문 교체·앵커·테마, 덮일 수 있는 `document.x` 미사용 |
+| viewer 템플릿 (`ViewerTemplateTests`) | CSP 메타, `data-theme`, 스크립트가 쓰는 요소 id, CSS 절대 URL, 스크립트 없음, 색 토큰이 03 §4와 같음 |
+| `LinkClassifier` | 외부/현재 문서 앵커/다른 md(앵커 포함)/로컬 파일·폴더/없는 파일/차단 스킴·내부 호스트/URL 디코딩 |
 | `TextFileCodec` | BOM 판별, UTF-8 엄격 디코딩 실패 → CP949, 손상 바이트 → U+FFFD + `HasDecodingErrors`, 나타낼 수 없는 문자 → 예외, 줄 끝 판별(혼합 포함), 저장 시 형식 보존 |
 | `DocumentViewModel` | 변경 표시, 저장 성공/실패, 미저장 확인의 저장/저장 안 함/취소 분기, 읽기 전용 |
 | `FileListViewModel` | 직속/재귀 토글, 정렬, 빈 목록 안내, 폴더 변경 시 이전 검색 취소 |
@@ -450,3 +505,4 @@ dotnet publish src/MDFileViewer -c Release -r win-x64 --self-contained false -o 
 - 2026-11-17: 테스트 패키지·FlaUI 승인, 패키지 버전 고정, E2E 프로젝트 구성 확정.
 - 2026-11-17: PoC 6건 모두 통과 — 안 A 확정, `<base href>`를 문서 파일 URL로, CSP에 `script-src 'none'`, 줌 단축키는 앱이 처리, E2E 맨 앞 창 처리 방침, 테스트 명령 분리.
 - 2026-11-17: Phase 2 구현 반영 — 실패를 결과 값으로 알리는 원칙(§4.1), 드라이브 확인 시간 제한·실패 격리(§7.1), 검색 실패·잘림 규칙(§7.2), 엄격 디코딩·`HasDecodingErrors`·CP949 대체 문자(§7.3), md 아닌 파일 인수(§9), `DriveReadyTimeout`(§12), 로그 보관·공유 쓰기(§13), 테스트 환경 주의점(§14.2).
+- 2026-11-17: Phase 3 구현 반영 — 파이프라인 순서·한글 제목 id(§6.1), Core 구성과 `HtmlPageBuilder` → `DocumentUrlMapper`·`ViewerScriptBuilder` 분리, DOM clobbering 대응, 본문 `<base>` 무시(§6.2), 사용자 시작 탐색만 처리(meta refresh), `LinkClassifier` 분류 규칙·경로 안전 규칙(§6.4), 리소스 상수(§12), 단위 테스트 표(§14.1).
