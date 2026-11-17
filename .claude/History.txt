@@ -11,3 +11,15 @@ A: 문서 반영(00 확정 결과, 02 §2 승인·버전, 05 0-2·0-3 완료). P
    Directory.Build.props·.editorconfig·.gitignore, 패키지 8개 설치(버전 02 §2). 빌드 경고 0·오류 0, Core.Tests 2/2, E2E 스모크 1/1 통과.
    PoC 6건 통과(02 §11): 안 A 확정, <base href>=문서 파일 URL, CSP script-src 'none', 줌 단축키는 앱 처리, CP949 추가 패키지 불필요.
    Git 초기화(1-1)는 사용자 요청 대기.
+
+[2026-11-17 17:14]
+Q: 1) Git 저장소 만들고 첫 커밋, 2) Phase 2(Core — 파일 시스템·텍스트·명령줄) 진행.
+A: git init(main), 사용자 승인 후 첫 커밋 739459f(문서+골격). Phase 2는 feature/phase2-core 브랜치에서 진행(미커밋).
+   src/MDFileViewer.Core: AppConstants, Mvvm(ObservableObject·RelayCommand·AsyncRelayCommand), Abstractions(IFolderTreeService·IMarkdownFileFinder·ITextFileCodec·IAppLogger),
+   Models, Services(FolderTreeService·MarkdownFileFinder·MarkdownPath·TextFileCodec·CommandLineParser·FileAppLogger).
+   tests/MDFileViewer.Core.Tests: 서비스별 테스트, TempDirectory·FolderAccessDenial·ProcessPrivileges, Fakes. TextEncodingPlatformTests는 TextFileCodecTests로 흡수.
+   code-reviewer 지적 반영: 드라이브 확인 실패 격리·로그, 검색 실패를 FolderAccess로, 엄격 디코딩+HasDecodingErrors, 읽기 전용 사전 확인, 로그 공유 쓰기·파일별 삭제,
+   AsyncRelayCommand 오류 처리기 예외 전파. 문서로만 남김: 혼합 줄 끝 통일, UTF-32 미지원, 로그 보관 8일, UI 스레드 전용 명령, 인수 해석은 UI 스레드 밖(Phase 4).
+   환경 확인: Git Bash 프로세스는 SeBackupPrivilege가 켜져 ACL 거부가 무시됨(테스트에서 권한 끔), .NET 10 정션 재귀 삭제 IOException, CP949 ReplacementFallback 기본값 '?'.
+   검증: 빌드 경고 0·오류 0, Core 124/124(Git Bash·PowerShell), 줄 94.4%·분기 93.2%, E2E 1/1. 문서 00·01·02·04·05 갱신.
+   미결: F-10 CP949로 나타낼 수 없는 문자 → UTF-8 저장 제안(Phase 7 전 결정).

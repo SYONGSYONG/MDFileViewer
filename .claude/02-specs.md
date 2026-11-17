@@ -72,7 +72,8 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 │              CommandLineParser, FileAppLogger                             │
 │ Models       StartupRequest, MarkdownFileItem, TextFileFormat,            │
 │              LinkTarget, AppSettings, ThemeMode, ShellRegistrationStatus  │
-│ 인터페이스    IDialogService, IShellLauncher, IViewerHost,                 │
+│ 인터페이스    IFolderTreeService, IMarkdownFileFinder, ITextFileCodec,     │
+│              IDialogService, IShellLauncher, IViewerHost,                 │
 │              IRegistryAccess, ISettingsStore, IAppLogger                  │
 │ Resources    viewer.html, viewer.css, help.md (출력 폴더로 복사)          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -113,6 +114,11 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
     void DeleteSubKeyTree(string subKeyPath);
 }
 ```
+
+- Phase 2에서 `IFolderTreeService`, `IMarkdownFileFinder`, `ITextFileCodec`, `IAppLogger`를 구현했다. 시그니처는
+  `src/MDFileViewer.Core/Abstractions/`가 기준이다. 나머지 인터페이스는 해당 Phase에서 위 초안을 다듬어 만든다.
+- 서비스는 실패를 예외 대신 결과 값으로 알린다: 폴더 읽기는 `FolderAccess`(`Ok`·`NotFound`·`AccessDenied`·`Unavailable`),
+  파일 읽기는 `TextFileContent.HasDecodingErrors`. 예외로 나가는 것은 취소(`OperationCanceledException`)와 저장 실패뿐이다.
 
 ## 5. 주요 흐름
 
@@ -214,10 +220,15 @@ base-uri https://docroot.example;
 
 ### 7.1 트리
 
-- 드라이브: `DriveInfo.GetDrives()`에서 `IsReady`인 것만. 끊긴 네트워크 드라이브는 `IsReady` 확인이 오래 걸릴 수 있으므로 백그라운드에서 확인한다.
+- 드라이브: `DriveInfo.GetDrives()`에서 `IsReady`인 것만. 드라이브마다 백그라운드에서 따로 확인하고, `DriveReadyTimeout`(3초)
+  안에 답하지 않으면(끊긴 네트워크 드라이브 등) 목록에서 빼고 로그에 남긴다. 드라이브 하나의 확인이 어떤 예외로 실패해도
+  그 드라이브만 빼고(로그 경고) 나머지는 보여 준다. 기다리기를 그만둔 확인 작업이 나중에 실패해도 관찰되지 않은 예외로 새지 않게 한다.
+- 드라이브 확인 동작은 `DriveProbe`(함수 묶음)로 받아, 응답 지연·실패를 테스트에서 재현한다(`DriveInfo`는 sealed).
 - 이름: 볼륨 레이블이 있으면 `레이블 (C:)`, 없으면 종류별 기본 이름(`로컬 디스크 (C:)`, `이동식 디스크 (E:)`, `네트워크 드라이브 (Z:)`).
-- 하위 폴더: `Directory.EnumerateDirectories` + `EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = Hidden | System }`.
-- 폴더 자체에 접근할 수 없으면 `UnauthorizedAccessException`을 잡아 노드를 "접근 거부" 상태로 표시한다.
+- 하위 폴더: `DirectoryInfo.EnumerateDirectories` + `EnumerationOptions { IgnoreInaccessible = false, AttributesToSkip = Hidden | System }`.
+  비재귀라 `IgnoreInaccessible`은 읽으려는 폴더 자신에만 영향을 주므로, 꺼 두어야 그 폴더의 접근 거부를 예외로 받아 알릴 수 있다.
+- 실패 결과: 폴더 없음 → `NotFound`, 접근 거부 → `AccessDenied`, 장치 미준비·파일 경로·빈 경로 등 → `Unavailable`.
+  펼침 화살표용 `HasSubfoldersAsync`는 읽을 수 없으면 `false`를 돌려주고, 원인은 펼칠 때 `GetSubfoldersAsync`가 알린다.
 - 펼침 화살표: 자식 목록을 먼저 보여 준 뒤, 자식마다 하위 폴더 유무를 백그라운드에서 확인해 화살표를 갱신한다.
 - 정렬: `StringComparer.CurrentCultureIgnoreCase` (한글 파일 이름 고려). 자연 정렬은 P2.
 
@@ -226,7 +237,10 @@ base-uri https://docroot.example;
 - 직속: `Directory.EnumerateFiles` + 확장자 필터.
 - 재귀: `FileSystemEnumerable<T>`의 `ShouldRecursePredicate`로 제외 폴더(숨김·시스템·재분석 지점·`.git`·`node_modules`)를 건너뛰고,
   `ShouldIncludePredicate`로 확장자를 거른다. 재분석 지점(정션·심볼릭 링크)을 건너뛰어 순환을 막는다.
-- 최대 개수에 닿으면 멈추고 `IsTruncated = true`를 돌려준다. 매 항목마다 `CancellationToken`을 확인한다.
+- 최대 개수에 닿으면 멈추고 `IsTruncated = true`를 돌려준다. 담기는 것은 탐색 순서상 처음 N개이고(이름순 상위 N개가 아님),
+  화면은 "처음 5,000개만 표시합니다"로 알린다. 취소는 판별 함수 안에서 항목마다 확인해, md 파일이 없는 큰 폴더를 훑는 중에도 멈춘다.
+- 재귀 검색은 하위 폴더의 접근 거부를 건너뛰므로(`IgnoreInaccessible = true`), 선택한 폴더 자체의 접근 가능 여부는 먼저 따로 확인해
+  `FolderAccess`로 알린다. 쓸 수 없는 경로·파일 경로·검색 도중 폴더 삭제도 예외 대신 `FolderAccess`로 알린다.
 
 ### 7.3 텍스트 인코딩과 줄 끝
 
@@ -234,12 +248,18 @@ base-uri https://docroot.example;
 |------|------|
 | BOM 확인 | `EF BB BF` → UTF-8(BOM), `FF FE` → UTF-16 LE, `FE FF` → UTF-16 BE |
 | BOM 없음 | 엄격한 UTF-8 디코더(`throwOnInvalidBytes: true`)로 시도 → 성공하면 UTF-8(BOM 없음) |
-| UTF-8 실패 | CP949(코드 페이지 949)로 디코딩. `CodePagesEncodingProvider` 등록에 추가 패키지가 필요한지는 PoC-4 |
+| UTF-8 실패 | CP949(코드 페이지 949)로 디코딩. `CodePagesEncodingProvider` 등록만으로 동작한다(PoC-4, 추가 패키지 없음) |
+| 손상 바이트 | 모든 디코딩은 엄격 모드(잘못된 바이트에서 예외)로 먼저 시도한다. 고른 인코딩으로 풀 수 없는 바이트가 있으면 U+FFFD로 바꿔 읽고 `HasDecodingErrors = true` — 이 텍스트를 저장하면 원래 바이트를 잃으므로 저장을 막는다(01 F-10) |
 | 줄 끝 판별 | CRLF와 단독 LF 개수를 세어 많은 쪽. 같거나 줄 바꿈이 없으면 CRLF |
-| 저장 | 편집기 텍스트의 줄 끝을 판별한 방식으로 통일하고, 원래 인코딩·BOM 유무로 인코딩한다 |
-| 안전 저장 | 같은 폴더에 임시 파일을 쓰고 `File.Replace(임시, 원본, null)`로 교체한다 |
+| 저장 | 편집기 텍스트의 줄 끝을 판별한 방식으로 통일하고(단독 CR도 바꾼다), 원래 인코딩·BOM 유무로 인코딩한다. 원래 인코딩으로 나타낼 수 없는 문자가 있으면 `EncoderFallbackException`을 내고 파일은 건드리지 않는다 |
+| 읽기 전용 | 저장 전에 읽기 전용 속성을 확인해 `UnauthorizedAccessException`을 낸다 |
+| 안전 저장 | 같은 폴더에 임시 파일을 쓰고 디스크까지 내린(`Flush(true)`) 뒤 `File.Replace(임시, 원본, null)`로 교체한다. 실패하면 임시 파일을 지우고 원본은 그대로 둔다 |
 
-- 판별 결과는 `TextFileFormat(Encoding, HasBom, LineEnding)` 레코드로 문서와 함께 들고 다닌다.
+- 판별 결과는 `TextFileFormat(Encoding, LineEnding)` 레코드로 문서와 함께 들고 다닌다. BOM 유무는 `TextEncodingKind`(`Utf8`/`Utf8Bom` 등)에 담는다.
+- **확인한 플랫폼 동작 (2026-11-17):** `DecoderFallback.ReplacementFallback`의 기본 대체 문자는 `?`라서 진짜 물음표와 구별되지 않고 CP949로
+  다시 인코딩되어 손상이 드러나지 않는다 → CP949도 U+FFFD로 바꾸도록 지정했다. CP949 단독 `0xFF`·`0xFEFE` 등은 .NET 표가 사용자 정의 영역
+  문자(U+F8F7 등)로 오류 없이 바꾸고 저장 때 같은 바이트로 되돌리므로 손상으로 보지 않는다.
+- UTF-32는 지원하지 않는다(UTF-32 LE BOM `FF FE 00 00`은 UTF-16 LE로 읽혀 글자가 깨진다).
 
 ## 8. 셸 통합 (탐색기 우클릭 메뉴)
 
@@ -286,7 +306,9 @@ MDFileViewer.exe --unregister
 
 - 해석 결과는 `StartupRequest`: `None` / `OpenFolder(path)` / `OpenFile(path)` / `Register` / `Unregister` / `InvalidPath(raw)`.
 - 보정 규칙: 앞뒤 따옴표 제거 → `X:"` 형태는 `X:\`로 바꿈 → `Path.GetFullPath`로 절대 경로화.
-- 알 수 없는 옵션(`--`로 시작)은 무시하고 로그에 남긴다.
+- 알 수 없는 옵션(`--`로 시작)과 두 번째 이후 경로는 쓰지 않고 `IgnoredArguments`로 돌려준다(호출자가 로그에 남긴다).
+- md가 아닌 파일 경로를 받으면 실패로 끝내지 않고 그 파일이 있는 폴더를 연다(`OpenFolder`). 탐색기 메뉴는 md 파일에만 붙으므로 손으로 넘긴 경우뿐이다.
+- 해석은 경로 존재 확인(`Directory.Exists`·`File.Exists`)을 하므로, 끊긴 UNC 경로에서는 오래 걸릴 수 있다. 앱은 UI 스레드 밖에서 해석한다(Phase 4).
 - `--register`/`--unregister`는 메인 창 없이 처리하고, 결과를 메시지 상자로 보여 준 뒤 종료 코드(0 성공, 1 실패)로 끝낸다.
 
 ## 10. 설정 파일
@@ -321,7 +343,7 @@ MDFileViewer.exe --unregister
 | PoC-1 | `IsScriptEnabled=false`에서 `ExecuteScriptAsync`로 본문 교체·스크롤 제어가 되는가, CSP와 충돌하지 않는가 | 안 B (§6.2) | ✅ 통과 — 본문 교체·읽기·`scrollIntoView`·`scrollTo` 동작. CSP `script-src 'none'`과 함께 써도 된다. 템플릿·본문의 `<script>`, `onerror`는 실행되지 않음 → **안 A 확정** |
 | PoC-2 | 가상 호스트 + `<base href>`로 `../` 상대 이미지와 UNC 경로 문서의 이미지가 보이는가 | `WebResourceRequested`로 로컬 파일 응답 | ✅ 통과 — `../img/pic.png`, `../한글 폴더/pic2.png`(자동 퍼센트 인코딩), `\\localhost\C$\…` UNC 매핑 모두 표시. `<base href>`를 스크립트로 바꿔도 반영됨 |
 | PoC-3 | WebView2에 포커스가 있을 때 앱 단축키(`Ctrl+E/S/B/O`, `F1`, `F5`)가 WPF로 전달되는가 / `Ctrl+휠`·`Ctrl+=`·`Ctrl+-` 줌과 `ZoomFactorChanged` 동기화 / `AreBrowserAcceleratorKeysEnabled=false`의 영향 | `AcceleratorKeyPressed` 처리, 템플릿 쪽 키 처리(안 B) | ✅ 통과 — 문서 포커스 상태에서 8개 키 모두 WPF `PreviewKeyDown`으로 전달, `F5` 새로고침·`Ctrl+=/-/0` 줌은 WebView2가 하지 않음(앱이 처리). `Ctrl+휠`은 1.0→1.1 줌 + `ZoomFactorChanged` 발생, 코드로 바꾼 `ZoomFactor`는 이벤트 없음. `Ctrl+O`는 미시험(Phase 4 E2E에서 확인) |
-| PoC-4 | .NET 10에서 CP949 디코딩에 추가 패키지가 필요한가 | 필요하면 승인 요청, 거절되면 CP949 미지원 + 안내 | ✅ 통과 — 추가 패키지 없이 `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`만으로 동작. 엄격한 UTF-8 디코더는 CP949 바이트에서 `DecoderFallbackException`을 낸다 (`TextEncodingPlatformTests`) |
+| PoC-4 | .NET 10에서 CP949 디코딩에 추가 패키지가 필요한가 | 필요하면 승인 요청, 거절되면 CP949 미지원 + 안내 | ✅ 통과 — 추가 패키지 없이 `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`만으로 동작. 엄격한 UTF-8 디코더는 CP949 바이트에서 `DecoderFallbackException`을 낸다 (`TextEncodingPlatformTests` → Phase 2에서 `TextFileCodecTests`로 흡수) |
 | PoC-5 | 2MB 넘는 문서를 `ExecuteScriptAsync`로 넣을 수 있는가 | `WebResourceRequested` + `Navigate` (§6.2) | ✅ 통과 — ASCII 3MB 154ms, 한글 150만 자 372ms. 대안 불필요 |
 | PoC-6 | `<base>`가 있을 때 `#앵커` 클릭이 `NavigationStarting`으로 들어오는가 | 안 B에서 템플릿 스크립트로 앵커 처리 | ✅ 통과 — `#far`가 `<base href>#far`로 `NavigationStarting`에 들어오고, 취소하면 본문이 유지됨. `<base href>`를 문서 파일 URL로 두기로 결정(§6.2·§6.4). `_blank`는 `NewWindowRequested`만, `javascript:`는 이벤트 없음 |
 
@@ -335,6 +357,7 @@ MDFileViewer.exe --unregister
 | `DefaultZoomFactor` | 1.0 | 시작 배율 |
 | `PreviewDebounceMilliseconds` | 300 | 미리보기 갱신 대기 (F-09) |
 | `MaxRecursiveResults` | 5,000 | 재귀 목록 최대 개수 (F-03) |
+| `DriveReadyTimeout` | 3초 | 드라이브 준비 확인 최대 대기 (§7.1) |
 | `LargeFileWarningBytes` | 5 × 1024 × 1024 | 큰 파일 경고 기준 (F-04) |
 | `StatusMessageMilliseconds` | 3,000 | 상태 표시줄 일시 메시지 표시 시간 |
 | `MarkdownExtensions` | `.md`, `.markdown` | 대상 확장자 |
@@ -355,7 +378,7 @@ MDFileViewer.exe --unregister
 | WebView2 Runtime 없음 | 시작할 때 `CoreWebView2Environment.GetAvailableBrowserVersionString()`으로 확인한다. 없으면 설치 안내와 다운로드 페이지 링크를 보여 주고 종료한다. |
 | WebView2 프로세스 실패 | `CoreWebView2.ProcessFailed`를 받으면 뷰어를 다시 만들고 현재 문서를 다시 표시한다. |
 | 예상하지 못한 예외 | `DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`, `AppDomain.UnhandledException`에서 로그를 남기고 오류 대화상자를 띄운다. |
-| 로그 | `%LOCALAPPDATA%\MDFileViewer\logs\yyyyMMdd.log`, 7일 지난 파일은 시작할 때 지운다. 문서 내용은 로그에 쓰지 않는다. |
+| 로그 | `%LOCALAPPDATA%\MDFileViewer\logs\yyyyMMdd.log`. 시작할 때 "오늘 − 7일"보다 이전 날짜 파일을 지운다(오늘 포함 8일치 보관). 잠긴 파일은 건너뛰고 다음 시작 때 다시 시도한다. 여러 창이 같은 파일에 쓰므로 공유 쓰기로 연다. 기록 실패는 앱을 멈추지 않는다. 문서 내용은 로그에 쓰지 않는다. |
 
 ## 14. 테스트 전략
 
@@ -371,7 +394,7 @@ MDFileViewer.exe --unregister
 | `MarkdownRenderer` | 표·작업 목록·각주·제목 id 출력, front matter 미출력, 빈 문서 |
 | `HtmlPageBuilder` | CSP 메타 포함, `data-theme`, `<base href>` URL 인코딩(공백·한글·`#` 포함 경로) |
 | `LinkClassifier` | 외부/앵커/현재 문서 앵커/다른 md(앵커 포함)/로컬 파일/없는 파일/차단 스킴/URL 디코딩 |
-| `TextFileCodec` | BOM 판별, UTF-8 엄격 디코딩 실패 → CP949, 줄 끝 판별(혼합 포함), 저장 시 형식 보존 |
+| `TextFileCodec` | BOM 판별, UTF-8 엄격 디코딩 실패 → CP949, 손상 바이트 → U+FFFD + `HasDecodingErrors`, 나타낼 수 없는 문자 → 예외, 줄 끝 판별(혼합 포함), 저장 시 형식 보존 |
 | `DocumentViewModel` | 변경 표시, 저장 성공/실패, 미저장 확인의 저장/저장 안 함/취소 분기, 읽기 전용 |
 | `FileListViewModel` | 직속/재귀 토글, 정렬, 빈 목록 안내, 폴더 변경 시 이전 검색 취소 |
 | `ShellIntegrationService` | 키 경로와 명령 문자열 생성, 상태 판별(가짜 `IRegistryAccess`) |
@@ -380,8 +403,15 @@ MDFileViewer.exe --unregister
 ### 14.2 통합 테스트 (Core, 실제 자원)
 
 - 파일 시스템: 임시 폴더에 폴더·md·숨김 폴더·`.git`·`node_modules`·정션을 만들어 `FolderTreeService`, `MarkdownFileFinder`를 확인한다.
+- 접근 거부: 현재 사용자에게 폴더 목록 읽기를 거부하는 ACL을 잠시 걸어 재현한다(`FolderAccessDenial`). Git Bash에서 띄운 프로세스는
+  관리자 토큰의 `SeBackupPrivilege`가 켜진 채 실행되어 ACL 검사를 건너뛰므로(2026-11-17 확인, PowerShell에서는 꺼져 있음), 테스트가
+  먼저 자기 프로세스의 백업·복원 권한을 끈다(`ProcessPrivileges`). 탐색기에서 실행한 앱은 이 권한이 꺼져 있다.
+- 정션 정리: .NET 10의 `Directory.Delete(recursive: true)`는 정션에서 `IOException`("매개 변수가 틀립니다")을 낸다(2026-11-17 재현).
+  테스트 임시 폴더는 정션을 비재귀로 먼저 지운 뒤 재귀 삭제한다. 정리 실패는 삼키지 않고 테스트 실패로 드러낸다.
 - 텍스트 저장: 실제 파일에 쓰고 바이트를 비교한다(BOM, 줄 끝, 안전 저장 중 실패 시 원본 유지).
 - 레지스트리: §8.4의 테스트 전용 루트에 등록·상태 확인·해제를 하고 흔적이 남지 않는지 확인한다.
+- **Phase 2 결과 (2026-11-17):** Core 테스트 124개 통과(Git Bash·PowerShell 양쪽), Core 줄 커버리지 94.4%·분기 93.2%.
+  남은 `%TEMP%\MDFileViewer.Tests` 폴더 없음.
 
 ### 14.3 E2E
 
@@ -419,3 +449,4 @@ dotnet publish src/MDFileViewer -c Release -r win-x64 --self-contained false -o 
 - 2026-11-17: 최초 작성 — 스택, 의존성(승인 3·요청 4), 구조, 렌더링 안 A/B, 셸 통합 레지스트리, 설정 스키마, PoC 6건, 테스트 전략.
 - 2026-11-17: 테스트 패키지·FlaUI 승인, 패키지 버전 고정, E2E 프로젝트 구성 확정.
 - 2026-11-17: PoC 6건 모두 통과 — 안 A 확정, `<base href>`를 문서 파일 URL로, CSP에 `script-src 'none'`, 줌 단축키는 앱이 처리, E2E 맨 앞 창 처리 방침, 테스트 명령 분리.
+- 2026-11-17: Phase 2 구현 반영 — 실패를 결과 값으로 알리는 원칙(§4.1), 드라이브 확인 시간 제한·실패 격리(§7.1), 검색 실패·잘림 규칙(§7.2), 엄격 디코딩·`HasDecodingErrors`·CP949 대체 문자(§7.3), md 아닌 파일 인수(§9), `DriveReadyTimeout`(§12), 로그 보관·공유 쓰기(§13), 테스트 환경 주의점(§14.2).
