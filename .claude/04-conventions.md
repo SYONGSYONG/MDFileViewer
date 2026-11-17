@@ -32,6 +32,8 @@ MDFileViewer/
 ├── tests/
 │   ├── MDFileViewer.Core.Tests/    # src/MDFileViewer.Core 폴더 구조를 그대로 따른다
 │   └── MDFileViewer.E2ETests/      # FlaUI(UIA3) UI 자동화 E2E
+├── docs/
+│   └── manual.md                   # 사용법 매뉴얼(사용자용, 2026-11-18). 개발 문서는 .claude/에 둔다
 ├── installer/
 │   └── setup.iss                   # Inno Setup 설치 파일 스크립트 (02 §15.1)
 ├── publish-portable.bat            # 포터블 exe 만들기 → ReleasePortable\ (커밋 제외)
@@ -40,7 +42,7 @@ MDFileViewer/
 ├── .editorconfig
 ├── .gitignore
 ├── MDFileViewer.slnx                # 솔루션 (.NET 10 SDK 기본 형식)
-└── README.md
+└── README.md                     # 소개·설치·빌드 방법 (GitHub 첫 화면)
 ```
 
 - `Resources/`의 파일은 `CopyToOutputDirectory`로 출력 폴더에 복사하고, WebView2 가상 호스트(`appassets.example`)로 매핑한다.
@@ -127,7 +129,8 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 
 ## 5. Git
 
-- **현재 상태:** 2026-11-17 `git init`, 기본 브랜치 `main`(첫 커밋 `739459f`). 원격 저장소는 없다.
+- **현재 상태:** 2026-11-17 `git init`, 기본 브랜치 `main`(첫 커밋 `739459f`). 원격 저장소 `origin` =
+  `https://github.com/SYONGSYONG/MDFileViewer`(공개, 2026-11-18 연결). 공개 저장소이므로 문서·로그·테스트에 개인 경로·계정·이메일을 적지 않는다.
 - **브랜치:** `main`은 항상 빌드·테스트가 통과하는 상태를 유지한다. 작업은 `feature/<요약>`, `fix/<요약>`에서 한다.
 - **커밋 메시지:** `<type>: <설명>` — type은 `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`. 설명은 한국어로 쓴다.
 - **커밋·푸시:** 사용자가 요청할 때만 한다.
@@ -187,3 +190,4 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-17: 폴더 구조에 `app.manifest`, App `Services/`에 `WindowFitter` 추가(§1).
 - 2026-11-17: 사용자 결정 — 배포 스크립트 구조(`publish-*.bat`, `installer/setup.iss`, 발행 프로필) 추가(§1), `.manifest`·`.pubxml`·`.iss` 인코딩과 배치 파일 화면 문구(§4), 배포 산출물 `.gitignore`(§5).
 - 2026-11-18: E2E 좌표 규칙 — DIP 거리에 배율, 누르기 전 `ScrollIntoView`(§6).
+- 2026-11-18: 폴더 구조에 `docs/manual.md`(사용자 결정)·README 설명(§1), 원격 저장소와 공개 저장소 주의(§5).

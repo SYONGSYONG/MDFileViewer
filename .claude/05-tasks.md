@@ -15,14 +15,14 @@
 | 1 | 솔루션 골격 + PoC | ✅ |
 | 2 | Core — 파일 시스템·텍스트·명령줄 | ✅ |
 | 3 | Core — 렌더링·링크 | ✅ |
-| 4 | 메인 창 (보기 모드) | 🔄 (4-6 수동 확인 남음) |
+| 4 | 메인 창 (보기 모드) | ✅ |
 | 5 | 줌 | ⬜ |
 | 6 | 테마 | ⬜ |
 | 7 | 편집 모드 | ⬜ |
 | 8 | 도움말 | ⬜ |
 | 9 | 탐색기 우클릭 메뉴 | ⬜ |
 | 10 | 설정 저장·복원, 상태 표시줄 | ⬜ |
-| 11 | 마무리 — 리뷰·E2E·성능·배포 | 🔄 (11-6 배포 배치 파일 먼저 — README·깨끗한 PC 확인 남음) |
+| 11 | 마무리 — 리뷰·E2E·성능·배포 | 🔄 (11-6 배포 배치 파일·README·매뉴얼 먼저 — 깨끗한 PC 확인 남음) |
 
 ## Phase 0 — 명세
 
@@ -81,7 +81,7 @@
 | 4-3 | `FileListViewModel` + 목록 View (토글, 정렬, 빈 상태, 취소) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ✅ | 2026-11-17 `FileListViewModelTests` 통과(밀려난 검색의 늦은 실패 포함), E2E `IncludeSubfoldersAndHeaderSort_ChangeListWithoutInput` 통과. **2026-11-17 사용자 결정으로 4-9가 대체 — 목록 창·`FileListViewModel`·테스트 삭제** |
 | 4-4 | `MarkdownView`(WebView2 래퍼) + `WebViewHost` | `App/Controls/`, `App/Services/` | 샘플 문서 표시, 스크립트 미실행 확인, `<img name="getElementById">`가 든 문서 뒤에도 다른 문서 동작 (테마 전환 쪽은 6-3에서 확인) | ✅ | 2026-11-17 E2E `RelativeImage_IsDrawnBeforeAndAfterSwitchingDocumentRoot`(첫 문서·다른 드라이브로 루트 전환 뒤 상대 그림 색 확인, 코드를 일부러 깨면 실패함을 확인), `AfterDocumentThatClobbersDom_NextDocumentStillOpens` 통과. 문서 안 `<script>` 미실행은 실행 화면으로 확인. UNC 루트 표시는 실행 확인 |
 | 4-5 | `DocumentViewModel` 열기 흐름, 큰 파일 경고, 읽기 실패 안내 | Core | 단위 테스트 통과 | ✅ | 2026-11-17 `DocumentViewModelTests` 통과(큰 파일 취소 후 상태 복귀, 밀려난 요청의 늦은 실패, 표시 뒤 밀린 문서 기록 포함) |
-| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작, `<meta http-equiv="refresh">` 문서를 열어도 브라우저·탐색기가 열리지 않음(`IsUserInitiated` 확인) | 🔄 | 2026-11-17 E2E로 앵커·다른 md·없는 파일 링크, meta refresh(글자로 표시, 탐색 없음) 통과. 웹·로컬 파일 링크는 `MainViewModelTests`(가짜 셸)와 `ExternalLaunchPolicyTests`로 확인. **남은 것:** 실제 브라우저·탐색기가 열리는지는 사용자 PC에 창을 띄우므로 자동으로 누르지 않았다 — 사용자 수동 확인 필요 |
+| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작, `<meta http-equiv="refresh">` 문서를 열어도 브라우저·탐색기가 열리지 않음(`IsUserInitiated` 확인) | ✅ | 2026-11-17 E2E로 앵커·다른 md·없는 파일 링크, meta refresh(글자로 표시, 탐색 없음) 통과. 웹·로컬 파일 링크는 `MainViewModelTests`(가짜 셸)와 `ExternalLaunchPolicyTests`로 확인. **남은 것:** 실제 브라우저·탐색기가 열리는지는 사용자 PC에 창을 띄우므로 자동으로 누르지 않았다 — 사용자 수동 확인 필요. **2026-11-18 사용자 수동 확인 통과:** 웹 링크 → 기본 브라우저, `mailto:` → 메일 앱, 로컬 `.bat` → 실행되지 않고 탐색기에서 선택, 로컬 `.txt` → 탐색기에서 선택, `file:` 링크 → 아무 일 없음 |
 | 4-7 | 시작 폴더 자동 펼침·선택, 파일 인수 처리 | Core, App | 인수 3종(없음/폴더/파일)으로 실행해 01 F-01 수용 기준 확인, 문서 영역 포커스 상태의 `Ctrl+O` 동작 E2E 확인 | ✅ | 2026-11-17 E2E `Launch_WithoutArguments…`·`Launch_WithFolderArgument…`·`Launch_WithMarkdownFileArgument…`·`Launch_WithMissingPath…`·`CtrlO_WithDocumentFocused_OpensFolderPicker` 통과 |
 | 4-8 | 전역 예외 처리, WebView2 Runtime 확인, 프로세스 실패 복구 | `App.xaml.cs` | 강제 예외로 로그·대화상자 확인 (Runtime 없는 경우는 11-6에서 확인) | ✅ | 2026-11-17 E2E `ForcedUnhandledException_IsLoggedAndShowsErrorDialog`(UI 스레드·작업 2건), `KillingWebViewBrowserProcess_RecreatesViewerAndShowsDocumentAgain` 통과. Runtime이 설치된 PC라 "Runtime 없음" 대화상자는 재현할 수 없어 11-6으로 넘김 |
 | 4-9 | md 목록 창을 트리에 합침 (사용자 결정 2026-11-17) — 트리에 하위 폴더 다음 md 파일, md 파일 노드 선택 시 열기, 폴더 선택은 문서 유지, 시작 인수·주소·링크는 파일 노드 선택, `F5`는 파일 선택 유지, 목록 창·`FileListViewModel`·`MarkdownFileFinder` 삭제, 트리 \| 뷰어 2열 | Core, App | `FolderTreeServiceTests`·`FolderTreeViewModelTests`·`MainViewModelTests` 통과(먼저 실패 확인), E2E: 폴더 인수로 실행하면 폴더가 펼쳐져 md 파일이 보이고, 파일 인수면 트리에서 그 파일이 선택됨, 트리에서 md 파일을 고르면 열림, 파일을 고른 채 `F5`를 눌러도 그 파일이 선택된 채 남음 | ✅ | 2026-11-18 `FolderTreeServiceTests`·`FolderTreeViewModelTests`·`MainViewModelTests` 통과(새 테스트를 먼저 실패로 확인). E2E `Launch_WithFolderArgument_RevealsFolderAndShowsItsMarkdownFilesInTree`·`SelectingMarkdownFileInTree_OpensDocument`·`Launch_WithMarkdownFileArgument_SelectsFileInTreeAndShowsDocument`·`F5_WithFileSelectedAfterNewFileAppears_KeepsThatFileSelected` 통과 — `F5` 다시 선택 코드를 빼면 이 E2E가 실패함을 확인. csharp-reviewer 3차 반영(`F5` 중 사용자 선택 유지, 겹친 이동의 중복 노드 방지 — 테스트 먼저 실패 확인) |
@@ -92,7 +92,8 @@
   csharp-reviewer 2회(CRITICAL·HIGH 0건) 지적은 반영하거나 반대 이유를 History.txt에 남겼다.
 - 4-9~4-11 검증 (2026-11-18): `dotnet build` 경고 0·오류 0, Core 374/374 통과, Core 줄 94.8%·분기 91.7%, E2E 17/17(2회 연속 통과).
   csharp-reviewer 3차 CRITICAL·HIGH 0건 — MEDIUM 2건(`F5` 중 사용자 선택, 겹친 이동의 중복 노드)은 고쳤고, 1건(다시 읽으면 목록에 없는 노드가 빠짐)은
-  그대로 두기로 하고 02 §7.1에 적었다. LOW 반영·반대 이유는 History.txt. 4-6의 수동 확인이 끝나면 Phase 4를 ✅로 바꾼다.
+  그대로 두기로 하고 02 §7.1에 적었다. LOW 반영·반대 이유는 History.txt.
+- Phase 4 ✅ (2026-11-18): 4-6 사용자 수동 확인 통과로 모든 행 완료.
 
 ## Phase 5 — 줌
 
@@ -151,7 +152,7 @@
 | 11-3 | E2E — 아래 시나리오 (FlaUI 자동화, 탐색기 메뉴 자체는 9-4에서 수동) | `tests/MDFileViewer.E2ETests`, 결과 기록 | 10개 시나리오 모두 통과 | ⬜ | |
 | 11-4 | 성능 목표 측정 (01 §7) | 측정 기록 | 4개 목표 모두 충족 | ⬜ | |
 | 11-5 | 접근성 점검 — 키보드만으로 전체 흐름, 대비 | 점검 기록 | 03 §4 대비 기준 충족, 마우스 없이 E2E 1·4·5·7 수행 가능 | ⬜ | |
-| 11-6 | 배포 — 포터블 exe·설치 파일 배치 파일(2026-11-17 사용자 요청, 02 §15.1), README(설치·등록 방법) | `publish-portable.bat`, `publish-setup.bat`, `installer/setup.iss`, 발행 프로필, `README.md` | 두 배치 파일이 오류 없이 산출물을 만듦, 포터블 exe를 다른 폴더에 복사해 실행하면 문서가 표시됨, 설치 파일을 조용히 설치(임시 폴더)→실행→제거하면 파일·제거 정보가 남지 않음, 깨끗한 PC에서 실행·등록·해제 확인, WebView2 Runtime이 없는 PC(또는 가상 머신)에서 안내 대화상자·다운로드 페이지 열기 확인(4-8에서 넘김) | 🔄 | 2026-11-18 두 배치 파일이 오류 없이 끝남(포터블 158MB, 설치 파일 52MB). 포터블 exe를 이름 바꿔 다른 폴더에서 실행해 문서 표시 확인. 설치 파일을 임시 폴더에 조용히 설치 → 실행 → 제거한 뒤 설치 폴더·제거 정보·시작 메뉴 바로 가기가 남지 않음. 발행 폴더가 잠겼을 때·버전 값이 잘못됐을 때 멈춤 확인. **남은 것:** README, 깨끗한 PC에서 실행·등록·해제, WebView2 Runtime 없는 PC |
+| 11-6 | 배포 — 포터블 exe·설치 파일 배치 파일(2026-11-17 사용자 요청, 02 §15.1), README(설치·빌드 방법), 사용법 매뉴얼(2026-11-18 사용자 요청) | `publish-portable.bat`, `publish-setup.bat`, `installer/setup.iss`, 발행 프로필, `README.md`, `docs/manual.md` | 두 배치 파일이 오류 없이 산출물을 만듦, 포터블 exe를 다른 폴더에 복사해 실행하면 문서가 표시됨, 설치 파일을 조용히 설치(임시 폴더)→실행→제거하면 파일·제거 정보가 남지 않음, 깨끗한 PC에서 실행·등록·해제 확인, WebView2 Runtime이 없는 PC(또는 가상 머신)에서 안내 대화상자·다운로드 페이지 열기 확인(4-8에서 넘김) | 🔄 | 2026-11-18 두 배치 파일이 오류 없이 끝남(포터블 158MB, 설치 파일 52MB). 포터블 exe를 이름 바꿔 다른 폴더에서 실행해 문서 표시 확인. 설치 파일을 임시 폴더에 조용히 설치 → 실행 → 제거한 뒤 설치 폴더·제거 정보·시작 메뉴 바로 가기가 남지 않음. 발행 폴더가 잠겼을 때·버전 값이 잘못됐을 때 멈춤 확인. 2026-11-18 `README.md`·`docs/manual.md` 작성(구현된 기능만 설명, 예정 기능은 따로 표시), 두 배치 파일이 산출물 폴더에 `manual_<버전>.md`를 함께 복사(두 배치 파일을 다시 실행해 `ReleasePortable\`·`ReleaseSetup\`의 `manual_0.1.0.md`가 원본과 해시가 같음을 확인). 매뉴얼 안 `#` 링크 19개가 앱 렌더러(`MarkdownRenderer`)의 제목 id와 모두 맞음을 확인. **남은 것:** 깨끗한 PC에서 실행·등록·해제, WebView2 Runtime 없는 PC, 탐색기 메뉴(Phase 9)·도움말(Phase 8) 뒤 매뉴얼 보완 |
 
 ### E2E 시나리오
 
@@ -178,3 +179,5 @@
 - 2026-11-17: 사용자 지적 — 4-11(배율이 큰 모니터에서 시작 창이 작업 영역 안에 들어오게) 추가.
 - 2026-11-17: 사용자 요청 — 11-6을 포터블 exe·설치 파일 배치 파일로 바꿈(zip 대신).
 - 2026-11-18: 4-9·4-10·4-11 ✅(근거 기록), 4-9~4-11 검증 줄 추가, 11-6 🔄(배치 파일·설치 왕복 확인, README·깨끗한 PC 남음), 진행 요약 4·11 갱신.
+- 2026-11-18: 4-6 ✅(사용자 수동 확인), Phase 4 ✅. 11-6에 README·사용법 매뉴얼(`docs/manual.md`, 사용자 요청) 추가.
+- 2026-11-18: 11-6 매뉴얼 복사·매뉴얼 링크 확인 근거 추가.

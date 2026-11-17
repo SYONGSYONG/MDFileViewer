@@ -73,6 +73,14 @@ goto :fail
 
 :done
 
+rem Ship the user manual next to the output so the package and its manual travel together
+copy /y "%ROOT%docs\manual.md" "%RELEASE_DIR%\manual_%APPVER%.md" >nul
+if errorlevel 1 (
+    echo [경고] 매뉴얼을 복사하지 못했습니다. docs\manual.md 를 확인하세요.
+) else (
+    echo [정보] 매뉴얼 함께 복사: manual_%APPVER%.md
+)
+
 echo.
 echo [완료] %SETUP_EXE%
 echo        사용자 단위로 설치되어 관리자 권한이 필요 없습니다. 기본 위치: %%LOCALAPPDATA%%\Programs\MDFileViewer

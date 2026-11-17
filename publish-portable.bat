@@ -59,6 +59,14 @@ if errorlevel 1 (
     goto :fail
 )
 
+rem Ship the user manual next to the output so the package and its manual travel together
+copy /y "%ROOT%docs\manual.md" "%RELEASE_DIR%\manual_%APPVER%.md" >nul
+if errorlevel 1 (
+    echo [경고] 매뉴얼을 복사하지 못했습니다. docs\manual.md 를 확인하세요.
+) else (
+    echo [정보] 매뉴얼 함께 복사: manual_%APPVER%.md
+)
+
 echo.
 echo [완료] %TARGET_EXE%
 echo        설치 없이 이 exe 하나만 복사해 실행합니다. 처음 실행할 때 %%TEMP%%\.net 에 풀리므로 첫 실행만 몇 초 더 걸립니다.
