@@ -1,5 +1,5 @@
 <!--
-  메인 창 — 보기 모드 레이아웃 (.claude/03-design.md §2.1): 툴바 40px, 트리 260 · 목록 300 · 뷰어 나머지, 상태 표시줄 26px.
+  메인 창 — 보기 모드 레이아웃 (.claude/03-design.md §2.1): 툴바 40px, 트리(폴더 + md 파일) 320 · 뷰어 나머지, 상태 표시줄 26px.
   색은 테마 토큰(DynamicResource), 문구는 Core UiText(x:Static)를 쓴다.
 -->
 <Window x:Class="MDFileViewer.Views.MainWindow"
@@ -19,11 +19,9 @@
         AutomationProperties.AutomationId="MainWindow">
 
     <Window.Resources>
-        <controls:FolderGlyphConverter x:Key="FolderGlyph" />
+        <controls:TreeNodeGlyphConverter x:Key="TreeNodeGlyph" />
         <controls:NullToVisibilityConverter x:Key="NullToVisibility" />
         <controls:BoolToVisibilityConverter x:Key="BoolToVisibility" />
-        <controls:FileSizeConverter x:Key="FileSize" />
-        <controls:LocalDateTimeConverter x:Key="LocalDateTime" />
 
         <!-- 상태 표시줄 한 칸: 왼쪽 1px 구분선. 값이 없으면 칸째로 접는다 -->
         <Style x:Key="StatusSegment" TargetType="Border">
@@ -32,12 +30,12 @@
             <Setter Property="Margin" Value="0,5" />
         </Style>
 
-        <HierarchicalDataTemplate DataType="{x:Type vm:FolderNodeViewModel}" ItemsSource="{Binding Children}">
+        <HierarchicalDataTemplate DataType="{x:Type vm:TreeNodeViewModel}" ItemsSource="{Binding Children}">
             <StackPanel Orientation="Horizontal">
                 <TextBlock x:Name="Icon" Style="{StaticResource IconText}" FontSize="14" Margin="0,0,6,0"
                            Foreground="{DynamicResource Text.Secondary}">
                     <TextBlock.Text>
-                        <MultiBinding Converter="{StaticResource FolderGlyph}">
+                        <MultiBinding Converter="{StaticResource TreeNodeGlyph}">
                             <Binding Path="Kind" />
                             <Binding Path="IsExpanded" />
                             <Binding Path="Access" />
@@ -91,14 +89,12 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" MinWidth="160" />
-                <ColumnDefinition Width="6" />
-                <ColumnDefinition Width="300" MinWidth="200" />
+                <ColumnDefinition Width="320" MinWidth="160" />
                 <ColumnDefinition Width="6" />
                 <ColumnDefinition Width="*" MinWidth="320" />
             </Grid.ColumnDefinitions>
 
-            <!-- 트리 (01 F-02). 하위 폴더가 수만 개인 폴더(예: WinSxS)도 멈추지 않도록 가상화한다 -->
+            <!-- 트리 (01 F-02·F-03): 폴더 아래에 하위 폴더, 그다음 md 파일. 하위 폴더가 수만 개인 폴더(예: WinSxS)도 멈추지 않도록 가상화한다 -->
             <TreeView x:Name="FolderTree" Grid.Column="0"
                       ItemsSource="{Binding Tree.Roots}"
                       Background="{DynamicResource Surface.Panel}" BorderThickness="0" Padding="0,4"
@@ -113,6 +109,8 @@
                         <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                         <Setter Property="ToolTip" Value="{Binding ToolTip}" />
                         <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+                        <!-- 클릭·키보드로 포커스를 받으면 WPF가 항목 전체를 보이게 하려고 가로로 크게 민다 — 가로채서 세로로만 맞춘다 (03 §2.1) -->
+                        <EventSetter Event="RequestBringIntoView" Handler="OnTreeItemRequestBringIntoView" />
                         <Setter Property="ItemsPanel">
                             <Setter.Value>
                                 <ItemsPanelTemplate>
@@ -126,81 +124,8 @@
 
             <GridSplitter Grid.Column="1" Style="{StaticResource PaneSplitter}" />
 
-            <!-- md 파일 목록 (01 F-03) -->
-            <DockPanel Grid.Column="2" Background="{DynamicResource Surface.Panel}">
-                <CheckBox DockPanel.Dock="Top" Margin="10,8,10,6"
-                          Content="{x:Static core:UiText.IncludeSubfolders}"
-                          Foreground="{DynamicResource Text.Primary}"
-                          IsChecked="{Binding Files.IncludeSubfolders}"
-                          AutomationProperties.AutomationId="IncludeSubfoldersCheckBox" />
-                <ProgressBar DockPanel.Dock="Top" Height="2" BorderThickness="0" IsIndeterminate="{Binding Files.IsLoading}"
-                             Foreground="{DynamicResource Accent}" Background="Transparent"
-                             Visibility="{Binding Files.IsLoading, Converter={StaticResource BoolToVisibility}, ConverterParameter={x:Static controls:VisibilityParameters.Hidden}}" />
-                <TextBlock DockPanel.Dock="Top" Margin="10,4" Style="{StaticResource PlaceholderHint}" TextAlignment="Left"
-                           Text="{Binding Files.TruncationNotice}"
-                           Visibility="{Binding Files.TruncationNotice, Converter={StaticResource NullToVisibility}}"
-                           AutomationProperties.AutomationId="TruncationNotice" />
-                <Grid>
-                    <ListView x:Name="FileList"
-                              ItemsSource="{Binding Files.Items}"
-                              SelectedItem="{Binding Files.SelectedItem, Mode=TwoWay}"
-                              SelectionMode="Single"
-                              Background="Transparent" BorderThickness="0"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              GridViewColumnHeader.Click="OnColumnHeaderClick"
-                              AutomationProperties.Name="{x:Static core:UiText.FileListName}"
-                              AutomationProperties.AutomationId="FileList">
-                        <ListView.ItemContainerStyle>
-                            <!-- 접근성 이름: 기본값은 항목 record의 ToString이라 읽을 수 없다 -->
-                            <Style TargetType="ListViewItem" BasedOn="{StaticResource FileListItem}">
-                                <Setter Property="AutomationProperties.Name" Value="{Binding RelativePath}" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                        <ListView.View>
-                            <GridView ColumnHeaderContainerStyle="{StaticResource ColumnHeader}">
-                                <GridViewColumn x:Name="NameColumn" Width="130" Header="{x:Static core:UiText.NameColumn}">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis"
-                                                       ToolTip="{Binding FullPath}" />
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn x:Name="LastWriteColumn" Width="104" Header="{x:Static core:UiText.LastWriteTimeColumn}">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Foreground="{DynamicResource Text.Secondary}"
-                                                       Text="{Binding LastWriteTime, Converter={StaticResource LocalDateTime}}" />
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn x:Name="SizeColumn" Width="56" Header="{x:Static core:UiText.SizeColumn}">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Foreground="{DynamicResource Text.Secondary}" TextAlignment="Right"
-                                                       Text="{Binding SizeBytes, Converter={StaticResource FileSize}}" />
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                            </GridView>
-                        </ListView.View>
-                    </ListView>
-
-                    <!-- 빈 목록 안내 (03 §10.3). 목록 머리글 아래에 겹쳐 둔다 -->
-                    <StackPanel Margin="16,48,16,0" VerticalAlignment="Top" IsHitTestVisible="False"
-                                Visibility="{Binding Files.EmptyMessage, Converter={StaticResource NullToVisibility}}">
-                        <TextBlock Style="{StaticResource PlaceholderTitle}" FontSize="13" Text="{Binding Files.EmptyMessage}"
-                                   AutomationProperties.AutomationId="FileListEmptyMessage" />
-                        <TextBlock Style="{StaticResource PlaceholderHint}" Text="{Binding Files.EmptyHint}"
-                                   Visibility="{Binding Files.EmptyHint, Converter={StaticResource NullToVisibility}}" />
-                    </StackPanel>
-                </Grid>
-            </DockPanel>
-
-            <GridSplitter Grid.Column="3" Style="{StaticResource PaneSplitter}" />
-
             <!-- 뷰어 (01 F-04). WebView2(HwndHost) 위에는 WPF 요소를 겹칠 수 없어, 안내는 WebView2를 숨기고 그 자리에 보여 준다 -->
-            <Grid Grid.Column="4" Background="{DynamicResource Surface.Document}">
+            <Grid Grid.Column="2" Background="{DynamicResource Surface.Document}">
                 <controls:MarkdownView x:Name="DocumentViewer"
                                        Visibility="{Binding Document.IsDocumentVisible, Converter={StaticResource BoolToVisibility}, ConverterParameter={x:Static controls:VisibilityParameters.Hidden}}"
                                        AutomationProperties.Name="{x:Static core:UiText.DocumentViewName}"
@@ -215,14 +140,9 @@
             </Grid>
         </Grid>
 
-        <!-- 상태 표시줄 (03 §2.1): 경로 │ 인코딩 │ 줄 끝 │ 크기 │ 수정 시각 │ 안내 ··· md 파일 개수 -->
+        <!-- 상태 표시줄 (03 §2.1): 경로 │ 인코딩 │ 줄 끝 │ 크기 │ 수정 시각 │ 안내 -->
         <Border Grid.Row="2" BorderBrush="{DynamicResource Border.Subtle}" BorderThickness="0,1,0,0">
             <DockPanel LastChildFill="True">
-                <Border DockPanel.Dock="Right" Style="{StaticResource StatusSegment}"
-                        Visibility="{Binding Files.FolderPath, Converter={StaticResource NullToVisibility}}">
-                    <TextBlock Style="{StaticResource StatusText}" Text="{Binding Files.CountText}"
-                               AutomationProperties.AutomationId="FileCountText" />
-                </Border>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Style="{StaticResource StatusText}" MaxWidth="560" Text="{Binding StatusMessage}"
                                Visibility="{Binding StatusMessage, Converter={StaticResource NullToVisibility}}"

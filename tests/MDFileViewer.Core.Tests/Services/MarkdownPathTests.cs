@@ -20,19 +20,4 @@ public sealed class MarkdownPathTests
         // Assert
         Assert.Equal(expected, result);
     }
-
-    [Theory]
-    [InlineData(".git", true)]
-    [InlineData("node_modules", true)]
-    [InlineData("NODE_MODULES", true)]
-    [InlineData("git", false)]
-    [InlineData("docs", false)]
-    public void IsExcludedFolderName_MatchesExcludedNamesIgnoringCase(string name, bool expected)
-    {
-        // Act
-        var result = MarkdownPath.IsExcludedFolderName(name);
-
-        // Assert
-        Assert.Equal(expected, result);
-    }
 }

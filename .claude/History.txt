@@ -52,3 +52,34 @@ A: Phase 3 커밋 15741a3, main 병합. Phase 4는 feature/phase4-main-window에
    E2E 주의: 입력 E2E는 PC 사용 중이면 포커스를 잃어 실패(안전 장치) — 클릭 지점 가림 확인(WindowFromPoint) 추가.
    검증: 빌드 경고 0·오류 0, Core 382/382, 줄 94.4%·분기 90.2%, E2E 14/14. 05: 4-1~4-5·4-7·4-8 ✅, 4-6 🔄(웹·로컬 파일 링크 실제 열림 수동 확인 대기).
    문서 00·01·02·03·04·05 갱신.
+
+[2026-11-18 05:50]
+Q: md 목록 창을 트리에 합치기(사용자 선택 "트리 하나로 합치기"), 트리를 클릭하면 가로 스크롤이 움직이는 문제 수정.
+A: 4-9: Core TreeNodeKind.MarkdownFile·TreeEntry·TreeOrder, FolderTreeService 한 번 훑기(FileSystemEnumerable), TreeNodeViewModel(FolderNodeViewModel 이름 변경),
+   FolderTreeViewModel(ExpandToFileAsync, RefreshSelectedAsync가 다시 고를 노드를 돌려줌), MainViewModel(SelectWithoutOpening·NavigateToFileAsync), MainWindow 트리|뷰어 2열.
+   목록 창·FileListViewModel·MarkdownFileFinder·관련 모델·테스트 삭제.
+   4-10: MainWindow가 TreeViewItem RequestBringIntoView를 가로채 세로로만 스크롤, TreeViewNavigator는 ScrollViewer 위치를 직접 바꿈.
+   확인한 사실: WPF 기본 동작이 클릭 한 번에 가로 0→72%(E2E 재현). F5 다시 선택 코드를 빼면 E2E 실패(자식 컬렉션 Reset이 선택을 풂).
+   csharp-reviewer 3차(CRITICAL·HIGH 0): 고침 — F5 중 사용자 선택 유지, 겹친 이동이 숨김 폴더·UNC 공유를 두 번 넣음(테스트 먼저 실패 확인).
+   그대로 둠 — 다시 읽으면 목록에 없는 노드가 빠짐(목록과 트리를 같게, 02 §7.1), 화살표 확인이 md 아닌 파일이 많은 폴더를 끝까지 훑음(성능만·실측 문제 없음),
+   F5가 펼친 하위 폴더 안까지 다시 읽지 않음(Phase 4 리뷰 때 정한 설계), TreeOrder 직접 테스트 없음(FolderTreeService·InsertChildInOrder 테스트가 덮음).
+   E2E 샘플에 이름이 긴 폴더 2단계·md 40개 추가(SampleDocuments). 문서 00·01·02·03·04·05 갱신.
+
+[2026-11-18 05:50]
+Q: 프로그램을 기동하면 창이 너무 큼 — 두 번째 모니터 배율이 큼(200%).
+A: 측정(probe): 앱이 시스템 DPI 모드라 200% 모니터에서 물리 2880×1800, 작업 영역 2560×1504를 넘고 위쪽 -148. 매니페스트만 넣어도 2880×1620으로 넘침.
+   src/MDFileViewer/app.manifest(Per-Monitor V2·asInvoker·supportedOS), Core WindowPlacement·PixelRect·PixelSize·AppConstants.WorkAreaFillRatio(0.9),
+   App Services/WindowFitter(SourceInitialized에서 Win32로 작업 영역에 맞춤). 결과 2048,75/2304×1353, 100% 모니터는 240,126/1440×900 그대로.
+   E2E가 200% 모니터·작아진 창에서 실패 → 테스트 프로세스 Per-Monitor V2(testhost.exe는 DPI 설정 없음), 행 아이콘 거리에 배율, 누르기 전 ScrollIntoView
+   (행이 가로 스크롤 막대에 덮여 막대를 누르던 것), 맨 앞 창 진단 추가(카카오톡 알림이 맨 앞을 가져간 실패 확인).
+   리뷰 LOW 반대: GetWindowRect의 보이지 않는 테두리 — 작업 영역 경계에 닿는 창만 가운데로 옮길 뿐 무해, 100% 모니터 측정에서 그대로 둠을 확인.
+   검증: 빌드 경고 0·오류 0, Core 374/374(줄 94.8%·분기 91.7%), E2E 17/17 2회 연속. 05 4-9·4-10·4-11 ✅.
+
+[2026-11-18 05:50]
+Q: System3SWTools 참고해서 포터블·설치 파일 만드는 bat 작성. 결정: .NET 자체 포함, 포터블은 단일 exe, 참고 레포와 같은 폴더 구조.
+A: publish-portable.bat·publish-setup.bat(CP949·CRLF, 화면 문구 한국어), installer/setup.iss(ASCII, Inno Setup 6 — 이 PC에 이미 설치, 사용자 단위 설치, 한국어, AppId 고정),
+   발행 프로필 win-x64-singlefile(IncludeAllContentForSelfExtract — Resources를 실제 파일로 읽기 때문)·win-x64-folder, .gitignore(ReleasePortable/·ReleaseSetup/, pubxml 예외).
+   버전은 Directory.Build.props <Version>을 dotnet msbuild -getProperty로 읽고 숫자·점만 받음. 잠긴 발행 폴더는 rmdir 뒤 다시 확인해 멈춤.
+   확인: 포터블 158MB(이름 바꿔 다른 폴더에서 실행해 문서 표시, 첫 실행 %TEMP%\.net에 142MB·약 12초), 설치 파일 52MB(임시 폴더에 조용히 설치→실행→제거 후 남는 것 없음).
+   넣지 않음: EnableCompressionInSingleFile(참고 레포와 같게, 크기는 줄지만 시작이 느려짐 — 필요하면 사용자 결정).
+   문서 01 §7·02 §2·§15·§15.1·04 §1·§4·§5·05 11-6(🔄 — README·깨끗한 PC 확인 남음) 갱신.

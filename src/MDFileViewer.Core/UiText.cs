@@ -10,15 +10,7 @@ public static class UiText
     public const string Loading = "불러오는 중…";
     public const string FolderAccessDenied = "접근 권한이 없습니다";
 
-    public const string NoFolderSelected = "왼쪽 트리에서 폴더를 선택하세요";
-    public const string NoMarkdownFiles = "이 폴더에는 md 파일이 없습니다";
-    public const string TryIncludeSubfolders = "하위 폴더 포함을 켜 보세요";
-    public const string FolderNotFound = "폴더를 찾을 수 없습니다";
-    public const string FolderUnavailable = "폴더를 읽을 수 없습니다";
-    public const string ListTruncatedFormat = "처음 {0:N0}개만 표시합니다";
-    public const string FileCountFormat = "md 파일 {0:N0}개";
-
-    public const string NoDocument = "왼쪽 목록에서 md 파일을 선택하세요";
+    public const string NoDocument = "왼쪽 트리에서 md 파일을 선택하세요";
     public const string NoDocumentHint = "Ctrl+O 폴더 열기 · F1 Markdown 문법";
     public const string DocumentNotFound = "파일을 찾을 수 없습니다";
     public const string DocumentAccessDenied = "파일을 열 권한이 없습니다";
@@ -49,13 +41,8 @@ public static class UiText
     public const string OpenFolderToolTip = "폴더 열기 (Ctrl+O)";
     public const string AddressBoxName = "주소";
     public const string AddressBoxToolTip = "폴더 경로를 입력하고 Enter";
-    public const string IncludeSubfolders = "하위 폴더 포함";
     public const string FolderTreeName = "폴더 트리";
-    public const string FileListName = "md 파일 목록";
     public const string DocumentViewName = "문서";
-    public const string NameColumn = "이름";
-    public const string LastWriteTimeColumn = "수정한 날짜";
-    public const string SizeColumn = "크기";
 
     public const string WebViewRuntimeMissingTitle = "WebView2 Runtime 필요";
     public const string WebViewRuntimeMissingMessage = "문서를 표시하려면 Microsoft Edge WebView2 Runtime이 필요합니다.";

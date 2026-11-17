@@ -32,6 +32,12 @@
 - E2E의 화면 캡처(`FlaUI.Core.Capturing.Capture`)는 FlaUI가 의존하는 `System.Drawing.Common`의 `Bitmap`을 돌려준다. 패키지를 새로 추가하지
   않고 FlaUI가 가져오는 것을 그대로 쓴다(2026-11-17, Phase 4).
 
+**빌드 도구 (배포본에 들어가지 않음)**
+
+| 도구 | 버전 | 용도 | 상태 |
+|------|------|------|------|
+| Inno Setup | 6 | 설치 파일(`setup.exe`) 만들기 — `publish-setup.bat`이 `ISCC.exe`를 부른다 (§15.1) | ✅ 사용자 결정 (2026-11-17, System3SWTools와 같은 방식). 빌드 PC에 이미 설치돼 있었다 |
+
 **도입하지 않는 것**
 
 - 검증 라이브러리(FluentAssertions 등): xUnit 기본 `Assert`로 충분하다. FluentAssertions는 v8부터 라이선스 조건이
@@ -63,26 +69,27 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 │ Views      MainWindow, MessageDialog, HelpWindow(P10), EditorView(P7)    │
 │ Controls   MarkdownView(WebView2 래퍼), TreeViewNavigator, 값 변환기       │
 │ 구현체      DialogService, ShellLauncher, WebViewHost, ThemeService(P6)   │
+│ 창 배치     WindowFitter(시작 창을 모니터 작업 영역에 맞춤), app.manifest   │
 │ Themes     Light.xaml(색 토큰), Controls.xaml(공통 스타일), IconGlyphs     │
 │ 구성 루트   App.xaml.cs — 인수 해석, 서비스 생성(수동 주입), 전역 예외 처리   │
 │            AppPaths — 로그·WebView2 데이터·Resources 폴더 위치             │
 └───────────────────────────────▲─────────────────────────────────────────┘
                                 │ 참조
 ┌─ MDFileViewer.Core ───────────┴─────────────────────────────────────────┐
-│ ViewModels   MainViewModel, FolderTreeViewModel(FolderNodeViewModel),     │
-│              FileListViewModel, DocumentViewModel, ZoomViewModel          │
-│ Services     FolderTreeService, MarkdownFileFinder, TextFileCodec,        │
+│ ViewModels   MainViewModel, FolderTreeViewModel(TreeNodeViewModel),       │
+│              DocumentViewModel, ZoomViewModel                             │
+│ Services     FolderTreeService, TextFileCodec, MarkdownPath,              │
 │              MarkdownRenderer, DocumentUrlMapper, ViewerScriptBuilder,    │
 │              LinkClassifier, FileMetadataReader,                          │
 │              JsonSettingsStore, ShellIntegrationService,                  │
-│              CommandLineParser, FileAppLogger                             │
+│              CommandLineParser, FileAppLogger, WindowPlacement            │
 │ Mvvm         ObservableObject, RelayCommand(<T>), AsyncRelayCommand,      │
 │              BulkObservableCollection                                     │
 │ 문구·표시     UiText(화면 문구 상수), DisplayFormat(크기·시각·인코딩 표기)    │
-│ Models       StartupRequest, MarkdownFileItem, TextFileFormat,            │
+│ Models       StartupRequest, TreeEntry, FolderListing, TextFileFormat,    │
 │              LinkTarget, EffectiveTheme, AppSettings, ThemeMode,          │
-│              ShellRegistrationStatus                                      │
-│ 인터페이스    IFolderTreeService, IMarkdownFileFinder, ITextFileCodec,     │
+│              ShellRegistrationStatus, PixelRect, PixelSize                │
+│ 인터페이스    IFolderTreeService, ITextFileCodec,                          │
 │              IDialogService, IShellLauncher, IViewerHost,                 │
 │              IRegistryAccess, ISettingsStore, IAppLogger                  │
 │ Resources    viewer.html, viewer.css, help.md (출력 폴더로 복사)          │
@@ -125,25 +132,56 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 }
 ```
 
-- Phase 2에서 `IFolderTreeService`, `IMarkdownFileFinder`, `ITextFileCodec`, `IAppLogger`를, Phase 4에서 `IViewerHost`,
+- Phase 2에서 `IFolderTreeService`, `ITextFileCodec`, `IAppLogger`를, Phase 4에서 `IViewerHost`,
   `IDialogService`, `IShellLauncher`를 만들었다. 나머지는 해당 Phase에서 위 초안을 다듬어 만든다.
+  Phase 2의 `IMarkdownFileFinder`(목록 창의 직속·재귀 검색)는 2026-11-17 트리 통합으로 목록 창과 함께 지웠다(§7.2).
+- `IFolderTreeService`(Phase 4 트리 통합 뒤): `GetDrivesAsync`, `GetChildrenAsync(folder)` — 하위 폴더와 md 파일을 `FolderListing`(`TreeEntry` 목록 +
+  `FolderAccess`)으로, `HasChildrenAsync(folder)` — 펼침 화살표용으로 보이는 하위 폴더나 md 파일이 있는지.
 - ViewModel이 보여 주는 문구는 `UiText` 상수로 두고 테스트도 같은 상수로 비교한다. App의 XAML도 `x:Static`으로 참조한다.
 - Core 테스트 프로젝트는 `InternalsVisibleTo`로 ViewModel의 내부 대기 지점(`PendingWork`, `ExpanderCheckCompleted` 등)을 쓴다.
 - 서비스는 실패를 예외 대신 결과 값으로 알린다: 폴더 읽기는 `FolderAccess`(`Ok`·`NotFound`·`AccessDenied`·`Unavailable`),
   파일 읽기는 `TextFileContent.HasDecodingErrors`. 예외로 나가는 것은 취소(`OperationCanceledException`)와 저장 실패뿐이다.
+
+### 4.2 창 배치와 DPI (2026-11-17)
+
+- **모니터별 DPI:** `src/MDFileViewer/app.manifest`에 `dpiAwareness` `PerMonitorV2, PerMonitor`(OS가 아는 첫 값을 쓴다)와 구형 OS용
+  `dpiAware` `true/pm`을 둔다(01 §7). 매니페스트를 직접 넣으면 SDK 기본 매니페스트를 대신하므로 실행 수준 `asInvoker`도 함께 적는다 —
+  실행 수준이 없으면 Windows가 파일·레지스트리 가상화를 켠다. 지원 OS(Windows 10·11 `supportedOS`)도 적는다 — 없으면 Windows 8 호환으로 본다.
+  매니페스트가 없을 때 앱은 시스템 DPI 모드(`GetProcessDpiAwareness` = 1)였고,
+  배율이 다른 모니터에서는 창을 비트맵으로 늘려 흐리게 그렸다.
+- **시작 창 맞춤:** WPF `CenterScreen`은 마우스 커서가 있는 모니터 가운데에 창을 둔다. 배율이 큰 모니터에서는 기본 크기(1440×900 DIP)가
+  작업 영역을 넘는다. 측정(2026-11-17, 2560×1600·200% 모니터, 작업 영역 2560×1504):
+  - 매니페스트 없음 → 물리 2880×1800, 위쪽이 화면 밖(-148).
+  - Per-Monitor V2만 → 물리 2880×1620, 가운데가 아니고 오른쪽·아래로 넘침. 높이 1620은 Windows가 창 최대 크기를 가상 화면 높이(1600)에
+    테두리를 더한 값으로 막은 것으로 보인다.
+  그래서 `App`이 `Window.SourceInitialized`에서(창 핸들이 생기고 WPF가 시작 위치를 잡은 뒤, 창이 보이기 전) `WindowFitter.FitToWorkArea`를
+  부른다. 이 순서는 측정으로 확인했다 — 맞춘 크기·위치가 창을 띄운 뒤에도 그대로였다.
+  - `WindowFitter`(App)는 Win32로 창 사각형(`GetWindowRect`), 창이 놓인 모니터의 작업 영역(`MonitorFromWindow` + `GetMonitorInfo`),
+    창 DPI(`GetDpiForWindow`)를 읽고, 계산 결과가 다르면 `SetWindowPos`(Z 순서·활성 창 유지)로 옮긴다. 앱이 Per-Monitor V2라 이 값은 모두
+    물리 픽셀이다. WPF의 `Left`·`Width`는 DIP라 배율이 다른 모니터에 걸칠 때 어느 배율로 바뀌는지 따져야 하므로 쓰지 않는다.
+  - 계산은 Core `WindowPlacement.FitToWorkArea(창, 최소 크기, 작업 영역)`(물리 픽셀): 창이 작업 영역 안에 다 있으면 그대로. 아니면 넘치는
+    쪽(너비·높이 각각)을 작업 영역 × `WorkAreaFillRatio`(0.9)로 줄이고(최소 크기 아래로는 줄이지 않되 작업 영역보다 크게는 두지 않음),
+    작업 영역 가운데에 둔다. 최소 크기(900×560 DIP)는 창 DPI로 물리 픽셀로 바꿔 넘긴다.
+  - Win32 호출이 실패하면 창을 그대로 두고 로그에 경고만 남긴다(창은 쓸 수 있다).
+  - 결과(같은 날 측정): 200% 모니터에서 2048,75 / 2304×1353(작업 영역 안), 100% 모니터에서는 240,126 / 1440×900 그대로.
+- 저장한 창 위치·크기 복원(F-14, Phase 10)도 같은 `WindowPlacement`로 모니터 밖 위치를 보정한다.
+- 사용자가 창을 배율이 다른 모니터로 끌어 옮기면 Windows가 DIP 크기를 유지해 물리 크기가 바뀐다(100% → 200%에서 2880×1620).
+  시작 맞춤은 시작할 때만 한다 — 시스템 DPI 모드였을 때도 같았다.
 
 ## 5. 주요 흐름
 
 1. **시작:** `App.OnStartup` → 로그(`FileAppLogger` + 오래된 로그 정리) → 전역 예외 처리기 등록
    → `CommandLineParser.Parse`(UI 스레드 밖) → (`--register`/`--unregister`면 처리 후 종료) → WebView2 Runtime 확인
    → `SettingsStore.Load`(P8) → 테마 적용(P6) → `MainWindow` 표시 → `WebViewHost.InitializeAsync`와 `MainViewModel.InitializeAsync(request)`를
-   함께 진행 → `FolderTreeViewModel.RevealAsync(folder)` → `FileListViewModel.LoadAsync` → (파일 인수가 있으면) `DocumentViewModel.OpenAsync`
+   함께 진행 → 폴더 인수: `FolderTreeViewModel.RevealAsync(folder)`(그 폴더까지 펼쳐 선택하고 그 폴더도 펼침) / 파일 인수:
+   `FolderTreeViewModel.ExpandToFileAsync(file)`(파일이 있는 폴더까지 펼쳐 파일 노드를 찾음) → 파일 노드 선택 → `DocumentViewModel.OpenAsync`
    (뷰어 준비가 끝날 때까지 기다린다).
    - Phase 4 시점: `--register`/`--unregister`는 Phase 9 전까지 아무것도 바꾸지 않고 로그를 남긴 뒤 종료 코드 1로 끝낸다.
    - 창은 `App.xaml`의 `StartupUri` 없이 구성 루트가 만든다. 메인 창을 띄우기 전에는 `ShutdownMode.OnExplicitShutdown`이라
      오류 대화상자를 닫아도 앱이 끝나지 않고, 창을 띄운 뒤 `OnMainWindowClose`로 바꾼다.
-2. **파일 열기:** 목록 선택 변경 → 미저장 확인(F-10) → `TextFileCodec.ReadAsync` → `MarkdownRenderer.RenderBody`
-   → `IViewerHost.ShowDocumentAsync(bodyHtml, documentPath)`.
+2. **파일 열기:** 트리에서 md 파일 노드 선택 → 미저장 확인(F-10) → `TextFileCodec.ReadAsync` → `MarkdownRenderer.RenderBody`
+   → `IViewerHost.ShowDocumentAsync(bodyHtml, documentPath)`. 시작 인수·주소 표시줄·링크처럼 앱이 파일을 열 때는 `MainViewModel`이
+   파일 노드를 "열지 않고 선택"한 뒤 앵커와 함께 직접 연다 — 선택 변경 처리기가 한 번 더 열지 않게 한다.
 3. **편집 미리보기:** 편집기 텍스트 변경 → 300ms 디바운스(이전 요청 취소) → `RenderBody` → `IViewerHost.UpdateBodyAsync`.
 4. **링크 클릭:** WebView2 `NavigationStarting`/`NewWindowRequested` → 탐색 취소 → `LinkClassifier.Classify`
    → `MainViewModel.HandleLinkAsync(LinkTarget)` (01 F-05 표대로 처리).
@@ -319,26 +357,41 @@ base-uri https://docroot.example;
   그 드라이브만 빼고(로그 경고) 나머지는 보여 준다. 기다리기를 그만둔 확인 작업이 나중에 실패해도 관찰되지 않은 예외로 새지 않게 한다.
 - 드라이브 확인 동작은 `DriveProbe`(함수 묶음)로 받아, 응답 지연·실패를 테스트에서 재현한다(`DriveInfo`는 sealed).
 - 이름: 볼륨 레이블이 있으면 `레이블 (C:)`, 없으면 종류별 기본 이름(`로컬 디스크 (C:)`, `이동식 디스크 (E:)`, `네트워크 드라이브 (Z:)`).
-- 하위 폴더: `DirectoryInfo.EnumerateDirectories` + `EnumerationOptions { IgnoreInaccessible = false, AttributesToSkip = Hidden | System }`.
+- 자식 항목(트리 통합 뒤): `FileSystemEnumerable<TreeEntry>`로 폴더를 **한 번만** 훑어 하위 폴더와 md 파일(`MarkdownPath.HasMarkdownExtension`)을
+  함께 거둔다. `EnumerationOptions { IgnoreInaccessible = false, AttributesToSkip = Hidden | System }`.
   비재귀라 `IgnoreInaccessible`은 읽으려는 폴더 자신에만 영향을 주므로, 꺼 두어야 그 폴더의 접근 거부를 예외로 받아 알릴 수 있다.
+  `FileInfo`·`DirectoryInfo`를 만들지 않아 하위 항목이 많은 폴더(WinSxS 3만 개)에서도 할당이 적다.
 - 실패 결과: 폴더 없음 → `NotFound`, 접근 거부 → `AccessDenied`, 장치 미준비·파일 경로·빈 경로 등 → `Unavailable`.
-  펼침 화살표용 `HasSubfoldersAsync`는 읽을 수 없으면 `false`를 돌려주고, 원인은 펼칠 때 `GetSubfoldersAsync`가 알린다.
-- 펼침 화살표: 자식 목록을 먼저 보여 준 뒤, 자식마다 하위 폴더 유무를 백그라운드에서 확인해 화살표를 갱신한다.
-- 다시 읽기(`F5`, Phase 4): 이름·경로·종류가 같고 **펼쳐 둔** 기존 자식 노드는 그대로 다시 쓴다 — 새로 만들면 펼쳐 둔 하위 트리가 접힌다.
-  접힌 자식은 새로 만든다: 다시 펼칠 때 하위 폴더를 새로 읽고, 그사이 생긴 하위 폴더에 맞춰 펼침 화살표도 다시 확인한다(접힌 노드까지
-  다시 쓰면 화살표가 지워진 노드가 화살표를 되찾지 못했다 — 2026-11-17 리뷰 지적). 대소문자만 바뀐 이름은 새 노드로 만들어 바뀐 이름을 보여 준다. 노드마다 읽기 번호를 두어, 펼침과 `F5`가 겹쳐 늦게 끝난 이전 읽기의
+  펼침 화살표용 `HasChildrenAsync`는 읽을 수 없으면 `false`를 돌려주고, 원인은 펼칠 때 `GetChildrenAsync`가 알린다.
+- 펼침 화살표: 자식 목록을 먼저 보여 준 뒤, 자식 폴더마다 "보이는 하위 폴더나 md 파일이 있는가"를 백그라운드에서 확인해 화살표를 갱신한다
+  (처음 하나를 찾으면 멈춘다). md 파일 노드는 자식이 없어 확인하지 않는다.
+- 다시 읽기(`F5`, Phase 4): 이름·경로·종류가 같고 **펼쳐 둔** 기존 폴더 노드, 그리고 같은 md 파일 노드는 그대로 다시 쓴다 — 새로 만들면 펼쳐 둔
+  하위 트리가 접히고 선택한 파일 노드가 바뀐다. 접힌 폴더 노드는 새로 만든다: 다시 펼칠 때 하위 항목을 새로 읽고, 그사이 생긴 항목에 맞춰
+  펼침 화살표도 다시 확인한다(접힌 노드까지 다시 쓰면 화살표가 지워진 노드가 화살표를 되찾지 못했다 — 2026-11-17 리뷰 지적). 대소문자만 바뀐 이름은
+  새 노드로 만들어 바뀐 이름을 보여 준다. 노드마다 읽기 번호를 두어, 펼침과 `F5`가 겹쳐 늦게 끝난 이전 읽기의
   결과(성공·실패 모두)는 버리고, 이전 읽기의 화살표 확인도 멈춘다(하위 폴더 3만 개 폴더에서 같은 확인을 두 번 하지 않게).
-- 정렬: `StringComparer.CurrentCultureIgnoreCase` (한글 파일 이름 고려). 자연 정렬은 P2.
+- md 파일을 고른 채 `F5`: 그 파일이 있는 폴더의 자식을 다시 읽고, 같은 파일 노드를 다시 선택한다(없어졌으면 폴더를 선택한다).
+  다시 고르는 일은 `MainViewModel`이 "열지 않고 선택"으로 한다 — 문서는 `DocumentViewModel.ReloadAsync`가 한 번만 다시 읽는다.
+  자식 목록이 바뀌어 컬렉션을 통째로 바꾸면(Reset 알림) WPF가 그 폴더 안 항목의 선택을 풀기 때문에 다시 골라야 한다 — 다시 고르는 코드를 빼면
+  E2E `F5_WithFileSelectedAfterNewFileAppears_KeepsThatFileSelected`가 실패함을 확인했다(2026-11-17). 자식 목록이 그대로면 컬렉션을 바꾸지 않는다.
+  다시 읽는 사이 사용자가 다른 노드를 골랐으면 다시 고르지 않는다(`RefreshSelectedAsync`가 `null`). 선택이 원래 노드나 다시 읽은 폴더에 있으면
+  화면 트리가 옮긴 것으로 보고 다시 고른다 — 사용자가 바로 그 폴더를 고른 경우와는 구별하지 못한다(2026-11-17 리뷰 지적).
+- 다시 읽으면 목록(`GetChildrenAsync`)에 없는 노드는 빠진다 — 시작 경로·링크로 넣은 숨김 폴더·숨김 파일, "내 PC"를 다시 읽을 때 드라이브 목록에 없는
+  UNC 공유. 열린 문서는 그대로 두고, 그 경로로 다시 가면 노드를 다시 넣는다(2026-11-17 리뷰 지적에 대한 결정 — 목록과 트리를 같게 둔다).
+- 자동 스크롤(App, 03 §2.1): WPF는 트리 항목이 클릭·키보드로 포커스를 받으면 `RequestBringIntoView`로 항목 전체(긴 이름 끝까지)를 보이게
+  가로로 민다 — E2E로 한 번 클릭에 가로 스크롤 0 → 약 72%를 재현했다(2026-11-17). 메인 창이 이 이벤트를 가로채 머리 행이 위·아래로 벗어났을 때만
+  세로로 스크롤한다. 앱이 선택을 옮길 때는 `TreeViewNavigator`가 `ScrollViewer` 위치를 직접 바꾼다(라우트 이벤트를 막았으므로 `BringIntoView`를 쓰지 않는다).
+- 정렬: 하위 폴더 먼저, 그다음 md 파일. 각각 `StringComparer.CurrentCultureIgnoreCase` (한글 파일 이름 고려). 자연 정렬은 P2.
+- 목록에 없지만 실제로 있는 항목(숨김 폴더, 숨김 md 파일, 트리를 읽은 뒤 생긴 파일)을 시작 경로·링크로 열면 노드를 만들어 같은 정렬 자리에 넣는다.
+  폴더·UNC 공유는 있는지 읽어 본 뒤 넣으므로, 읽는 사이 겹친 다른 이동(시작 인수와 링크 등)이 같은 노드를 먼저 넣었으면 그 노드를 쓴다(중복 방지).
+  파일은 호출자(명령줄 해석·링크 분류)가 이미 있는지 확인했으므로 다시 확인하지 않는다.
 
-### 7.2 md 목록
+### 7.2 md 목록 (삭제됨)
 
-- 직속: `Directory.EnumerateFiles` + 확장자 필터.
-- 재귀: `FileSystemEnumerable<T>`의 `ShouldRecursePredicate`로 제외 폴더(숨김·시스템·재분석 지점·`.git`·`node_modules`)를 건너뛰고,
-  `ShouldIncludePredicate`로 확장자를 거른다. 재분석 지점(정션·심볼릭 링크)을 건너뛰어 순환을 막는다.
-- 최대 개수에 닿으면 멈추고 `IsTruncated = true`를 돌려준다. 담기는 것은 탐색 순서상 처음 N개이고(이름순 상위 N개가 아님),
-  화면은 "처음 5,000개만 표시합니다"로 알린다. 취소는 판별 함수 안에서 항목마다 확인해, md 파일이 없는 큰 폴더를 훑는 중에도 멈춘다.
-- 재귀 검색은 하위 폴더의 접근 거부를 건너뛰므로(`IgnoreInaccessible = true`), 선택한 폴더 자체의 접근 가능 여부는 먼저 따로 확인해
-  `FolderAccess`로 알린다. 쓸 수 없는 경로·파일 경로·검색 도중 폴더 삭제도 예외 대신 `FolderAccess`로 알린다.
+- 2026-11-17 사용자 결정으로 목록 창을 트리에 합치면서 `IMarkdownFileFinder`·`MarkdownFileFinder`(직속·재귀 검색, 제외 폴더, 최대 5,000개),
+  `FileListViewModel`, 관련 모델·상수·테스트를 지웠다. 트리의 md 파일은 §7.1의 `GetChildrenAsync`가 함께 읽는다.
+- 하위 폴더 전체 검색(후속 후보 "전체 검색", 01 §8)을 만들 때는 Phase 4 커밋 `f42e1df`의 `MarkdownFileFinder`(재분석 지점 건너뛰기, 판별 함수 안 취소
+  확인, 선택 폴더 접근 사전 확인)에서 다시 가져온다.
 
 ### 7.3 텍스트 인코딩과 줄 끝
 
@@ -417,9 +470,8 @@ MDFileViewer.exe --unregister
 {
   "version": 1,
   "window": { "left": 120, "top": 80, "width": 1440, "height": 900, "isMaximized": false },
-  "layout": { "treePanelWidth": 260, "listPanelWidth": 300, "editorSplitRatio": 0.5 },
+  "layout": { "treePanelWidth": 320, "editorSplitRatio": 0.5 },
   "theme": "System",
-  "includeSubfolders": false,
   "lastFolder": "D:\\Docs",
   "editor": { "showLineNumbers": true, "wordWrap": true }
 }
@@ -454,12 +506,10 @@ MDFileViewer.exe --unregister
 | `ZoomSteps` | 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0 | 줌 단계 (F-06) |
 | `DefaultZoomFactor` | 1.0 | 시작 배율 |
 | `PreviewDebounceMilliseconds` | 300 | 미리보기 갱신 대기 (F-09) |
-| `MaxRecursiveResults` | 5,000 | 재귀 목록 최대 개수 (F-03) |
 | `DriveReadyTimeout` | 3초 | 드라이브 준비 확인 최대 대기 (§7.1) |
 | `LargeFileWarningBytes` | 5 × 1024 × 1024 | 큰 파일 경고 기준 (F-04) |
 | `StatusMessageDuration` | 3초 (`TimeSpan`) | 상태 표시줄 일시 메시지 표시 시간 |
 | `MarkdownExtensions` | `.md`, `.markdown` | 대상 확장자 |
-| `ExcludedFolderNames` | `.git`, `node_modules` | 재귀 제외 폴더 |
 | `EditorTabSize` | 4 | 탭 키 공백 수 |
 | `DefaultEditorSplitRatio` | 0.5 | 편집기:미리보기 기본 비율 |
 | `AppAssetsHostName` | `appassets.example` | 앱 리소스 가상 호스트 |
@@ -470,6 +520,7 @@ MDFileViewer.exe --unregister
 | `ShellVerbKeyName` | `MDFileViewer` | 레지스트리 verb 키 이름 |
 | `ShellMenuText` | `MDFileViewer로 열기` | 우클릭 메뉴 문구 |
 | `LogRetentionDays` | 7 | 로그 파일 보관 일수 |
+| `WorkAreaFillRatio` | 0.9 | 시작 창이 모니터 작업 영역에 들어가지 않을 때 줄이는 비율 (§4.2, 03 §2.1) |
 
 WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로 둔다.
 
@@ -485,7 +536,7 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 | 접근 거부, 파일 없음, 파일 잠김 | 사용자 문구로 알리고 계속 쓸 수 있게 한다. 로그에 경로와 예외 종류를 남긴다. |
 | WebView2 Runtime 없음 | 시작할 때 `CoreWebView2Environment.GetAvailableBrowserVersionString()`으로 확인한다(빈 값이거나 `WebView2RuntimeNotFoundException`). 없으면 03 §10.2 대화상자("다운로드 페이지 열기"/"닫기")를 보여 주고 종료 코드 1로 끝낸다. 다운로드 페이지는 `https://developer.microsoft.com/microsoft-edge/webview2/`(2026-11-17 응답 확인). 이 경로는 Runtime이 설치된 PC에서 재현할 수 없어 Phase 11-6(깨끗한 PC)에서 확인한다. |
 | WebView2 프로세스 실패 | `CoreWebView2.ProcessFailed`에서 `BrowserProcessExited`·`RenderProcessExited`면 `MarkdownView`의 WebView2 컨트롤을 새로 만들고(환경도 새로 만든다) 마지막 문서를 다시 표시한다. 다시 보여 줄 문서는 §6.2의 잠금 안에서 고르므로, 되살리는 사이 사용자가 연 새 문서가 먼저 표시됐으면 그 문서를 보여 준다(옛 문서가 새 문서를 덮지 않음). 되살리는 중에 새 컨트롤도 끝나면 지금 복구를 마친 뒤 한 번 더 되살린다. 렌더러를 죽이는 문서처럼 다시 보여 줄 때마다 끝나는 경우를 막으려고, 사용자가 새 문서를 열기 전까지 `MaxRecoveriesWithoutNewDocument`(3)번까지만 되살리고, 넘으면 오류 로그를 남기고 이후 표시 요청을 바로 "표시하지 못함"으로 끝낸다(앱을 다시 시작해야 한다). `RenderProcessUnresponsive`(몇 초마다 다시 옴)와 그 밖의 보조 프로세스 실패는 로그만 남긴다(SDK 문서: 스스로 복구됨). 브라우저 프로세스 강제 종료 → 복구·재표시를 E2E로 자동 확인한다(§14.3). |
-| 새 요청에 밀린 요청의 늦은 실패 | 문서 열기·새로고침·md 목록 검색·트리 읽기는 새 요청이 오면 이전 요청을 취소하지만, 응답 없는 네트워크 드라이브처럼 취소에 반응하지 않는 읽기는 나중에 실패로 끝날 수 있다. 이런 실패는 화면(새 요청의 결과)을 바꾸지 않는다. 로그는 입출력·권한 예외면 정보로, 그 밖의 예외(결함일 수 있음)는 예외째 경고로 남긴다. 반대로 화면 표시까지 끝난 뒤 밀린 문서는 화면에 남아 있으므로 경로·상태 표시줄 값을 그 문서로 맞추되, 새 요청이 아직 읽는 중이면 "읽는 중" 상태는 그대로 둔다(앵커 이동은 하지 않음). 큰 파일 확인에서 "취소"하면 화면에 실제로 남아 있는 문서의 상태로 돌아간다(읽는 중이던 요청을 밀어낸 뒤라도 "읽는 중"에 머물지 않음). |
+| 새 요청에 밀린 요청의 늦은 실패 | 문서 열기·새로고침·트리 읽기는 새 요청이 오면 이전 요청을 취소하지만, 응답 없는 네트워크 드라이브처럼 취소에 반응하지 않는 읽기는 나중에 실패로 끝날 수 있다. 이런 실패는 화면(새 요청의 결과)을 바꾸지 않는다. 로그는 입출력·권한 예외면 정보로, 그 밖의 예외(결함일 수 있음)는 예외째 경고로 남긴다. 반대로 화면 표시까지 끝난 뒤 밀린 문서는 화면에 남아 있으므로 경로·상태 표시줄 값을 그 문서로 맞추되, 새 요청이 아직 읽는 중이면 "읽는 중" 상태는 그대로 둔다(앵커 이동은 하지 않음). 큰 파일 확인에서 "취소"하면 화면에 실제로 남아 있는 문서의 상태로 돌아간다(읽는 중이던 요청을 밀어낸 뒤라도 "읽는 중"에 머물지 않음). |
 | 예상하지 못한 예외 | UI 스레드(`DispatcherUnhandledException`): 로그 → `Handled = true` → 오류 대화상자, 앱은 계속 쓴다. 작업(`TaskScheduler.UnobservedTaskException`): 로그 → `SetObserved` → UI 스레드에서 대화상자. 프로세스(`AppDomain.UnhandledException`): 로그 → 시스템 메시지 상자(프로세스는 끝난다). 대화상자는 한 번에 하나만 띄운다. 주의: `Dispatcher.InvokeAsync`로 넘긴 작업의 예외는 `DispatcherUnhandledException`이 아니라 그 작업에 담긴다(2026-11-17 확인) — 전역 처리기로 보내야 하면 `BeginInvoke`를 쓴다. |
 | 로그 | `%LOCALAPPDATA%\MDFileViewer\logs\yyyyMMdd.log`. 시작할 때 "오늘 − 7일"보다 이전 날짜 파일을 지운다(오늘 포함 8일치 보관). 잠긴 파일은 건너뛰고 다음 시작 때 다시 시도한다. 여러 창이 같은 파일에 쓰므로 공유 쓰기로 연다. 기록 실패는 앱을 멈추지 않는다. 문서 내용은 로그에 쓰지 않는다. |
 
@@ -507,9 +558,10 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 | `LinkClassifier` | 외부/현재 문서 앵커/다른 md(앵커 포함)/로컬 파일·폴더/없는 파일/차단 스킴·내부 호스트/URL 디코딩 |
 | `TextFileCodec` | BOM 판별, UTF-8 엄격 디코딩 실패 → CP949, 손상 바이트 → U+FFFD + `HasDecodingErrors`, 나타낼 수 없는 문자 → 예외, 줄 끝 판별(혼합 포함), 저장 시 형식 보존 |
 | `DocumentViewModel` | (Phase 4) 열기·상태 표시줄 값, 앵커, 큰 파일 확인/취소(읽는 중 요청을 밀어낸 뒤 취소해도 "읽는 중"에 머물지 않음), 읽기 실패 종류별 문구, 표시 실패, 새 요청이 이전 요청 취소, 밀려난 요청의 늦은 실패가 새 문서를 덮지 않음(열기·새로고침, 결함성 예외는 경고 로그), 표시 뒤 밀린 문서를 기록하되 새 요청의 "읽는 중" 유지, 손상 안내, 새로고침은 본문만 교체. (Phase 7) 변경 표시, 저장 성공/실패, 미저장 확인의 저장/저장 안 함/취소 분기, 읽기 전용 |
-| `FileListViewModel` | 직속/재귀 토글, 정렬, 빈 목록 안내, 폴더 변경 시 이전 검색 취소, 밀려난 검색의 늦은 실패가 새 목록을 덮지 않음 |
-| `FolderTreeViewModel` | "내 PC"·드라이브, 지연 로딩·자리 표시, 화살표 정리, 접근 거부, 시작 폴더 펼침(숨김 폴더·UNC 공유 추가), 선택, 보이는 행 번호, 새로고침(펼친 노드 유지, 접힌 노드는 새로 만들어 화살표 재확인, 대소문자만 바뀐 이름, 늦게 끝난 이전 읽기 무시, 밀려난 화살표 확인 중단), 자식 교체는 컬렉션 변경 알림 한 번 |
-| `MainViewModel` | 시작 인수(없음·폴더·파일·없는 경로), 폴더·파일 선택 흐름, 링크 종류별 처리(외부·앵커·다른 md·로컬 파일·없는 파일·차단), 상태 메시지 시간, 폴더 열기, 새로고침, 주소 이동 |
+| `FolderTreeService` | 드라이브 이름·시간 제한·실패 격리, 자식 항목(하위 폴더 먼저·md 파일 다음, 각각 이름순, 숨김·시스템·md 아닌 파일 제외), 실패 종류, 펼침 화살표 확인(하위 폴더나 md 파일) |
+| `FolderTreeViewModel` | "내 PC"·드라이브, 지연 로딩·자리 표시, 폴더·md 파일 자식, 화살표 정리(md 파일만 있는 폴더는 화살표 유지), md 파일 노드는 펼치지 않음, 접근 거부, 시작 폴더 펼침(대상 폴더도 펼침, 숨김 폴더·UNC 공유 추가), 파일까지 펼치기(목록에 없는 파일 추가, 선택하지 않음), 선택, 보이는 행 번호, 새로고침(펼친 노드·파일 노드 유지, 접힌 노드는 새로 만들어 화살표 재확인, 대소문자만 바뀐 이름, 늦게 끝난 이전 읽기 무시, 밀려난 화살표 확인 중단, 파일을 고른 채 새로고침하면 그 폴더를 다시 읽고 같은 파일·없으면 폴더를 돌려줌, 다시 읽는 사이 사용자가 고른 선택 유지·화면 트리가 폴더로 옮긴 선택은 다시 고름), 겹친 이동이 목록에 없는 폴더·UNC 공유를 두 번 넣지 않음, 자식 교체는 컬렉션 변경 알림 한 번 |
+| `MainViewModel` | 시작 인수(없음·폴더·파일·없는 경로), 트리 선택 흐름(md 파일은 열고, 폴더는 주소·제목만 바꾸고 문서 유지), 링크 종류별 처리(외부·앵커·다른 md — 트리 선택 이동·한 번만 열기, 로컬 파일·없는 파일·차단), 상태 메시지 시간, 폴더 열기, 새로고침(파일 선택 유지, 문서 한 번만 다시 읽기), 주소 이동(폴더·파일) |
+| `WindowPlacement` | 작업 영역 안이면 그대로, 둘 다 넘치면 90%로 줄여 가운데(측정한 200% 모니터 값), 한쪽만 넘침, 90%가 최소 크기보다 작으면 최소 크기, 작업 영역이 최소 크기보다 작으면 작업 영역, 크기는 맞지만 밖으로 나감, 음수 좌표 모니터 |
 | `ExternalLaunchPolicy` | 허용 스킴(`http`·`https`·`mailto`)과 거부 스킴(`file`·UNC·`javascript`·`ms-settings` 등), 상대 URI 거부, 탐색기 인수(공백·UNC 경로), 상대 경로·드라이브 상대 경로·따옴표 경로 거부 |
 | `DisplayFormat` | 크기(B·KB·MB, 반올림 후 단위 결정 — 1,048,575 B는 `1 MB`), 시간대 변환, 인코딩·줄 끝 표기 |
 | Mvvm (`BulkObservableCollection`, `RelayCommand<T>`) | 한 번의 Reset 알림, 재진입 방지, 매개변수 형 변환·실행 가능 여부 |
@@ -518,7 +570,7 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 
 ### 14.2 통합 테스트 (Core, 실제 자원)
 
-- 파일 시스템: 임시 폴더에 폴더·md·숨김 폴더·`.git`·`node_modules`·정션을 만들어 `FolderTreeService`, `MarkdownFileFinder`를 확인한다.
+- 파일 시스템: 임시 폴더에 폴더·md·md 아닌 파일·숨김·시스템 폴더와 파일을 만들어 `FolderTreeService`를 확인한다.
 - 접근 거부: 현재 사용자에게 폴더 목록 읽기를 거부하는 ACL을 잠시 걸어 재현한다(`FolderAccessDenial`). Git Bash에서 띄운 프로세스는
   관리자 토큰의 `SeBackupPrivilege`가 켜진 채 실행되어 ACL 검사를 건너뛰므로(2026-11-17 확인, PowerShell에서는 꺼져 있음), 테스트가
   먼저 자기 프로세스의 백업·복원 권한을 끈다(`ProcessPrivileges`). 탐색기에서 실행한 앱은 이 권한이 꺼져 있다.
@@ -549,6 +601,14 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
   입력 없이 할 수 있는 조작은 UIA 패턴(`SelectionItem.Select`, `Toggle`, `Invoke`, `Value.SetValue`)으로 한다.
 - 요소 찾기(Phase 4): 대화상자는 메인 창의 직속 자식 창(`OwnedWindows`)에서 찾는다 — FlaUI `ModalWindows`는 자손 전체를 뒤져 문서(WebView2)
   접근성 트리까지 내려가다 시간 초과가 났다. 문서 안 링크는 `Hyperlink` 형식과 이름으로 찾는다 — 이름만으로 찾으면 같은 글자의 목록 항목(`<li>`, 문서 폭 전체)이 잡힌다.
+- 좌표와 배율(2026-11-18): 앱이 Per-Monitor V2라(§4.2) UIA 좌표는 물리 픽셀이다. `testhost.exe`는 매니페스트에 DPI 설정이 없어 DPI를 모르는
+  프로세스로 뜨므로, `AppSession`이 첫 세션 전에 테스트 프로세스를 Per-Monitor V2로 바꾼다(실패하면 입력을 보내지 않고 멈춤). DIP로 정한 거리
+  (트리 행 아이콘까지 28)는 `AppSession.DpiScale`을 곱한다 — 200% 모니터에서 그대로 쓰면 md 파일 행의 빈 화살표 칸을 눌러 선택되지 않았다
+  (배율을 빼면 다시 실패함을 확인). 창이 작업 영역에 맞춰 작아지면 행이 트리 아래 끝에서 가로 스크롤 막대에 덮일 수 있어, 행을 누르기 전에
+  UIA `ScrollItem.ScrollIntoView`로 화면 안에 들인다(앱이 세로로만 처리하므로 가로 스크롤 확인에 영향이 없다). 맨 앞을 빼앗기면 실패 메시지에
+  맨 앞 창의 프로세스를 남긴다 — 메신저 알림(카카오톡)이 창을 가져가 실패한 적이 있다.
+- 트리 가로 스크롤 E2E(2026-11-17)는 샘플에 이름이 아주 긴 폴더 두 단계와 md 파일 40개를 만들어 가로·세로 스크롤이 생기게 한다. 시작할 때 앱이
+  선택한 행을 보이게 스크롤하므로, 그 문서가 열리고 선택된 뒤 잠깐 기다렸다가 가로 스크롤을 0으로 놓고 시작한다.
 - 전역 예외 처리는 Debug 빌드에서만 환경 변수 `MDFILEVIEWER_E2E_FAULT`(`dispatcher`·`task`)로 강제로 일으켜 확인한다. Release 빌드에는 이 코드가 없다.
 - 그림 표시는 화면을 찍어 그림 가운데 색을 본다(`Capture.Element`, FlaUI가 이미 쓰는 `System.Drawing.Common`). 디스플레이 색 관리로 `#2F6FDE`가
   (67,111,214)로 찍혀(2026-11-17) 채널마다 ±40을 허용한다 — 흰 배경·깨진 그림 아이콘과는 확실히 구분된다. 루트 전환은 두 번째 샘플을 테스트 출력 폴더
@@ -569,10 +629,34 @@ dotnet test tests/MDFileViewer.Core.Tests                                   # �
 dotnet test tests/MDFileViewer.Core.Tests --collect:"XPlat Code Coverage"   # 커버리지
 dotnet test tests/MDFileViewer.E2ETests                                     # E2E (데스크톱 세션 필요, 앱 창이 뜬다)
 dotnet run --project src/MDFileViewer -- "D:\Docs"
-dotnet publish src/MDFileViewer -c Release -r win-x64 --self-contained false -o publish
+.\publish-portable.bat                                                      # 포터블 exe → ReleasePortable\
+.\publish-setup.bat                                                         # 설치 파일 → ReleaseSetup\ (Inno Setup 6 필요)
 ```
 
-- MVP 배포는 framework-dependent 폴더 배포(zip)다. 단일 파일·설치 프로그램은 P2.
+### 15.1 배포 (2026-11-17 사용자 결정 — System3SWTools와 같은 방식)
+
+- 두 배포본 모두 자체 포함(`SelfContained`, `win-x64`)이라 대상 PC에 .NET을 설치하지 않는다. WebView2 Runtime은 필요하다(없으면 앱이 안내, §13).
+- **버전:** `Directory.Build.props`의 `<Version>` 한 곳만 고친다. 배치 파일이 `dotnet msbuild -getProperty:Version`으로 읽어 파일 이름과
+  설치 파일 버전(`ISCC /DMyAppVersion=`)에 넣는다. `setup.iss`를 직접 컴파일하면 버전이 `0.0-dev`로 보여 실수를 알 수 있다.
+- **포터블:** `publish-portable.bat` → 발행 프로필 `win-x64-singlefile`(`PublishSingleFile`, 네이티브 라이브러리·콘텐츠까지 exe에 넣음)
+  → `ReleasePortable\MDFileViewer-Portable-<버전>.exe` 하나.
+- **설치 파일:** `publish-setup.bat` → 발행 프로필 `win-x64-folder`(폴더에 펼침, 첫 실행 추출 없음) → Inno Setup(`installer\setup.iss`)
+  → `ReleaseSetup\MDFileViewer-Setup-<버전>.exe`.
+  - 사용자 단위 설치(`PrivilegesRequired=lowest`, 기본 `%LOCALAPPDATA%\Programs\MDFileViewer`, UAC 없음). 설치 화면에서 전체 사용자 설치도 고를 수 있다.
+  - 한국어 설치 화면, 시작 메뉴 바로 가기, 바탕 화면 바로 가기(선택), 설치 뒤 실행(선택), 제거 지원.
+  - `AppId`는 업그레이드 식별자라 바꾸지 않는다.
+  - 제거해도 사용자 데이터(`%LOCALAPPDATA%\MDFileViewer` — 로그·WebView2 데이터)는 남긴다.
+  - 탐색기 우클릭 메뉴 해제(`--unregister`)를 제거 단계에 넣는 것은 Phase 9(메뉴 등록 구현)에서 한다.
+- 측정(2026-11-17, 버전 0.1.0):
+  - 포터블 exe 158MB. 이름을 바꿔 다른 폴더에서 실행해도 문서가 표시되고(viewer.css 적용), 200% 모니터에서 시작 창 맞춤도 같았다.
+    첫 실행은 `%TEMP%\.net\<exe 이름>\`에 약 142MB를 풀어 문서 표시까지 약 12초 걸렸다. `AppContext.BaseDirectory`가 그 폴더를 가리켜 `Resources`를 찾는다.
+  - 설치 파일 52MB, 설치 폴더 파일 280개. 조용한 설치(`/VERYSILENT /CURRENTUSER /DIR=…`) → 실행(문서 제목 확인) → 제거에서 설치 폴더·제거 정보
+    (`HKCU\…\Uninstall\{AppId}_is1`)·시작 메뉴 바로 가기가 모두 지워졌다.
+- 배치 파일 안전장치: 버전 값은 숫자와 점만 받는다(msbuild 오류 줄이 버전으로 들어가지 않게). 이전 발행 폴더를 지우지 못하면(그 폴더의 exe가 실행 중)
+  멈춘다 — `rmdir`은 잠긴 파일이 있어도 실패 코드를 주지 않아 폴더가 남았는지 다시 확인한다(파일을 잠가 재현). 경로를 출력하는 줄은 괄호 블록 밖에 둔다
+  (경로의 `)`가 블록을 일찍 닫는다).
+- 산출물 폴더 `ReleasePortable\`·`ReleaseSetup\`은 커밋하지 않는다(`.gitignore`). 발행 프로필(`*.pubxml`)은 커밋한다.
+- 배치 파일은 더블클릭으로 실행해도 결과를 볼 수 있게 끝(성공·실패 모두)에 `pause`가 있다.
 
 ## 16. 환경 변수와 시크릿
 
@@ -587,3 +671,8 @@ dotnet publish src/MDFileViewer -c Release -r win-x64 --self-contained false -o 
 - 2026-11-17: Phase 3 구현 반영 — 파이프라인 순서·한글 제목 id(§6.1), Core 구성과 `HtmlPageBuilder` → `DocumentUrlMapper`·`ViewerScriptBuilder` 분리, DOM clobbering 대응, 본문 `<base>` 무시(§6.2), 사용자 시작 탐색만 처리(meta refresh), `LinkClassifier` 분류 규칙·경로 안전 규칙(§6.4), 리소스 상수(§12), 단위 테스트 표(§14.1).
 - 2026-11-17: Phase 4 리뷰 반영 — 트리 새로고침은 펼친 노드만 재사용(§7.1), 시작한 표시는 끝까지·컨트롤 세대 번호(§6.2), 늦은 실패 로그 수준·표시 뒤 밀린 문서 기록(§13), 테스트 표·결과·`HeldCall` 모드(§14.1·§14.2), 클릭 지점 가림 확인·PC 사용 중 E2E 실패(§14.3).
 - 2026-11-17: Phase 4 구현 반영 — 실제 인터페이스(§4.1), 시작 흐름(§5), 원시 `<meta>` 글자 처리(§6.1), 루트마다 템플릿 재로드·표시 잠금·응답 시간 제한(§6.2), 컨텍스트 메뉴·`Ctrl+O` 확인(§6.3), meta refresh는 `IsUserInitiated=true`(§6.4), `ExternalLaunchPolicy`(§6.5), 트리 새로고침의 노드 재사용·늦은 읽기 무시(§7.1), WebView2 상수(§12), 복구 횟수 제한·늦은 실패 처리·전역 예외(§13), 단위 테스트 표·Phase 4 결과·`HeldCall`(§14.1·§14.2), E2E 입력 안전·요소 찾기·그림 색 확인·루트 전환·프로세스 복구 규칙(§14.3).
+- 2026-11-17: 사용자 결정으로 md 목록 창을 트리에 합침 — 구조도·인터페이스(§4·§4.1), 시작·파일 열기 흐름(§5), 트리 자식 항목·화살표·새로고침의 파일 노드(§7.1), `MarkdownFileFinder` 삭제(§7.2), 상수 2개 삭제(§12), 단위·통합 테스트 표(§14.1·§14.2).
+- 2026-11-17: 시작 창 맞춤·모니터별 DPI(§4.2 새로 씀, 구조도), 트리 `F5` 다시 선택이 필요한 이유·자동 스크롤 가로채기(§7.1), 설정 예시에서 목록 창 필드 삭제(§10), `WorkAreaFillRatio`(§12), 단위 테스트 표·가로 스크롤 E2E(§14.1·§14.3).
+- 2026-11-17: 사용자 결정 — 배포를 자체 포함 포터블 exe·Inno Setup 설치 파일로 바꿈(§15·§15.1 새로 씀), 빌드 도구 Inno Setup 6(§2).
+- 2026-11-17: csharp-reviewer 3차 반영 — `F5` 중 사용자 선택 유지·목록에 없는 노드는 다시 읽으면 빠짐·겹친 이동의 중복 노드 방지(§7.1), 매니페스트 지원 OS(§4.2), 테스트 표(§14.1), 배포 측정값·배치 파일 안전장치(§15.1).
+- 2026-11-18: E2E 좌표와 배율 — 테스트 프로세스 Per-Monitor V2, DIP 거리에 배율, 누르기 전 행을 화면 안으로, 맨 앞 창 진단(§14.3).

@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using MDFileViewer.Core.Models;
 using MDFileViewer.Core.Services;
 using MDFileViewer.Core.Tests.Fakes;
@@ -8,11 +9,12 @@ namespace MDFileViewer.Core.Tests.ViewModels;
 public sealed class MainViewModelTests
 {
     private const string Docs = @"C:\Docs";
+    private const string Sub = @"C:\Docs\Sub";
     private const string Guide = @"C:\Docs\guide.md";
+    private const string Readme = @"C:\Docs\readme.md";
     private const string Other = @"C:\Docs\Sub\other.md";
 
     private readonly FakeFolderTreeService _treeService = new();
-    private readonly FakeMarkdownFileFinder _finder = new();
     private readonly FakeTextFileCodec _codec = new();
     private readonly FakeViewerHost _viewer = new();
     private readonly FakeDialogService _dialogs = new();
@@ -22,14 +24,14 @@ public sealed class MainViewModelTests
 
     public MainViewModelTests()
     {
-        _treeService.Drives.Add(new FolderEntry(@"C:\", "로컬 디스크 (C:)", FolderKind.LocalDrive));
+        _treeService.Drives.Add(new TreeEntry(@"C:\", "로컬 디스크 (C:)", TreeNodeKind.LocalDrive));
         _treeService.AddFolder(@"C:\", "Docs");
         _treeService.AddFolder(Docs, "Sub");
-        _treeService.AddFolder(@"C:\Docs\Sub");
-        _finder.SetFiles(Docs, includeSubfolders: false, "guide.md", "readme.md");
-        _finder.SetFiles(@"C:\Docs\Sub", includeSubfolders: false, "other.md");
+        _treeService.SetFiles(Docs, "guide.md", "readme.md");
+        _treeService.AddFolder(Sub);
+        _treeService.SetFiles(Sub, "other.md");
         _codec.SetFile(Guide, "# 안내");
-        _codec.SetFile(@"C:\Docs\readme.md", "# 읽어 보기");
+        _codec.SetFile(Readme, "# 읽어 보기");
         _codec.SetFile(Other, "# 다른 문서\n## 섹션");
     }
 
@@ -45,12 +47,12 @@ public sealed class MainViewModelTests
         // Assert
         Assert.True(main.Tree.ThisPc.IsExpanded);
         Assert.Equal(UiText.AppName, main.Title);
-        Assert.Equal(UiText.NoFolderSelected, main.Files.EmptyMessage);
         Assert.Equal(DocumentState.Empty, main.Document.State);
+        Assert.Equal(UiText.NoDocument, main.Document.Message);
     }
 
     [Fact]
-    public async Task InitializeAsync_Folder_RevealsFolderAndFillsList()
+    public async Task InitializeAsync_Folder_SelectsAndExpandsFolderShowingItsFiles()
     {
         // Arrange
         var main = CreateMain();
@@ -58,29 +60,35 @@ public sealed class MainViewModelTests
         // Act
         await main.InitializeAsync(new StartupRequest.OpenFolder(Docs), CancellationToken.None);
 
-        // Assert — 01 F-01 폴더 인수
-        Assert.Equal(Docs, main.Tree.SelectedNode!.FullPath);
+        // Assert — 01 F-01 폴더 인수: 그 폴더가 펼쳐져 md 파일이 트리에 보인다
+        var docs = main.Tree.SelectedNode!;
+        Assert.Equal(Docs, docs.FullPath);
+        Assert.True(docs.IsExpanded);
+        Assert.Equal(["Sub", "guide.md", "readme.md"], docs.Children.Select(child => child.DisplayName));
         Assert.Equal(Docs, main.CurrentFolderPath);
         Assert.Equal(Docs, main.AddressText);
-        Assert.Equal(["guide.md", "readme.md"], main.Files.Items.Select(item => item.RelativePath));
         Assert.Equal(string.Format(UiText.WindowTitleFormat, "Docs"), main.Title);
         Assert.Equal(DocumentState.Empty, main.Document.State);
     }
 
     [Fact]
-    public async Task InitializeAsync_File_SelectsFileInListAndShowsIt()
+    public async Task InitializeAsync_File_SelectsFileNodeAndShowsItOnce()
     {
         // Arrange
         var main = CreateMain();
 
         // Act
         await main.InitializeAsync(new StartupRequest.OpenFile(Guide), CancellationToken.None);
+        await main.PendingWork;
 
-        // Assert — 01 F-01 md 파일 인수: 목록에서 선택된 채로 뷰어에 표시된다
-        Assert.Equal(Guide, main.Files.SelectedItem!.FullPath);
+        // Assert — 01 F-01 md 파일 인수: 트리에서 그 파일이 선택된 채로 뷰어에 표시된다
+        Assert.Equal(Guide, main.Tree.SelectedNode!.FullPath);
+        Assert.Equal(TreeNodeKind.MarkdownFile, main.Tree.SelectedNode.Kind);
         Assert.Equal(Guide, main.Document.FilePath);
         Assert.Single(_viewer.Shown);
         Assert.Equal(string.Format(UiText.WindowTitleFormat, "guide.md"), main.Title);
+        Assert.Equal(Docs, main.CurrentFolderPath);
+        Assert.Equal(Docs, main.AddressText);
     }
 
     [Fact]
@@ -100,29 +108,49 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task SelectingFolderAndFile_LoadsListThenOpensDocument()
+    public async Task SelectingMarkdownFileNode_OpensDocument()
     {
         // Arrange
         var main = await CreateInitializedMainAsync();
         var docs = await main.Tree.RevealAsync(Docs, CancellationToken.None);
         await main.PendingWork;
 
-        // Act
-        main.Files.SelectedItem = main.Files.Items.Single(item => item.RelativePath == "readme.md");
+        // Act — 트리에서 md 파일을 고르면 연다 (01 F-03)
+        Child(docs!, "readme.md").IsSelected = true;
         await main.PendingWork;
 
         // Assert
-        Assert.Same(docs, main.Tree.SelectedNode);
-        Assert.Equal(@"C:\Docs\readme.md", main.Document.FilePath);
+        Assert.Equal(Readme, main.Document.FilePath);
         Assert.Equal(string.Format(UiText.WindowTitleFormat, "readme.md"), main.Title);
+        Assert.Equal(Docs, main.CurrentFolderPath);
+        Assert.Equal(Docs, main.AddressText);
     }
 
     [Fact]
-    public async Task SelectingThisPc_ClearsFolderAndAsksToPickOne()
+    public async Task SelectingFolderAfterFile_KeepsDocumentAndMovesAddress()
+    {
+        // Arrange
+        var main = await CreateMainShowingGuideAsync();
+        var sub = Child(main.Tree.SelectedNode!.Parent!, "Sub");
+
+        // Act — 폴더를 고르면 주소만 바뀌고 문서는 그대로다 (01 F-02 선택)
+        sub.IsSelected = true;
+        await main.PendingWork;
+
+        // Assert
+        Assert.Equal(Sub, main.CurrentFolderPath);
+        Assert.Equal(Sub, main.AddressText);
+        Assert.Equal(Guide, main.Document.FilePath);
+        Assert.Equal(string.Format(UiText.WindowTitleFormat, "guide.md"), main.Title);
+        Assert.Single(_viewer.Shown);
+    }
+
+    [Fact]
+    public async Task SelectingThisPc_ClearsFolder()
     {
         // Arrange
         var main = await CreateInitializedMainAsync();
-        await main.NavigateToAsync(Docs);
+        await main.NavigateToFolderAsync(Docs);
 
         // Act
         main.Tree.ThisPc.IsSelected = true;
@@ -131,7 +159,7 @@ public sealed class MainViewModelTests
         // Assert
         Assert.Null(main.CurrentFolderPath);
         Assert.Equal(string.Empty, main.AddressText);
-        Assert.Equal(UiText.NoFolderSelected, main.Files.EmptyMessage);
+        Assert.Equal(UiText.AppName, main.Title);
     }
 
     [Fact]
@@ -176,20 +204,21 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task LinkToOtherMarkdown_MovesTreeAndListAndOpensAtAnchor()
+    public async Task LinkToOtherMarkdown_MovesTreeSelectionToFileAndOpensItOnceAtAnchor()
     {
         // Arrange
         var main = await CreateMainShowingGuideAsync();
 
         // Act
         await main.HandleLinkTargetAsync(new LinkTarget.MarkdownDocument(Other, "섹션"));
+        await main.PendingWork;
 
-        // Assert — 앱 안에서 열고 트리·목록 선택도 그 위치로 옮긴다 (01 F-05)
-        Assert.Equal(@"C:\Docs\Sub", main.Tree.SelectedNode!.FullPath);
-        Assert.Equal(Other, main.Files.SelectedItem!.FullPath);
+        // Assert — 앱 안에서 열고 트리 선택도 그 파일로 옮긴다 (01 F-05). 선택 변경 처리기가 한 번 더 열지 않는다.
+        Assert.Equal(Other, main.Tree.SelectedNode!.FullPath);
         Assert.Equal(Other, main.Document.FilePath);
         Assert.Equal(["섹션"], _viewer.Anchors);
         Assert.Equal(2, _viewer.Shown.Count);
+        Assert.Equal(Sub, main.AddressText);
     }
 
     [Fact]
@@ -283,16 +312,16 @@ public sealed class MainViewModelTests
     {
         // Arrange
         var main = await CreateInitializedMainAsync();
-        await main.NavigateToAsync(Docs);
-        _dialogs.PickFolderResult = @"C:\Docs\Sub";
+        await main.NavigateToFolderAsync(Docs);
+        _dialogs.PickFolderResult = Sub;
 
         // Act
         await main.OpenFolderCommand.ExecuteAsync();
 
         // Assert
         Assert.Equal([Docs], _dialogs.PickFolderRequests);
-        Assert.Equal(@"C:\Docs\Sub", main.CurrentFolderPath);
-        Assert.Equal(["other.md"], main.Files.Items.Select(item => item.RelativePath));
+        Assert.Equal(Sub, main.CurrentFolderPath);
+        Assert.Equal(["other.md"], main.Tree.SelectedNode!.Children.Select(child => child.DisplayName));
     }
 
     [Fact]
@@ -300,7 +329,7 @@ public sealed class MainViewModelTests
     {
         // Arrange
         var main = await CreateInitializedMainAsync();
-        await main.NavigateToAsync(Docs);
+        await main.NavigateToFolderAsync(Docs);
         _dialogs.PickFolderResult = null;
 
         // Act
@@ -311,22 +340,83 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task RefreshCommand_ReloadsTreeListAndDocumentKeepingSelection()
+    public async Task RefreshCommand_FileSelected_ReloadsItsFolderAndDocumentOnceKeepingFileSelected()
     {
         // Arrange
         var main = await CreateMainShowingGuideAsync();
-        var treeRequests = _treeService.SubfolderRequests.Count;
-        var listRequests = _finder.Requests.Count;
+        var requests = _treeService.ChildRequests.Count;
 
         // Act
         await main.RefreshCommand.ExecuteAsync();
 
-        // Assert — F5는 선택한 노드의 하위 폴더, 목록, 문서를 다시 읽는다 (01 F-02, §6)
-        Assert.True(_treeService.SubfolderRequests.Count > treeRequests);
-        Assert.Equal(listRequests + 1, _finder.Requests.Count);
+        // Assert — F5는 고른 파일이 있는 폴더와 문서를 다시 읽는다 (01 F-02, §6)
+        Assert.Equal([Docs], _treeService.ChildRequests.Skip(requests));
         Assert.Single(_viewer.Shown);
         Assert.Single(_viewer.Updated);
-        Assert.Equal(Guide, main.Files.SelectedItem!.FullPath);
+        Assert.Equal(Guide, main.Tree.SelectedNode!.FullPath);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_TreeMovesSelectionToFolderOnReset_SelectsFileAgainWithoutReopening()
+    {
+        // Arrange — 새 파일이 생겨 자식 컬렉션이 통째로 바뀐다. 화면 트리가 그때 선택을 부모 폴더로 옮기는 경우를 흉내 낸다.
+        var main = await CreateMainShowingGuideAsync();
+        var guide = main.Tree.SelectedNode!;
+        var docs = guide.Parent!;
+        ((INotifyCollectionChanged)docs.Children).CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                docs.IsSelected = true;
+            }
+        };
+        _treeService.SetFiles(Docs, "guide.md", "new.md", "readme.md");
+
+        // Act
+        await main.RefreshCommand.ExecuteAsync();
+        await main.PendingWork;
+
+        // Assert — 같은 파일을 다시 고르되, 문서는 새로고침이 한 번만 다시 읽는다
+        Assert.Same(guide, main.Tree.SelectedNode);
+        Assert.True(guide.IsSelected);
+        Assert.Single(_viewer.Shown);
+        Assert.Single(_viewer.Updated);
+        Assert.Equal(Docs, main.AddressText);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_SelectedFileWasDeleted_SelectsItsFolderAndShowsFailure()
+    {
+        // Arrange
+        var main = await CreateMainShowingGuideAsync();
+        _treeService.SetFiles(Docs, "readme.md");
+        _codec.SetFailure(Guide, new FileNotFoundException("지워짐", Guide));
+
+        // Act
+        await main.RefreshCommand.ExecuteAsync();
+
+        // Assert
+        Assert.Equal(Docs, main.Tree.SelectedNode!.FullPath);
+        Assert.Equal(DocumentState.Failed, main.Document.State);
+        Assert.Equal(UiText.DocumentNotFound, main.Document.Message);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_FolderSelected_ReloadsFolderAndOpenDocument()
+    {
+        // Arrange
+        var main = await CreateMainShowingGuideAsync();
+        Child(main.Tree.SelectedNode!.Parent!, "Sub").IsSelected = true;
+        await main.PendingWork;
+        _treeService.SetFiles(Sub, "new.md", "other.md");
+
+        // Act
+        await main.RefreshCommand.ExecuteAsync();
+
+        // Assert
+        Assert.Equal(Sub, main.Tree.SelectedNode!.FullPath);
+        Assert.Equal(["new.md", "other.md"], main.Tree.SelectedNode.Children.Select(child => child.DisplayName));
+        Assert.Single(_viewer.Updated);
     }
 
     [Fact]
@@ -345,14 +435,14 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task NavigateToAsync_MissingFolder_ShowsStatusAndKeepsSelection()
+    public async Task NavigateToFolderAsync_MissingFolder_ShowsStatusAndKeepsSelection()
     {
         // Arrange
         var main = await CreateInitializedMainAsync();
-        await main.NavigateToAsync(Docs);
+        await main.NavigateToFolderAsync(Docs);
 
         // Act
-        await main.NavigateToAsync(@"C:\없음");
+        await main.NavigateToFolderAsync(@"C:\없음");
 
         // Assert
         Assert.Equal(Docs, main.CurrentFolderPath);
@@ -360,18 +450,28 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task NavigateToFileAsync_MissingFolder_ShowsStatusAndDoesNotOpen()
+    {
+        // Arrange
+        var main = await CreateInitializedMainAsync();
+
+        // Act
+        await main.NavigateToFileAsync(@"C:\없음\a.md");
+
+        // Assert
+        Assert.Equal(string.Format(UiText.PathNotFoundFormat, @"C:\없음\a.md"), main.StatusMessage);
+        Assert.Empty(_viewer.Shown);
+    }
+
+    [Fact]
     public async Task RealServices_LinkUrlToOtherFolder_OpensThatDocument()
     {
-        // Arrange — 실제 파일 시스템·서비스로 "URL → 분류 → 트리 펼침 → 목록 선택 → 열기" 전체를 한 번 확인한다
+        // Arrange — 실제 파일 시스템·서비스로 "URL → 분류 → 트리 펼침 → 파일 노드 선택 → 열기" 전체를 한 번 확인한다
         using var temp = new TempDirectory();
         var first = temp.CreateFile(@"docs\first.md", "[다음](../guide/next.md#끝)");
         var next = temp.CreateFile(@"guide\next.md", "# 끝");
-        var logger = new FakeAppLogger();
         var viewer = new FakeViewerHost();
-        var tree = new FolderTreeViewModel(new FolderTreeService(logger), logger);
-        var files = new FileListViewModel(new MarkdownFileFinder(), logger);
-        var document = new DocumentViewModel(new TextFileCodec(), viewer, _dialogs, logger, _time, FileMetadataReader.Read);
-        var main = new MainViewModel(tree, files, document, viewer, _dialogs, _shell, logger, _time);
+        var main = CreateMainWithRealServices(viewer);
         await main.InitializeAsync(new StartupRequest.OpenFile(first), CancellationToken.None);
 
         // Act
@@ -379,18 +479,47 @@ public sealed class MainViewModelTests
         await main.PendingWork;
 
         // Assert
-        Assert.Equal(Path.GetDirectoryName(next), main.Tree.SelectedNode!.FullPath, ignoreCase: true);
-        Assert.Equal(next, main.Files.SelectedItem!.FullPath, ignoreCase: true);
+        Assert.Equal(next, main.Tree.SelectedNode!.FullPath, ignoreCase: true);
         Assert.Equal(next, main.Document.FilePath);
         Assert.Equal(["끝"], viewer.Anchors);
+        Assert.Equal(2, viewer.Shown.Count);
+    }
+
+    [Fact]
+    public async Task RealServices_AddressWithFilePath_SelectsFileNodeAndOpensIt()
+    {
+        // Arrange
+        using var temp = new TempDirectory();
+        var file = temp.CreateFile(@"notes\할 일.md", "# 할 일");
+        var viewer = new FakeViewerHost();
+        var main = CreateMainWithRealServices(viewer);
+        await main.InitializeAsync(new StartupRequest.None(), CancellationToken.None);
+        main.AddressText = file;
+
+        // Act — 주소 표시줄에 md 파일 경로를 넣고 Enter (01 F-02 주소 표시줄)
+        await main.NavigateAddressCommand.ExecuteAsync();
+        await main.PendingWork;
+
+        // Assert
+        Assert.Equal(file, main.Tree.SelectedNode!.FullPath, ignoreCase: true);
+        Assert.Equal(file, main.Document.FilePath);
+        Assert.Single(viewer.Shown);
+        Assert.Equal(Path.GetDirectoryName(file), main.AddressText, ignoreCase: true);
     }
 
     private MainViewModel CreateMain()
     {
         var tree = new FolderTreeViewModel(_treeService, _logger);
-        var files = new FileListViewModel(_finder, _logger);
         var document = new DocumentViewModel(_codec, _viewer, _dialogs, _logger, _time, _ => new FileMetadata(1, _time.GetUtcNow()));
-        return new MainViewModel(tree, files, document, _viewer, _dialogs, _shell, _logger, _time);
+        return new MainViewModel(tree, document, _viewer, _dialogs, _shell, _logger, _time);
+    }
+
+    private MainViewModel CreateMainWithRealServices(FakeViewerHost viewer)
+    {
+        var logger = new FakeAppLogger();
+        var tree = new FolderTreeViewModel(new FolderTreeService(logger), logger);
+        var document = new DocumentViewModel(new TextFileCodec(), viewer, _dialogs, logger, _time, FileMetadataReader.Read);
+        return new MainViewModel(tree, document, viewer, _dialogs, _shell, logger, _time);
     }
 
     private async Task<MainViewModel> CreateInitializedMainAsync()
@@ -404,6 +533,10 @@ public sealed class MainViewModelTests
     {
         var main = CreateMain();
         await main.InitializeAsync(new StartupRequest.OpenFile(Guide), CancellationToken.None);
+        await main.PendingWork;
         return main;
     }
+
+    private static TreeNodeViewModel Child(TreeNodeViewModel parent, string name) =>
+        parent.Children.Single(child => child.DisplayName == name);
 }

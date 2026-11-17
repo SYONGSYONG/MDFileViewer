@@ -9,14 +9,14 @@ public sealed class RelayCommandOfTTests
     public void Execute_PassesTypedParameter()
     {
         // Arrange
-        var received = new List<FileSortColumn>();
-        var command = new RelayCommand<FileSortColumn>(received.Add);
+        var received = new List<TreeNodeKind>();
+        var command = new RelayCommand<TreeNodeKind>(received.Add);
 
         // Act
-        command.Execute(FileSortColumn.Size);
+        command.Execute(TreeNodeKind.MarkdownFile);
 
         // Assert
-        Assert.Equal([FileSortColumn.Size], received);
+        Assert.Equal([TreeNodeKind.MarkdownFile], received);
     }
 
     [Theory]
@@ -25,7 +25,7 @@ public sealed class RelayCommandOfTTests
     public void CanExecute_WrongParameterType_IsFalseAndExecuteThrows(object? parameter)
     {
         // Arrange — XAML에서 문자열을 넘기는 실수를 조용히 넘기지 않는다
-        var command = new RelayCommand<FileSortColumn>(_ => { });
+        var command = new RelayCommand<TreeNodeKind>(_ => { });
 
         // Act & Assert
         Assert.False(command.CanExecute(parameter));

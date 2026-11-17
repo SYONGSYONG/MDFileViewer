@@ -7,23 +7,24 @@ using MDFileViewer.Themes;
 
 namespace MDFileViewer.Controls;
 
-/// <summary>트리 노드 아이콘: [종류, 펼침 여부, 접근 결과] → 글리프 (03 §9).</summary>
-public sealed class FolderGlyphConverter : IMultiValueConverter
+/// <summary>트리 노드 아이콘: [종류, 펼침 여부, 접근 결과] → 글리프 (03 §9). md 파일은 문서 글리프.</summary>
+public sealed class TreeNodeGlyphConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (values is not [FolderKind kind, bool isExpanded, FolderAccess access])
+        if (values is not [TreeNodeKind kind, bool isExpanded, FolderAccess access])
         {
             return IconGlyphs.Folder;
         }
 
         return kind switch
         {
-            FolderKind.ThisPc => IconGlyphs.ThisPc,
-            FolderKind.LocalDrive => IconGlyphs.HardDrive,
-            FolderKind.RemovableDrive => IconGlyphs.RemovableDrive,
-            FolderKind.NetworkDrive => IconGlyphs.NetworkDrive,
-            FolderKind.OpticalDrive => IconGlyphs.OpticalDrive,
+            TreeNodeKind.ThisPc => IconGlyphs.ThisPc,
+            TreeNodeKind.LocalDrive => IconGlyphs.HardDrive,
+            TreeNodeKind.RemovableDrive => IconGlyphs.RemovableDrive,
+            TreeNodeKind.NetworkDrive => IconGlyphs.NetworkDrive,
+            TreeNodeKind.OpticalDrive => IconGlyphs.OpticalDrive,
+            TreeNodeKind.MarkdownFile => IconGlyphs.Document,
             _ when access == FolderAccess.AccessDenied => IconGlyphs.Lock,
             _ => isExpanded ? IconGlyphs.FolderOpen : IconGlyphs.Folder,
         };
@@ -81,26 +82,6 @@ public sealed class BoolToVisibilityConverter : IValueConverter
 
         return VisibilityParameters.Has(parameter, VisibilityParameters.Hidden) ? Visibility.Hidden : Visibility.Collapsed;
     }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
-/// <summary>바이트 수 → `4.2 KB` (Core <see cref="DisplayFormat"/>와 같은 모양).</summary>
-public sealed class FileSizeConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is long size ? DisplayFormat.FormatSize(size) : string.Empty;
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
-/// <summary>수정 시각 → PC 현지 시간 `2026-11-17 15:30`.</summary>
-public sealed class LocalDateTimeConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is DateTimeOffset time ? DisplayFormat.FormatDateTime(time, TimeZoneInfo.Local) : string.Empty;
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();

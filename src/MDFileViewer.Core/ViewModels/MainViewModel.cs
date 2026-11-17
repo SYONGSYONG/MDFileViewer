@@ -7,7 +7,7 @@ using MDFileViewer.Core.Services;
 namespace MDFileViewer.Core.ViewModels;
 
 /// <summary>
-/// 메인 창 — 트리·목록·뷰어를 잇고 시작 인수, 링크, 툴바 명령을 처리한다 (02 §5 주요 흐름). UI 스레드에서 쓴다.
+/// 메인 창 — 트리(폴더·md 파일)와 뷰어를 잇고 시작 인수, 링크, 툴바 명령을 처리한다 (02 §5 주요 흐름). UI 스레드에서 쓴다.
 /// </summary>
 public sealed class MainViewModel : ObservableObject
 {
@@ -16,8 +16,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly IAppLogger _logger;
     private readonly TimeProvider _timeProvider;
     private readonly Lock _statusGate = new();
-    private Task _folderLoad = Task.CompletedTask;
-    private bool _isSelectingFileInCode;
+    private bool _isSelectingInCode;
     private string _title = UiText.AppName;
     private string? _currentFolderPath;
     private string _addressText = string.Empty;
@@ -27,7 +26,6 @@ public sealed class MainViewModel : ObservableObject
 
     public MainViewModel(
         FolderTreeViewModel tree,
-        FileListViewModel files,
         DocumentViewModel document,
         IViewerHost viewer,
         IDialogService dialogs,
@@ -36,7 +34,6 @@ public sealed class MainViewModel : ObservableObject
         TimeProvider timeProvider)
     {
         Tree = tree;
-        Files = files;
         Document = document;
         _dialogs = dialogs;
         _shell = shell;
@@ -47,15 +44,12 @@ public sealed class MainViewModel : ObservableObject
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync(), OnCommandFailed);
         NavigateAddressCommand = new AsyncRelayCommand(_ => NavigateAddressAsync(), OnCommandFailed);
 
-        tree.SelectionChanged += (_, node) => _folderLoad = Track(LoadFolderAsync(node));
-        files.PropertyChanged += OnFilesPropertyChanged;
+        tree.SelectionChanged += (_, node) => OnTreeSelectionChanged(node);
         document.PropertyChanged += OnDocumentPropertyChanged;
         viewer.LinkActivated += (_, e) => Track(HandleLinkAsync(e.Url));
     }
 
     public FolderTreeViewModel Tree { get; }
-
-    public FileListViewModel Files { get; }
 
     public DocumentViewModel Document { get; }
 
@@ -66,7 +60,7 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _title, value);
     }
 
-    /// <summary>트리에서 고른 폴더. "내 PC"를 고르면 <c>null</c>.</summary>
+    /// <summary>트리에서 고른 폴더(md 파일을 골랐으면 그 파일이 있는 폴더). "내 PC"를 고르면 <c>null</c>.</summary>
     public string? CurrentFolderPath
     {
         get => _currentFolderPath;
@@ -97,12 +91,12 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>폴더 열기 (`Ctrl+O`).</summary>
     public AsyncRelayCommand OpenFolderCommand { get; }
 
-    /// <summary>새로고침 (`F5`) — 선택한 노드의 하위 폴더, 목록, 문서를 다시 읽는다.</summary>
+    /// <summary>새로고침 (`F5`) — 선택한 폴더(파일이면 그 파일이 있는 폴더)의 자식과 열린 문서를 다시 읽는다.</summary>
     public AsyncRelayCommand RefreshCommand { get; }
 
     public AsyncRelayCommand NavigateAddressCommand { get; }
 
-    /// <summary>가장 최근에 시작한 이벤트 처리(폴더 선택·파일 선택·링크). 테스트가 처리 완료를 기다릴 때 쓴다.</summary>
+    /// <summary>가장 최근에 시작한 이벤트 처리(트리에서 고른 파일 열기·링크). 테스트가 처리 완료를 기다릴 때 쓴다.</summary>
     internal Task PendingWork { get; private set; } = Task.CompletedTask;
 
     /// <summary>시작 요청대로 트리를 펼치고 폴더·파일을 연다 (01 F-01).</summary>
@@ -112,10 +106,10 @@ public sealed class MainViewModel : ObservableObject
         switch (request)
         {
             case StartupRequest.OpenFolder folder:
-                await NavigateToAsync(folder.FolderPath);
+                await NavigateToFolderAsync(folder.FolderPath);
                 break;
             case StartupRequest.OpenFile file:
-                await NavigateToAsync(Path.GetDirectoryName(file.FilePath) ?? file.FilePath, file.FilePath);
+                await NavigateToFileAsync(file.FilePath);
                 break;
             case StartupRequest.InvalidPath invalid:
                 _dialogs.ShowError(UiText.PathNotFoundTitle, string.Format(UiText.PathNotFoundFormat, invalid.RawArgument));
@@ -123,27 +117,29 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// 트리를 폴더까지 펼쳐 선택하고 목록을 채운 뒤, 파일을 주면 목록에서 선택하고 연다. 폴더가 없으면 상태 표시줄로 알린다.
-    /// </summary>
-    public async Task NavigateToAsync(string folderPath, string? filePath = null, string? anchorId = null)
+    /// <summary>트리를 폴더까지 펼쳐 선택하고 그 폴더도 펼쳐 md 파일을 보여 준다. 폴더가 없으면 상태 표시줄로 알린다.</summary>
+    public async Task NavigateToFolderAsync(string folderPath)
     {
-        var node = await Tree.RevealAsync(folderPath, CancellationToken.None);
-        if (node is null)
+        if (await Tree.RevealAsync(folderPath, CancellationToken.None) is null)
         {
             ShowStatus(string.Format(UiText.PathNotFoundFormat, folderPath));
-            return;
         }
+    }
 
-        // 선택이 바뀌면 이벤트 처리기가 목록 읽기를 시작해 _folderLoad에 넣는다. 같은 폴더면 이전 읽기를 기다린다.
-        await _folderLoad;
-        if (filePath is null)
+    /// <summary>
+    /// 트리를 md 파일까지 펼쳐 그 파일 노드를 고르고, 앵커가 있으면 그 위치로 연다 (01 F-01·F-05). 폴더가 없으면 상태 표시줄로 알린다.
+    /// </summary>
+    public async Task NavigateToFileAsync(string filePath, string? anchorId = null)
+    {
+        var node = await Tree.ExpandToFileAsync(filePath, CancellationToken.None);
+        if (node is null)
         {
+            ShowStatus(string.Format(UiText.PathNotFoundFormat, filePath));
             return;
         }
 
-        SelectFileWithoutOpening(filePath);
-        await Document.OpenAsync(filePath, anchorId);
+        SelectWithoutOpening(node);
+        await Document.OpenAsync(node.FullPath, anchorId);
     }
 
     /// <summary>뷰어에서 눌린 링크를 현재 문서 기준으로 분류해 처리한다 (01 F-05).</summary>
@@ -185,7 +181,7 @@ public sealed class MainViewModel : ObservableObject
                 await Document.ScrollToAnchorAsync(anchor.AnchorId);
                 break;
             case LinkTarget.MarkdownDocument markdown:
-                await NavigateToAsync(Path.GetDirectoryName(markdown.FilePath) ?? markdown.FilePath, markdown.FilePath, markdown.AnchorId);
+                await NavigateToFileAsync(markdown.FilePath, markdown.AnchorId);
                 break;
             case LinkTarget.LocalFile local:
                 RunShell(() => _shell.RevealInExplorer(local.Path));
@@ -213,22 +209,16 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private async Task LoadFolderAsync(FolderNodeViewModel node)
+    // 폴더를 고르면 주소·제목만 바꾸고 열린 문서는 둔다(01 F-02). md 파일을 고르면 연다(01 F-03) — 코드로 고른 경우는 호출자가 연다.
+    private void OnTreeSelectionChanged(TreeNodeViewModel node)
     {
-        var folderPath = node.Kind == FolderKind.ThisPc ? null : node.FullPath;
-        CurrentFolderPath = folderPath;
-        AddressText = folderPath ?? string.Empty;
+        var folder = node.IsMarkdownFile ? node.Parent : node;
+        CurrentFolderPath = folder is null || folder.Kind == TreeNodeKind.ThisPc ? null : folder.FullPath;
+        AddressText = CurrentFolderPath ?? string.Empty;
         UpdateTitle();
-        await Files.LoadAsync(folderPath);
-    }
-
-    private void OnFilesPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(FileListViewModel.SelectedItem)
-            && !_isSelectingFileInCode
-            && Files.SelectedItem is { } item)
+        if (node.IsMarkdownFile && !_isSelectingInCode)
         {
-            Track(Document.OpenAsync(item.FullPath));
+            Track(Document.OpenAsync(node.FullPath));
         }
     }
 
@@ -240,17 +230,18 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private void SelectFileWithoutOpening(string filePath)
+    // 코드로 고른 파일은 호출자가 앵커와 함께 직접 열거나(링크·시작 인수) 다시 읽는다(F5). 선택 변경 처리기가 한 번 더 열지 않게 막는다.
+    // 선택은 동기로 일어나므로 이 사이에 사용자의 선택이 끼어들지 않는다.
+    private void SelectWithoutOpening(TreeNodeViewModel node)
     {
-        // 코드로 고른 파일은 호출자가 앵커와 함께 직접 연다. 선택 변경 처리기가 한 번 더 열지 않게 막는다.
-        _isSelectingFileInCode = true;
+        _isSelectingInCode = true;
         try
         {
-            Files.SelectPath(filePath);
+            node.IsSelected = true;
         }
         finally
         {
-            _isSelectingFileInCode = false;
+            _isSelectingInCode = false;
         }
     }
 
@@ -258,17 +249,21 @@ public sealed class MainViewModel : ObservableObject
     {
         if (_dialogs.PickFolder(CurrentFolderPath) is { } folder)
         {
-            await NavigateToAsync(folder);
+            await NavigateToFolderAsync(folder);
         }
     }
 
+    // 자식을 다시 읽는 동안 화면 트리가 선택을 부모 폴더로 옮길 수 있어(자식 컬렉션이 통째로 바뀔 때) 다시 읽은 뒤 고를 노드를 다시 고른다.
+    // 그사이 사용자가 다른 노드를 골랐으면 트리가 null을 돌려주어 그 선택을 둔다.
     private async Task RefreshAsync()
     {
-        await Tree.RefreshSelectedAsync(CancellationToken.None);
-        await Files.LoadAsync(CurrentFolderPath);
-        if (Document.FilePath is { } documentPath)
+        if (await Tree.RefreshSelectedAsync(CancellationToken.None) is { } selected)
         {
-            SelectFileWithoutOpening(documentPath);
+            SelectWithoutOpening(selected);
+        }
+
+        if (Document.FilePath is not null)
+        {
             await Document.ReloadAsync();
         }
     }
@@ -280,10 +275,10 @@ public sealed class MainViewModel : ObservableObject
         switch (request)
         {
             case StartupRequest.OpenFolder folder:
-                await NavigateToAsync(folder.FolderPath);
+                await NavigateToFolderAsync(folder.FolderPath);
                 break;
             case StartupRequest.OpenFile file:
-                await NavigateToAsync(Path.GetDirectoryName(file.FilePath) ?? file.FilePath, file.FilePath);
+                await NavigateToFileAsync(file.FilePath);
                 break;
             default:
                 ShowStatus(string.Format(UiText.PathNotFoundFormat, text));

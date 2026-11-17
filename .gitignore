@@ -483,3 +483,9 @@ $RECYCLE.BIN/
 
 # MDFileViewer (.claude/04-conventions.md section 5)
 .claude/settings.local.json
+
+# Distribution outputs (publish-portable.bat / publish-setup.bat, .claude/02-specs.md section 15.1)
+ReleasePortable/
+ReleaseSetup/
+# The app publish profiles are committed (the template rules above ignore *.pubxml)
+!src/MDFileViewer/Properties/PublishProfiles/*.pubxml

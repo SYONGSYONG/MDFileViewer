@@ -5,20 +5,20 @@ namespace MDFileViewer.Core;
 /// </summary>
 public static class AppConstants
 {
-    /// <summary>목록에 보여 줄 Markdown 확장자 (01 F-03). 대소문자는 구분하지 않는다.</summary>
+    /// <summary>트리에 보여 줄 Markdown 확장자 (01 F-03). 대소문자는 구분하지 않는다.</summary>
     public static readonly IReadOnlyList<string> MarkdownExtensions = [".md", ".markdown"];
-
-    /// <summary>하위 폴더 포함 목록에서 건너뛸 폴더 이름 (01 F-03). 대소문자는 구분하지 않는다.</summary>
-    public static readonly IReadOnlyList<string> ExcludedFolderNames = [".git", "node_modules"];
-
-    /// <summary>하위 폴더 포함 목록의 최대 항목 수 (01 F-03).</summary>
-    public const int MaxRecursiveResults = 5_000;
 
     /// <summary>
     /// 드라이브 준비 여부를 기다리는 최대 시간. 끊긴 네트워크 드라이브는 응답에 수십 초가 걸릴 수 있어
     /// 이 시간을 넘기면 트리에서 뺀다 (02 §7.1).
     /// </summary>
     public static readonly TimeSpan DriveReadyTimeout = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// 시작 창이 모니터 작업 영역에 들어가지 않을 때 줄이는 비율 (03 §2.1). 작업 영역을 꽉 채우면 최대화한 창과 구별되지 않아
+    /// 테두리 바깥으로 바탕 화면이 조금 보이게 남긴다.
+    /// </summary>
+    public const double WorkAreaFillRatio = 0.9;
 
     /// <summary>로그 파일 보관 일수 (02 §13).</summary>
     public const int LogRetentionDays = 7;

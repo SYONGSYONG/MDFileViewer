@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  앱 매니페스트 (02 §4.2). 직접 넣으면 SDK 기본 매니페스트를 대신하므로 기본 매니페스트에 있던 실행 수준(asInvoker)도 함께 적는다.
+  실행 수준을 적지 않으면 Windows가 파일·레지스트리 가상화를 켠다.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="MDFileViewer.app" />
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!-- 지원 OS: Windows 10·11. 없으면 Windows가 앱을 Windows 8 호환으로 보고 일부 API가 이전 동작을 한다. -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <!--
+    모니터별 DPI(01 §7). 매니페스트가 없으면 시스템 DPI 모드라 배율이 다른 모니터에서 창을 비트맵으로 늘려 흐리게 그린다.
+    dpiAwareness는 목록에서 OS가 아는 첫 값을 쓴다(PerMonitorV2는 Windows 10 1703부터). dpiAware는 dpiAwareness를 모르는 OS용이다.
+  -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>

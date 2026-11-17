@@ -77,6 +77,7 @@ public partial class App : Application
         var viewer = new WebViewHost(window.DocumentView, _logger, AppPaths.WebViewDataFolder, AppPaths.ResourcesFolder);
         var viewModel = CreateMainViewModel(viewer, shell);
         window.Bind(viewModel);
+        window.SourceInitialized += (_, _) => FitWindowToMonitor(window);
         MainWindow = window;
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         window.Show();
@@ -89,15 +90,24 @@ public partial class App : Application
         await Task.WhenAll(viewerReady, initialized);
     }
 
+    // 배율이 큰 모니터에서는 WPF가 잡은 시작 창이 작업 영역을 넘는다(2026-11-17 측정, 02 §4.2). 창이 보이기 전에 맞춘다.
+    // 맞추지 못해도 창은 쓸 수 있으므로 로그만 남긴다.
+    private void FitWindowToMonitor(Window window)
+    {
+        if (WindowFitter.FitToWorkArea(window) is { } failedFunction)
+        {
+            _logger.Warn($"시작 창을 모니터 작업 영역에 맞추지 못했습니다: {failedFunction}");
+        }
+    }
+
     private MainViewModel CreateMainViewModel(IViewerHost viewer, IShellLauncher shell)
     {
         var dialogs = new DialogService();
         var timeProvider = TimeProvider.System;
         var tree = new FolderTreeViewModel(new FolderTreeService(_logger), _logger);
-        var files = new FileListViewModel(new MarkdownFileFinder(), _logger);
         var document = new DocumentViewModel(
             new TextFileCodec(), viewer, dialogs, _logger, timeProvider, FileMetadataReader.Read);
-        return new MainViewModel(tree, files, document, viewer, dialogs, shell, _logger, timeProvider);
+        return new MainViewModel(tree, document, viewer, dialogs, shell, _logger, timeProvider);
     }
 
     private static IAppLogger CreateLogger()

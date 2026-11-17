@@ -23,9 +23,26 @@ public sealed class SampleDocuments : IDisposable
     public const string AnchorLink = "아래 제목으로";
     public const string AnchorTargetHeading = "코드 블록";
     public const string MissingFileName = "missing.md";
-    public const int MarkdownFileCount = 4;
-    public const string SubfolderFileRelativePath = @"하위\sub.md";
     public const string PictureAltText = "상대 이미지";
+
+    /// <summary>샘플 폴더 바로 아래 md 파일 — 트리에서 하위 폴더 다음에 이 순서(이름순)로 나온다.</summary>
+    public static readonly IReadOnlyList<string> RootMarkdownFiles = [ClobberFileName, GuideFileName, OtherFileName, RefreshFileName];
+
+    /// <summary>샘플 폴더 바로 아래 하위 폴더 — md 파일이 없는 images도 트리에 보인다(01 F-02).</summary>
+    public static readonly IReadOnlyList<string> RootFolders = ["images", "하위", DeepFolderName];
+
+    // 트리에 가로 스크롤이 생기도록 이름이 긴 폴더를 두 단계 둔다(01 F-02 가로 스크롤 E2E).
+    // 트리 기본 폭(320px)보다 이 행 하나가 넓다.
+    public const string DeepFolderName = "가로 스크롤이 생기도록 이름을 아주 길게 지은 첫 번째 폴더";
+    public const string DeeperFolderName = "가로 스크롤이 생기도록 이름을 아주 길게 지은 두 번째 폴더";
+    public const string DeepFileName = "deep.md";
+
+    /// <summary>실행 중에 새로 만드는 파일(새로고침 E2E). 이름순으로 guide.md 앞에 와 그 폴더의 자식 목록이 바뀐다.</summary>
+    public const string AddedFileName = "added.md";
+    public const string DeepHeading = "깊은 문서";
+
+    /// <summary>깊은 폴더의 md 파일 수(deep.md 제외). 화면 높이보다 행이 많아 키보드로 내려가면 세로 스크롤이 필요하다.</summary>
+    public const int DeepNoteCount = 40;
 
     /// <summary>guide.md의 상대 경로 그림(images/pic.svg)을 채운 단색. 화면에서 이 색이 보이면 그림을 읽어 온 것이다.</summary>
     public static readonly Color PictureColor = Color.FromArgb(0x2F, 0x6F, 0xDE);
@@ -52,11 +69,25 @@ public sealed class SampleDocuments : IDisposable
         Write(ClobberFileName, ClobberMarkdown);
         Write(Path.Combine("images", "pic.svg"), PictureSvg);
         Write(Path.Combine("하위", "sub.md"), "# 하위 문서\n");
+        Directory.CreateDirectory(Path.Combine(FolderPath, DeepFolderName, DeeperFolderName));
+        Write(Path.Combine(DeepFolderName, DeeperFolderName, DeepFileName), $"# {DeepHeading}\n");
+        for (var number = 1; number <= DeepNoteCount; number++)
+        {
+            Write(Path.Combine(DeepFolderName, DeeperFolderName, DeepNoteName(number)), $"# 메모 {number}\n");
+        }
     }
 
     public string FolderPath { get; }
 
-    public string PathOf(string fileName) => Path.Combine(FolderPath, fileName);
+    public string DeepFilePath => Path.Combine(FolderPath, DeepFolderName, DeeperFolderName, DeepFileName);
+
+    /// <summary>이름순으로 deep.md 다음에 온다.</summary>
+    public static string DeepNoteName(int number) => $"note-{number:D2}.md";
+
+    public string PathOf(string relativePath) => Path.Combine(FolderPath, relativePath);
+
+    /// <summary>샘플 폴더에 md 파일을 새로 만든다.</summary>
+    public void AddMarkdownFile(string fileName) => Write(fileName, $"# {Path.GetFileNameWithoutExtension(fileName)}\n");
 
     public void Dispose()
     {

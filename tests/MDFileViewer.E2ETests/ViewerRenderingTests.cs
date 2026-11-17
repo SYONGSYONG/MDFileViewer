@@ -41,21 +41,17 @@ public sealed class ViewerRenderingTests : IDisposable
         WaitForPicture(session, "첫 문서");
 
         // 그림 없는 문서를 거쳐, 다음 확인에서 보이는 그림이 이전 화면의 것이 아님을 보장한다
-        var list = session.FindById("FileList");
-        session.FindSelectable(list, SampleDocuments.OtherFileName).Patterns.SelectionItem.Pattern.Select();
+        var tree = session.FindById("FolderTree");
+        session.FindSelectable(tree, SampleDocuments.OtherFileName).Patterns.SelectionItem.Pattern.Select();
         session.FindByName(SampleDocuments.OtherHeading);
 
-        // Act — 주소 표시줄로 다른 드라이브의 폴더를 연다
+        // Act — 주소 표시줄로 다른 드라이브의 md 파일을 연다 (트리에는 두 샘플의 같은 이름 파일이 함께 있으므로 경로로 고른다)
+        var secondGuidePath = Path.Combine(secondFolder, SampleDocuments.GuideFileName);
         var addressBox = session.FindById("AddressBox");
-        addressBox.Patterns.Value.Pattern.SetValue(secondFolder);
+        addressBox.Patterns.Value.Pattern.SetValue(secondGuidePath);
         addressBox.Focus();
         Assert.True(session.IsForeground, NotForegroundMessage);
         Keyboard.Type(VirtualKeyShort.RETURN);
-        var secondGuidePath = Path.Combine(secondFolder, SampleDocuments.GuideFileName);
-        AppSession.WaitUntil(
-            () => session.FindSelectables(session.FindById("FileList")).Count == SampleDocuments.MarkdownFileCount,
-            "다른 드라이브 폴더의 md 목록이 채워지지 않았습니다.");
-        session.FindSelectable(session.FindById("FileList"), SampleDocuments.GuideFileName).Patterns.SelectionItem.Pattern.Select();
 
         // Assert — 루트가 바뀐 뒤에도 그림이 보인다
         AppSession.WaitUntil(
@@ -116,7 +112,7 @@ public sealed class ViewerRenderingTests : IDisposable
 
     private static Color SamplePictureCenter(AppSession session)
     {
-        Assert.True(session.IsForeground, NotForegroundMessage);
+        Assert.True(session.IsForeground, $"{NotForegroundMessage} 맨 앞 창: {AppSession.DescribeForegroundWindow()}");
         var picture = session.MainWindow.FindFirstDescendant(
             cf => cf.ByControlType(ControlType.Image).And(cf.ByName(SampleDocuments.PictureAltText)))
             ?? throw new InvalidOperationException("그림 요소가 아직 없습니다.");

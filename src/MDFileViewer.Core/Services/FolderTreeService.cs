@@ -1,14 +1,15 @@
+using System.IO.Enumeration;
 using MDFileViewer.Core.Abstractions;
 using MDFileViewer.Core.Models;
 
 namespace MDFileViewer.Core.Services;
 
-/// <summary>탐색기 트리용 드라이브·폴더 정보를 백그라운드에서 읽는다 (01 F-02, 02 §7.1).</summary>
+/// <summary>탐색기 트리용 드라이브·폴더·md 파일 정보를 백그라운드에서 읽는다 (01 F-02·F-03, 02 §7.1).</summary>
 public sealed class FolderTreeService : IFolderTreeService
 {
     // 비재귀 목록이라 IgnoreInaccessible은 읽으려는 폴더 자신에만 영향을 준다.
     // 그 폴더의 접근 거부는 예외로 받아야 "접근 거부"를 알릴 수 있으므로 끈다.
-    private static readonly EnumerationOptions VisibleSubfolderOptions = new()
+    private static readonly EnumerationOptions VisibleEntryOptions = new()
     {
         IgnoreInaccessible = false,
         AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
@@ -34,18 +35,18 @@ public sealed class FolderTreeService : IFolderTreeService
         _driveReadyTimeout = driveReadyTimeout;
     }
 
-    public async Task<IReadOnlyList<FolderEntry>> GetDrivesAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TreeEntry>> GetDrivesAsync(CancellationToken cancellationToken)
     {
         var probes = await Task.Run(_driveProbeSource, cancellationToken).ConfigureAwait(false);
         var entries = await Task.WhenAll(probes.Select(probe => ProbeDriveAsync(probe, cancellationToken))).ConfigureAwait(false);
-        return entries.OfType<FolderEntry>().ToList();
+        return entries.OfType<TreeEntry>().ToList();
     }
 
-    public Task<FolderListing> GetSubfoldersAsync(string folderPath, CancellationToken cancellationToken) =>
-        Task.Run(() => ReadSubfolders(folderPath, cancellationToken), cancellationToken);
+    public Task<FolderListing> GetChildrenAsync(string folderPath, CancellationToken cancellationToken) =>
+        Task.Run(() => ReadChildren(folderPath, cancellationToken), cancellationToken);
 
-    public Task<bool> HasSubfoldersAsync(string folderPath, CancellationToken cancellationToken) =>
-        Task.Run(() => ReadSubfolderPresence(folderPath), cancellationToken);
+    public Task<bool> HasChildrenAsync(string folderPath, CancellationToken cancellationToken) =>
+        Task.Run(() => ReadChildPresence(folderPath), cancellationToken);
 
     /// <summary>볼륨 이름이 있으면 <c>이름 (C:)</c>, 없으면 드라이브 종류 이름을 쓴다 (02 §7.1).</summary>
     public static string FormatDriveName(string rootPath, string? volumeLabel, DriveType driveType)
@@ -55,20 +56,26 @@ public sealed class FolderTreeService : IFolderTreeService
         return $"{name} ({letter})";
     }
 
-    private static FolderListing ReadSubfolders(string folderPath, CancellationToken cancellationToken)
+    // 폴더를 한 번만 훑어 하위 폴더와 md 파일을 함께 거둔다. FileInfo·DirectoryInfo를 만들지 않아 항목이 3만 개인 폴더(WinSxS)에서도 할당이 적다.
+    private static FolderListing ReadChildren(string folderPath, CancellationToken cancellationToken)
     {
         try
         {
-            var folders = new DirectoryInfo(folderPath)
-                .EnumerateDirectories("*", VisibleSubfolderOptions)
-                .Select(directory =>
+            var entries = new FileSystemEnumerable<TreeEntry>(
+                folderPath,
+                (ref FileSystemEntry entry) => new TreeEntry(
+                    entry.ToFullPath(),
+                    entry.FileName.ToString(),
+                    entry.IsDirectory ? TreeNodeKind.Folder : TreeNodeKind.MarkdownFile),
+                VisibleEntryOptions)
+            {
+                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    return new FolderEntry(directory.FullName, directory.Name, FolderKind.Folder);
-                })
-                .OrderBy(entry => entry.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-                .ToList();
-            return new FolderListing(folders, FolderAccess.Ok);
+                    return IsTreeEntry(ref entry);
+                },
+            };
+            return new FolderListing(TreeOrder.Sort(entries), FolderAccess.Ok);
         }
         catch (DirectoryNotFoundException)
         {
@@ -85,24 +92,32 @@ public sealed class FolderTreeService : IFolderTreeService
         }
     }
 
-    private static bool ReadSubfolderPresence(string folderPath)
+    // 처음 하나를 찾으면 멈춘다
+    private static bool ReadChildPresence(string folderPath)
     {
         try
         {
-            return Directory.EnumerateDirectories(folderPath, "*", VisibleSubfolderOptions).Any();
+            return new FileSystemEnumerable<bool>(folderPath, (ref FileSystemEntry _) => true, VisibleEntryOptions)
+            {
+                ShouldIncludePredicate = IsTreeEntry,
+            }.Any();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            // 펼침 화살표 표시용이라 읽을 수 없으면 "없음"으로 본다. 펼칠 때 GetSubfoldersAsync가 원인을 알린다.
+            // 펼침 화살표 표시용이라 읽을 수 없으면 "없음"으로 본다. 펼칠 때 GetChildrenAsync가 원인을 알린다.
             return false;
         }
     }
 
-    private async Task<FolderEntry?> ProbeDriveAsync(DriveProbe probe, CancellationToken cancellationToken)
+    // 트리에 보이는 항목: 하위 폴더와 md 파일. 숨김·시스템 속성은 EnumerationOptions가 먼저 거른다.
+    private static bool IsTreeEntry(ref FileSystemEntry entry) =>
+        entry.IsDirectory || MarkdownPath.HasMarkdownExtension(entry.FileName);
+
+    private async Task<TreeEntry?> ProbeDriveAsync(DriveProbe probe, CancellationToken cancellationToken)
     {
         var probeTask = Task.Run(
             () => probe.IsReady()
-                ? new FolderEntry(probe.RootPath, FormatDriveName(probe.RootPath, probe.ReadVolumeLabel(), probe.DriveType), ToFolderKind(probe.DriveType))
+                ? new TreeEntry(probe.RootPath, FormatDriveName(probe.RootPath, probe.ReadVolumeLabel(), probe.DriveType), ToFolderKind(probe.DriveType))
                 : null,
             cancellationToken);
 
@@ -136,12 +151,12 @@ public sealed class FolderTreeService : IFolderTreeService
             .Select(drive => new DriveProbe(drive.Name, drive.DriveType, () => drive.IsReady, () => drive.VolumeLabel))
             .ToList();
 
-    private static FolderKind ToFolderKind(DriveType driveType) => driveType switch
+    private static TreeNodeKind ToFolderKind(DriveType driveType) => driveType switch
     {
-        DriveType.Removable => FolderKind.RemovableDrive,
-        DriveType.Network => FolderKind.NetworkDrive,
-        DriveType.CDRom => FolderKind.OpticalDrive,
-        _ => FolderKind.LocalDrive,
+        DriveType.Removable => TreeNodeKind.RemovableDrive,
+        DriveType.Network => TreeNodeKind.NetworkDrive,
+        DriveType.CDRom => TreeNodeKind.OpticalDrive,
+        _ => TreeNodeKind.LocalDrive,
     };
 
     private static string DriveTypeName(DriveType driveType) => driveType switch

@@ -11,17 +11,22 @@ namespace MDFileViewer.Controls;
 /// 패널에게 해당 위치까지 컨테이너를 차례로 만들게 하면(<see cref="VirtualizingStackPanel.BringIndexIntoViewPublic"/>)
 /// 형제 981개에 0.57초, 3만 개에 2초 넘게 UI가 멈췄다(2026-11-17 측정). 그 방식은 마지막 수단으로만 쓴다.
 /// </summary>
+/// <remarks>
+/// 스크롤은 <see cref="ScrollViewer"/> 위치를 직접 바꿔서 한다. <see cref="FrameworkElement.BringIntoView()"/>(라우트 이벤트)는 트리 항목이
+/// 가로로 크게 밀리는 기본 동작을 막으려고 메인 창이 가로채므로(03 §2.1) 쓰지 않는다.
+/// </remarks>
 internal static class TreeViewNavigator
 {
     private const string HeaderRowName = "HeaderRow";
 
-    // 가로 스크롤 기준으로 삼을 행 왼쪽 끝의 폭(px)
-    private const double LeftEdgeWidth = 1;
-
     // 대상 행을 화면 맨 위가 아니라 위에서 1/3 지점(화면 높이 ÷ 3)에 둔다 — 위쪽 맥락(부모 폴더)이 함께 보인다
     private const double ViewportAnchorDivisor = 3;
 
-    public static TreeViewItem? BringIntoView(TreeView tree, FolderTreeViewModel model, FolderNodeViewModel node)
+    /// <summary>
+    /// 노드의 머리 행이 보이게 스크롤한다. <paramref name="revealLeftEdge"/>면 행의 왼쪽 끝이 화면 밖일 때 가로로도 맞춘다 —
+    /// 앱이 선택을 옮길 때(시작 경로·주소·링크)만 쓴다. 사용자가 고른 행은 가로 위치를 그대로 둔다(01 F-02).
+    /// </summary>
+    public static TreeViewItem? BringIntoView(TreeView tree, FolderTreeViewModel model, TreeNodeViewModel node, bool revealLeftEdge)
     {
         var path = PathFromRoot(node);
         var container = FindRealizedContainer(tree, path);
@@ -33,33 +38,49 @@ internal static class TreeViewNavigator
         }
 
         container ??= RealizeContainer(tree, path);
+        if (container is not null)
+        {
+            ScrollHeaderRowIntoView(tree, container, revealLeftEdge);
+        }
 
-        BringHeaderRowIntoView(container);
         return container;
     }
 
-    // 펼친 자식까지 포함한 항목 전체가 아니라 머리 행만 보이게 한다 — 자식이 많으면 머리 행이 화면 밖으로 밀린다.
-    // 가로로는 행의 왼쪽 끝(펼침 화살표)만 맞춘다. 행 전체를 맞추면 이름이 긴 폴더에서 이름 끝까지 가로로 밀려
-    // 다른 행의 앞부분이 잘려 보였다(2026-11-17).
-    private static void BringHeaderRowIntoView(TreeViewItem? container)
+    /// <summary>
+    /// 항목의 머리 행이 화면 위·아래로 벗어났으면 세로로 최소한만 스크롤한다. 펼친 자식까지 포함한 항목 전체가 아니라 머리 행만 본다 —
+    /// 자식이 많으면 머리 행이 화면 밖으로 밀린다. <paramref name="revealLeftEdge"/>면 행의 왼쪽 끝(펼침 화살표)이 화면 밖일 때만
+    /// 그 끝으로 가로 스크롤한다. 행 전체를 맞추면 이름이 긴 행에서 이름 끝까지 가로로 밀려 다른 행의 앞부분이 잘렸다(2026-11-17).
+    /// </summary>
+    public static void ScrollHeaderRowIntoView(TreeView tree, TreeViewItem container, bool revealLeftEdge)
     {
-        if (container is null)
+        var viewport = FindDescendant<ScrollContentPresenter>(tree);
+        var scrollViewer = viewport?.TemplatedParent as ScrollViewer;
+        var row = container.Template?.FindName(HeaderRowName, container) as FrameworkElement ?? container;
+        if (viewport is null || scrollViewer is null || !viewport.IsAncestorOf(row))
         {
             return;
         }
 
-        if (container.Template?.FindName(HeaderRowName, container) is FrameworkElement headerRow)
+        var topLeft = row.TransformToAncestor(viewport).Transform(new Point(0, 0));
+        var bottom = topLeft.Y + row.ActualHeight;
+        if (topLeft.Y < 0)
         {
-            headerRow.BringIntoView(new Rect(0, 0, LeftEdgeWidth, headerRow.ActualHeight));
-            return;
+            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + topLeft.Y);
+        }
+        else if (bottom > viewport.ActualHeight)
+        {
+            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + bottom - viewport.ActualHeight);
         }
 
-        container.BringIntoView();
+        if (revealLeftEdge && (topLeft.X < 0 || topLeft.X >= viewport.ActualWidth))
+        {
+            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset + topLeft.X);
+        }
     }
 
-    private static List<FolderNodeViewModel> PathFromRoot(FolderNodeViewModel node)
+    private static List<TreeNodeViewModel> PathFromRoot(TreeNodeViewModel node)
     {
-        var path = new List<FolderNodeViewModel>();
+        var path = new List<TreeNodeViewModel>();
         for (var current = node; current is not null; current = current.Parent)
         {
             path.Insert(0, current);
@@ -69,7 +90,7 @@ internal static class TreeViewNavigator
     }
 
     // 이미 만들어진 컨테이너만 따라간다. 하나라도 없으면 null.
-    private static TreeViewItem? FindRealizedContainer(TreeView tree, IReadOnlyList<FolderNodeViewModel> path)
+    private static TreeViewItem? FindRealizedContainer(TreeView tree, IReadOnlyList<TreeNodeViewModel> path)
     {
         ItemsControl parent = tree;
         TreeViewItem? container = null;
@@ -110,7 +131,7 @@ internal static class TreeViewNavigator
     }
 
     // 마지막 수단: 패널에게 그 위치까지 컨테이너를 만들게 한다(형제가 많으면 느리다)
-    private static TreeViewItem? RealizeContainer(TreeView tree, IReadOnlyList<FolderNodeViewModel> path)
+    private static TreeViewItem? RealizeContainer(TreeView tree, IReadOnlyList<TreeNodeViewModel> path)
     {
         ItemsControl parent = tree;
         TreeViewItem? container = null;

@@ -22,8 +22,27 @@ public sealed class AppSession : IDisposable
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan ForegroundSettleDelay = TimeSpan.FromMilliseconds(300);
 
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, 그리고 GetAwarenessFromDpiAwarenessContext의 DPI_AWARENESS_PER_MONITOR_AWARE
+    private static readonly nint PerMonitorAwareV2Context = -4;
+    private const int PerMonitorAwareness = 2;
+
+    // 배율 100%의 DPI
+    private const double DefaultDpi = 96;
+
     private readonly Application _application;
     private readonly UIA3Automation _automation;
+
+    // 테스트 프로세스를 모니터별 DPI(Per-Monitor V2)로 둔다. 앱도 Per-Monitor V2라(02 §4.2) UIA가 주는 요소 좌표는 물리 픽셀인데,
+    // DPI를 모르는 프로세스(testhost.exe의 매니페스트에는 DPI 설정이 없다)가 마우스를 옮기거나 화면을 찍으면 Windows가 배율이 다른
+    // 모니터에서 좌표를 바꾼다. 프로세스 DPI 모드는 창을 만들기 전에 한 번만 정할 수 있어 첫 세션 전에 정한다.
+    static AppSession()
+    {
+        SetProcessDpiAwarenessContext(PerMonitorAwareV2Context);
+        if (GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext()) != PerMonitorAwareness)
+        {
+            throw new InvalidOperationException("E2E 프로세스를 모니터별 DPI로 두지 못했습니다 — 좌표가 맞지 않아 입력을 보내지 않습니다.");
+        }
+    }
 
     private AppSession(Application application, UIA3Automation automation, Window mainWindow)
     {
@@ -125,6 +144,9 @@ public sealed class AppSession : IDisposable
     /// <summary>앱 창이 지금 맨 앞인지. 입력을 보내기 직전에 확인한다.</summary>
     public bool IsForeground => GetForegroundWindow() == MainWindow.Properties.NativeWindowHandle.Value;
 
+    /// <summary>앱 창이 놓인 모니터의 배율(200%면 2). DIP로 정한 거리를 UIA 좌표(물리 픽셀)로 바꿀 때 쓴다.</summary>
+    public double DpiScale => GetDpiForWindow(MainWindow.Properties.NativeWindowHandle.Value) / DefaultDpi;
+
     /// <summary>
     /// 화면의 이 점에 실제로 보이는 창이 앱 창(또는 그 안의 자식 창, 예: WebView2)인지. 맨 앞이어도 항상 위 창(알림·다른 앱의
     /// 고정 창)이 그 자리를 덮고 있으면 클릭이 그 창으로 간다 — 그럴 때는 누르지 않는다.
@@ -136,9 +158,14 @@ public sealed class AppSession : IDisposable
     }
 
     /// <summary>진단용: 이 점에 보이는 최상위 창의 프로세스 이름.</summary>
-    public static string DescribeWindowAt(System.Drawing.Point point)
+    public static string DescribeWindowAt(System.Drawing.Point point) =>
+        DescribeWindow(GetAncestor(WindowFromPoint(new NativePoint(point.X, point.Y)), GetAncestorRoot));
+
+    /// <summary>진단용: 지금 맨 앞 창의 프로세스 이름. 테스트 도중 맨 앞을 빼앗겼을 때 누가 가져갔는지 남긴다.</summary>
+    public static string DescribeForegroundWindow() => DescribeWindow(GetForegroundWindow());
+
+    private static string DescribeWindow(nint root)
     {
-        var root = GetAncestor(WindowFromPoint(new NativePoint(point.X, point.Y)), GetAncestorRoot);
         GetWindowThreadProcessId(root, out var processId);
         try
         {
@@ -240,6 +267,19 @@ public sealed class AppSession : IDisposable
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetProcessDpiAwarenessContext(nint context);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetThreadDpiAwarenessContext();
+
+    [DllImport("user32.dll")]
+    private static extern int GetAwarenessFromDpiAwarenessContext(nint context);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint windowHandle);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint windowHandle, out uint processId);

@@ -6,6 +6,8 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>MDFileViewer</AssemblyName>
     <RootNamespace>MDFileViewer</RootNamespace>
+    <!-- 모니터별 DPI·실행 수준 (02 §4.2) -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

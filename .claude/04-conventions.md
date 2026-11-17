@@ -10,10 +10,12 @@ MDFileViewer/
 ├── src/
 │   ├── MDFileViewer/               # WPF 앱 → MDFileViewer.exe
 │   │   ├── App.xaml(.cs)           # 구성 루트, 인수 처리, 전역 예외 처리
+│   │   ├── Properties/PublishProfiles/  # 발행 프로필 win-x64-singlefile(포터블)·win-x64-folder(설치 파일)
 │   │   ├── AppPaths.cs             # %LOCALAPPDATA% 아래 로그·WebView2 폴더, 리소스 폴더 경로
+│   │   ├── app.manifest            # 모니터별 DPI(Per-Monitor V2), 실행 수준 asInvoker (02 §4.2)
 │   │   ├── Views/                  # MainWindow, HelpWindow, 대화상자(MessageDialog)
 │   │   ├── Controls/               # MarkdownView(WebView2 래퍼), EditorView(AvalonEdit 래퍼)
-│   │   ├── Services/               # ThemeService, DialogService, ShellLauncher, WebViewHost
+│   │   ├── Services/               # ThemeService, DialogService, ShellLauncher, WebViewHost, WindowFitter
 │   │   ├── Themes/                 # Light.xaml, Dark.xaml(색상 토큰), Controls.xaml(공통 스타일)
 │   │   ├── Highlighting/           # Markdown-Light.xshd, Markdown-Dark.xshd
 │   │   └── Assets/                 # 앱 아이콘
@@ -30,7 +32,11 @@ MDFileViewer/
 ├── tests/
 │   ├── MDFileViewer.Core.Tests/    # src/MDFileViewer.Core 폴더 구조를 그대로 따른다
 │   └── MDFileViewer.E2ETests/      # FlaUI(UIA3) UI 자동화 E2E
-├── Directory.Build.props           # 공통 빌드 속성
+├── installer/
+│   └── setup.iss                   # Inno Setup 설치 파일 스크립트 (02 §15.1)
+├── publish-portable.bat            # 포터블 exe 만들기 → ReleasePortable\ (커밋 제외)
+├── publish-setup.bat               # 설치 파일 만들기 → ReleaseSetup\ (커밋 제외)
+├── Directory.Build.props           # 공통 빌드 속성, 버전(<Version>, 02 §15.1)
 ├── .editorconfig
 ├── .gitignore
 ├── MDFileViewer.slnx                # 솔루션 (.NET 10 SDK 기본 형식)
@@ -46,14 +52,14 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 
 | 대상 | 규칙 | 예 |
 |------|------|----|
-| 타입, 메서드, 속성, 이벤트 | PascalCase | `MarkdownFileFinder`, `FindAsync`, `IsDirty` |
+| 타입, 메서드, 속성, 이벤트 | PascalCase | `FolderTreeService`, `GetChildrenAsync`, `IsDirty` |
 | 인터페이스 | `I` + PascalCase | `IViewerHost` |
 | 비동기 메서드 | `Async` 접미사 | `SaveAsync` |
 | private 필드 | `_camelCase` | `_settingsStore` |
 | 지역 변수, 매개변수 | camelCase | `cancellationToken` |
 | 상수, `static readonly` | PascalCase | `PreviewDebounceMilliseconds` |
 | bool | `Is`/`Has`/`Can`/`Should` 접두 | `HasSubfolders`, `CanSave` |
-| ViewModel | `<이름>ViewModel` | `FileListViewModel` |
+| ViewModel | `<이름>ViewModel` | `DocumentViewModel` |
 | XAML `x:Name` | PascalCase, 역할이 드러나게 | `FolderTree`, `DocumentView` |
 | 색상 리소스 키 | `Color.` / `Brush.` + 03의 토큰 이름 | `Brush.Surface.Chrome` |
 | 테스트 클래스 | `<대상>Tests` | `LinkClassifierTests` |
@@ -107,7 +113,9 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 |------|--------|-------|
 | `.cs`, `.xaml`, `.csproj`, `.props`, `.xshd`, `.json`, `.html`, `.css` | UTF-8 (BOM 없음) | CRLF |
 | 문서 `.md`, `History.txt` | UTF-8 (BOM 없음) | 규칙 없음 |
-| `.bat`, `.cmd` (생기면) | CP949(ANSI) | CRLF, 주석은 영어 |
+| `.manifest`, `.pubxml` | UTF-8 (BOM 없음) | CRLF |
+| `.bat`, `.cmd` | CP949(ANSI) | CRLF, 주석은 영어. 화면 문구(`echo`)는 한국어 — `chcp 949`로 맞춘다 |
+| `.iss` (Inno Setup) | ASCII만 (주석도 영어) | CRLF — Inno Setup은 BOM 없는 파일을 ANSI로 읽으므로 한글을 넣지 않는다. 한국어 설치 화면은 `Korean.isl`이 맡는다 |
 
 - `.editorconfig`에 위 규칙과 들여쓰기(C#·XAML 공백 4칸, 프로젝트 파일·XML·JSON·HTML·CSS 2칸)를 적는다.
 - 파일 쓰기 도구로 C# 문자열에 ` ` 같은 유니코드 이스케이프를 쓰면 실제 문자로 저장될 수 있다(2026-11-17, U+2028이 컴파일 오류를 냄).
@@ -123,7 +131,8 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - **브랜치:** `main`은 항상 빌드·테스트가 통과하는 상태를 유지한다. 작업은 `feature/<요약>`, `fix/<요약>`에서 한다.
 - **커밋 메시지:** `<type>: <설명>` — type은 `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`. 설명은 한국어로 쓴다.
 - **커밋·푸시:** 사용자가 요청할 때만 한다.
-- **`.gitignore`:** `bin/`, `obj/`, `publish/`, `.vs/`, `*.user`, `TestResults/`, 커버리지 보고서, `.claude/settings.local.json`.
+- **`.gitignore`:** `bin/`, `obj/`, `publish/`, `.vs/`, `*.user`, `TestResults/`, 커버리지 보고서, `.claude/settings.local.json`,
+  배포 산출물 `ReleasePortable/`·`ReleaseSetup/`. 템플릿이 `*.pubxml`을 제외하므로 앱의 발행 프로필만 예외로 넣는다.
   `.claude/` 안의 문서(00~05, History.txt)는 커밋한다.
 
 ## 6. 테스트 작성 규칙
@@ -147,6 +156,7 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - **E2E 입력 안전(02 §14.3):** 입력을 보내기 전에 앱 창을 맨 앞으로 올리고(`BringToForeground`), 클릭 직전에 다시 맨 앞인지·누를 점이
   앱 창 안인지·그 점을 다른 창이 덮지 않았는지(`IsPointOnApp`) 확인한다. 아니면 입력을 보내지 않고 실패시킨다. 입력 없이 되는 조작은 UIA 패턴으로 한다.
   입력 E2E는 PC를 쓰지 않을 때 돌린다 — 쓰는 중이면 안전 장치 때문에 실패한다.
+  UIA 좌표는 물리 픽셀이다 — 요소 안의 거리를 DIP로 정했으면 `AppSession.DpiScale`을 곱하고, 행을 누르기 전에는 `ScrollIntoView`로 화면 안에 들인다(02 §14.3).
   대화상자는 `OwnedWindows`, 문서 링크는 `FindLink`로 찾는다. 테스트가 끝내는 프로세스는 앱의 자식(`ProcessTree`)으로만 좁힌다.
 - **잘못된 이유로 통과하지 않는지 확인:** 화면 결과(그림 표시 등)를 보는 E2E와 경합을 재현하는 단위 테스트는, 처음 쓸 때 고친 코드를 잠시
   되돌리거나 일부러 깨서 테스트가 실패하는지 한 번 확인한다(2026-11-17, 같은 드라이브 관리 공유로는 루트 전환 검사가 실패하지 않아 다른 드라이브로 바꿈).
@@ -173,3 +183,7 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-17: Phase 3 반영 — `.html`·`.css` 인코딩·줄 끝·들여쓰기, 유니코드 이스케이프 주의(§4).
 - 2026-11-17: Phase 4 리뷰 반영 — `HeldCall` 취소 반응 선택·전역 관문 주의·늦은 실패 로그 도우미, E2E 클릭 지점 가림 확인·PC 사용 중 실행 금지(§6).
 - 2026-11-17: Phase 4 반영 — 폴더 구조에 `AppPaths`·`UiText`·`DisplayFormat`·`MessageDialog`(§1), E2E 도우미 `async void` 예외·`BeginInvoke` 규칙·늦은 실패 처리·App의 `using System.IO`(§3.2), 새 파일 줄 끝·셸 치환 주의(§4), `HeldCall`·E2E 입력 안전·일부러 깨서 확인·Debug 전용 시험 장치(§6).
+- 2026-11-17: 트리 통합 반영 — 명명 표의 예시를 지운 타입(`MarkdownFileFinder`·`FileListViewModel`) 대신 남은 타입으로 바꿈.
+- 2026-11-17: 폴더 구조에 `app.manifest`, App `Services/`에 `WindowFitter` 추가(§1).
+- 2026-11-17: 사용자 결정 — 배포 스크립트 구조(`publish-*.bat`, `installer/setup.iss`, 발행 프로필) 추가(§1), `.manifest`·`.pubxml`·`.iss` 인코딩과 배치 파일 화면 문구(§4), 배포 산출물 `.gitignore`(§5).
+- 2026-11-18: E2E 좌표 규칙 — DIP 거리에 배율, 누르기 전 `ScrollIntoView`(§6).
