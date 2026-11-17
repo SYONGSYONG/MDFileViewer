@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- 모든 프로젝트 공통 빌드 속성 (.claude/04-conventions.md §3.1) -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.1.0</Version>
+    <Product>MDFileViewer</Product>
+  </PropertyGroup>
+
+</Project>

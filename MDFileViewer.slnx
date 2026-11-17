@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MDFileViewer.Core/MDFileViewer.Core.csproj" />
+    <Project Path="src/MDFileViewer/MDFileViewer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MDFileViewer.Core.Tests/MDFileViewer.Core.Tests.csproj" />
+    <Project Path="tests/MDFileViewer.E2ETests/MDFileViewer.E2ETests.csproj" />
+  </Folder>
+</Solution>
