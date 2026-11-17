@@ -127,6 +127,58 @@ public sealed class MarkdownRendererTests
         Assert.Contains("<script>alert(1)</script>", html, StringComparison.Ordinal);
     }
 
+    // WebView2는 본문에 넣은 meta refresh 탐색을 IsUserInitiated=true로 알려(2026-11-17 확인) 탐색 단계에서 클릭과 구분할 수 없다.
+    // 그래서 렌더러가 원시 HTML의 <meta>를 글자로 바꿔 요소가 생기지 않게 한다 (02 §6.4).
+    [Theory]
+    [InlineData("<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/\">\n")]
+    [InlineData("<META HTTP-EQUIV=\"refresh\" CONTENT=\"0;url=other.md\">\n")]
+    [InlineData("문단 <meta http-equiv=\"refresh\" content=\"0;url=other.md\"> 안\n")]
+    [InlineData("<div>\n<Meta\thttp-equiv=refresh content=0>\n</div>\n")]
+    public void RenderBody_RawMetaElement_IsEscapedSoTheBrowserCannotRefresh(string markdown)
+    {
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.DoesNotContain("<meta", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("&lt;", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_MetaSplitToRebuildAfterRemoval_StaysEscaped()
+    {
+        // Arrange — 지우는 방식이었다면 안쪽 <meta>를 지운 뒤 바깥 조각이 이어져 새 <meta가 생긴다
+        const string markdown = "<<meta>meta http-equiv=\"refresh\" content=\"0;url=other.md\">\n";
+
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.DoesNotContain("<meta", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RenderBody_RawHtmlAroundMeta_KeepsOtherContent()
+    {
+        // Act
+        var html = MarkdownRenderer.RenderBody("<div class=\"box\"><meta name=x>남는 내용</div>\n");
+
+        // Assert
+        Assert.Contains("<div class=\"box\">", html, StringComparison.Ordinal);
+        Assert.Contains("남는 내용", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_MetaWordInTextAndCode_IsUnchanged()
+    {
+        // Act — 글자·코드의 "<meta"는 Markdig가 이미 이스케이프한다. 두 번 이스케이프하지 않는다.
+        var html = MarkdownRenderer.RenderBody("`<meta>` 태그와 metadata 단어\n");
+
+        // Assert
+        Assert.Contains("<code>&lt;meta&gt;</code>", html, StringComparison.Ordinal);
+        Assert.Contains("metadata", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RenderBody_FencedCode_EscapesHtmlAndKeepsLanguageClass()
     {

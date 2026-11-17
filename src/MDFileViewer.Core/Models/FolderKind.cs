@@ -8,4 +8,7 @@ public enum FolderKind
     NetworkDrive,
     OpticalDrive,
     Folder,
+
+    /// <summary>트리 맨 위 "내 PC" 노드. 경로가 없고, 자식은 드라이브다 (01 F-02).</summary>
+    ThisPc,
 }

@@ -23,6 +23,12 @@ public static class AppConstants
     /// <summary>로그 파일 보관 일수 (02 §13).</summary>
     public const int LogRetentionDays = 7;
 
+    /// <summary>이보다 큰 파일은 열기 전에 확인한다 (01 F-04). 렌더링·표시에 수 초가 걸릴 수 있는 크기다.</summary>
+    public const long LargeFileWarningBytes = 5L * 1024 * 1024;
+
+    /// <summary>상태 표시줄 일시 메시지("파일을 찾을 수 없습니다" 등)를 보여 주는 시간 (01 F-15).</summary>
+    public static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
+
     /// <summary>앱 리소스 폴더(viewer.html·viewer.css)를 매핑하는 WebView2 가상 호스트 (02 §6.2).</summary>
     public const string AppAssetsHostName = "appassets.example";
 

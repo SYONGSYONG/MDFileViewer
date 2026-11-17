@@ -15,6 +15,11 @@
     <ProjectReference Include="..\..\src\MDFileViewer\MDFileViewer.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!-- 화면 문구를 앱과 같은 상수(UiText)로 비교해, 문구를 바꿔도 테스트를 고치지 않게 한다 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MDFileViewer.Core\MDFileViewer.Core.csproj" />
+  </ItemGroup>
+
   <!-- 테스트가 띄울 exe 경로를 빌드 시점에 어셈블리 메타데이터로 박아 둔다 (구성·대상 프레임워크가 바뀌어도 맞는 경로를 쓰도록) -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">

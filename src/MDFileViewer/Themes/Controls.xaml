@@ -1,0 +1,298 @@
+<!--
+  공통 컨트롤 스타일 (.claude/03-design.md §3·§8). 색은 테마 사전의 토큰을 DynamicResource로 참조해 Phase 6 테마 전환을 따른다.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:themes="clr-namespace:MDFileViewer.Themes">
+
+    <FontFamily x:Key="Font.Ui">Segoe UI Variable Text, Segoe UI, Malgun Gothic</FontFamily>
+    <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <!-- 키보드로 옮겨 왔을 때만 보이는 포커스 링: 2px Accent (03 §8) -->
+    <Style x:Key="FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-1" RadiusX="4" RadiusY="4" StrokeThickness="2"
+                               Stroke="{DynamicResource Accent}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="IconText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+
+    <!-- 툴바 아이콘 버튼 32×32 (03 §3) -->
+    <Style x:Key="ToolbarButton" TargetType="Button">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="4">
+                        <ContentPresenter x:Name="Content" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Content" Property="RenderTransform">
+                                <Setter.Value>
+                                    <TranslateTransform Y="1" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource Text.Disabled}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AddressBox" TargetType="TextBox">
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource Surface.Document}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.Strong}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource Text.Primary}" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- 구분선: 보이는 선은 1px, 잡는 영역은 6px. 마우스를 올리면 Accent (03 §8) -->
+    <Style x:Key="PaneSplitter" TargetType="GridSplitter">
+        <Setter Property="Width" Value="6" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="ResizeBehavior" Value="PreviousAndNext" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridSplitter">
+                    <Grid Background="{TemplateBinding Background}">
+                        <Rectangle x:Name="Line" Width="1" HorizontalAlignment="Center" Fill="{DynamicResource Border.Subtle}" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Fill" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Fill" Value="{DynamicResource Accent}" />
+                            <Setter TargetName="Line" Property="Width" Value="2" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 목록 행: 마우스를 올리면 Surface.Hover, 선택하면 Surface.Selected + 왼쪽 3px Accent 막대 (03 §8) -->
+    <Style x:Key="FileListItem" TargetType="ListViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <Border x:Name="Row" Background="Transparent" SnapsToDevicePixels="True">
+                        <Grid>
+                            <Rectangle x:Name="SelectionBar" Width="3" HorizontalAlignment="Left"
+                                       Fill="{DynamicResource Accent}" Visibility="Collapsed" />
+                            <GridViewRowPresenter Margin="3,0,0,0" VerticalAlignment="Center"
+                                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource Surface.Selected}" />
+                            <Setter TargetName="SelectionBar" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ColumnHeader" TargetType="GridViewColumnHeader">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridViewColumnHeader">
+                    <Border x:Name="Header" Background="Transparent" BorderBrush="{DynamicResource Border.Subtle}" BorderThickness="0,0,0,1">
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Header" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 트리 펼침 화살표. 글리프 코드 값 확인이 필요 없도록 선으로 그리고, 펼치면 90° 돌린다 -->
+    <Style x:Key="TreeExpanderToggle" TargetType="ToggleButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="Transparent">
+                        <Path x:Name="Arrow" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource Text.Secondary}" StrokeThickness="1.2"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="0" />
+                            </Path.RenderTransform>
+                        </Path>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Arrow" Property="RenderTransform">
+                                <Setter.Value>
+                                    <RotateTransform Angle="90" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource Text.Primary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 트리 항목의 포커스 링은 머리 행(26px)에만 그린다. 기본처럼 펼친 자식까지 감싸면 링이 화면 대부분을 둘러싼다 -->
+    <Style x:Key="TreeItemFocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Height="26" VerticalAlignment="Top" Margin="-1" RadiusX="4" RadiusY="4" StrokeThickness="2"
+                               Stroke="{DynamicResource Accent}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 트리 행: 목록 행과 같은 상태 표현 (03 §8). 기본 템플릿의 시스템 강조색 대신 토큰을 쓴다 -->
+    <Style x:Key="FolderTreeItem" TargetType="TreeViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource TreeItemFocusRing}" />
+        <Setter Property="Padding" Value="4,0,8,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TreeViewItem">
+                    <StackPanel>
+                        <Grid x:Name="HeaderRow" MinHeight="26" Background="Transparent" SnapsToDevicePixels="True">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="18" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Rectangle x:Name="SelectionBar" Width="3" HorizontalAlignment="Left"
+                                       Fill="{DynamicResource Accent}" Visibility="Collapsed" />
+                            <ToggleButton x:Name="Expander" Style="{StaticResource TreeExpanderToggle}"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press" />
+                            <ContentPresenter x:Name="PART_Header" Grid.Column="1" ContentSource="Header" MinHeight="26"
+                                              VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                        </Grid>
+                        <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="False">
+                            <Setter TargetName="Expander" Property="Visibility" Value="Hidden" />
+                        </Trigger>
+                        <Trigger SourceName="HeaderRow" Property="IsMouseOver" Value="True">
+                            <Setter TargetName="HeaderRow" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="HeaderRow" Property="Background" Value="{DynamicResource Surface.Selected}" />
+                            <Setter TargetName="SelectionBar" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 대화상자 버튼 (03 §10.2) -->
+    <Style x:Key="DialogButton" TargetType="Button">
+        <Setter Property="MinWidth" Value="88" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource Surface.Document}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.Strong}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsDefault" Value="True">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="StatusText" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="10,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="PlaceholderTitle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="PlaceholderHint" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+</ResourceDictionary>

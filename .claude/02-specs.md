@@ -29,6 +29,8 @@
 | `FlaUI.UIA3` | 5.0.0 | E2ETests | UI 자동화 E2E | ✅ 승인 (2026-11-17) |
 
 - `xunit` 2.9.3은 `xunit` 패키지(v2 계열)의 최신판이다. xUnit v3는 별도 패키지(`xunit.v3`)라 승인 범위 밖이므로 쓰지 않는다.
+- E2E의 화면 캡처(`FlaUI.Core.Capturing.Capture`)는 FlaUI가 의존하는 `System.Drawing.Common`의 `Bitmap`을 돌려준다. 패키지를 새로 추가하지
+  않고 FlaUI가 가져오는 것을 그대로 쓴다(2026-11-17, Phase 4).
 
 **도입하지 않는 것**
 
@@ -58,9 +60,12 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 
 ```
 ┌─ MDFileViewer (App, WPF) ───────────────────────────────────────────────┐
-│ Views      MainWindow, HelpWindow, MarkdownView(WebView2 래퍼), EditorView │
-│ 구현체      ThemeService, DialogService, ShellLauncher, WebViewHost       │
+│ Views      MainWindow, MessageDialog, HelpWindow(P10), EditorView(P7)    │
+│ Controls   MarkdownView(WebView2 래퍼), TreeViewNavigator, 값 변환기       │
+│ 구현체      DialogService, ShellLauncher, WebViewHost, ThemeService(P6)   │
+│ Themes     Light.xaml(색 토큰), Controls.xaml(공통 스타일), IconGlyphs     │
 │ 구성 루트   App.xaml.cs — 인수 해석, 서비스 생성(수동 주입), 전역 예외 처리   │
+│            AppPaths — 로그·WebView2 데이터·Resources 폴더 위치             │
 └───────────────────────────────▲─────────────────────────────────────────┘
                                 │ 참조
 ┌─ MDFileViewer.Core ───────────┴─────────────────────────────────────────┐
@@ -68,9 +73,12 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 │              FileListViewModel, DocumentViewModel, ZoomViewModel          │
 │ Services     FolderTreeService, MarkdownFileFinder, TextFileCodec,        │
 │              MarkdownRenderer, DocumentUrlMapper, ViewerScriptBuilder,    │
-│              LinkClassifier,                                              │
+│              LinkClassifier, FileMetadataReader,                          │
 │              JsonSettingsStore, ShellIntegrationService,                  │
 │              CommandLineParser, FileAppLogger                             │
+│ Mvvm         ObservableObject, RelayCommand(<T>), AsyncRelayCommand,      │
+│              BulkObservableCollection                                     │
+│ 문구·표시     UiText(화면 문구 상수), DisplayFormat(크기·시각·인코딩 표기)    │
 │ Models       StartupRequest, MarkdownFileItem, TextFileFormat,            │
 │              LinkTarget, EffectiveTheme, AppSettings, ThemeMode,          │
 │              ShellRegistrationStatus                                      │
@@ -81,35 +89,35 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.1 주요 인터페이스 (초안)
+### 4.1 주요 인터페이스
+
+Phase 4까지 만든 인터페이스는 `src/MDFileViewer.Core/Abstractions/`가 기준이다. 아래는 그 요약과, 뒤 Phase에서 더할 멤버다.
 
 ```csharp
-public interface IViewerHost            // App의 WebViewHost가 구현
+public interface IViewerHost            // App의 WebViewHost가 구현 (Phase 4)
 {
+    event EventHandler<LinkActivatedEventArgs>? LinkActivated;                  // 사용자가 누른 링크만
     Task ShowDocumentAsync(string bodyHtml, string documentPath, CancellationToken cancellationToken);
     Task UpdateBodyAsync(string bodyHtml, CancellationToken cancellationToken);   // 스크롤 유지
     Task ScrollToAnchorAsync(string anchorId, CancellationToken cancellationToken);
-    Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken);
-    double ZoomFactor { get; set; }
-    void ApplyTheme(ThemeMode effectiveTheme);
-    event EventHandler<LinkActivatedEventArgs> LinkActivated;
-    event EventHandler<double> ZoomFactorChanged;
+    // 뒤 Phase에서 더함: ZoomFactor·ZoomFactorChanged(P5), ApplyTheme(P6), ScrollToRatioAsync(P7)
 }
 
-public interface IDialogService
+public interface IDialogService         // App의 DialogService가 구현 (Phase 4). UI 스레드에서 부른다
 {
-    UnsavedChangesChoice AskSaveChanges(string fileName);          // Save / Discard / Cancel
-    bool Confirm(string message);
-    void ShowError(string message);
+    bool Confirm(string title, string message, string confirmButtonText);    // 보조 버튼은 "취소"
+    void ShowError(string title, string message);
+    string? PickFolder(string? initialFolder);                                // 취소하면 null
+    // 뒤 Phase에서 더함: UnsavedChangesChoice AskSaveChanges(string fileName) — 저장 / 저장 안 함 / 취소 (P7)
 }
 
-public interface IShellLauncher
+public interface IShellLauncher         // App의 ShellLauncher가 구현 (Phase 4)
 {
-    void OpenExternal(Uri uri);                 // http, https, mailto만 허용
-    void RevealInExplorer(string path);         // explorer /select
+    void OpenExternal(Uri uri);                 // http, https, mailto만 허용, 그 밖은 ArgumentException
+    void RevealInExplorer(string path);         // %WINDIR%\explorer.exe /select,"경로" (완전한 경로만)
 }
 
-public interface IRegistryAccess             // HKCU 기준, 루트 경로를 생성자에서 받는다
+public interface IRegistryAccess             // HKCU 기준, 루트 경로를 생성자에서 받는다 (Phase 9 초안)
 {
     void SetValue(string subKeyPath, string? valueName, string value);
     string? GetValue(string subKeyPath, string? valueName);
@@ -117,16 +125,23 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 }
 ```
 
-- Phase 2에서 `IFolderTreeService`, `IMarkdownFileFinder`, `ITextFileCodec`, `IAppLogger`를 구현했다. 시그니처는
-  `src/MDFileViewer.Core/Abstractions/`가 기준이다. 나머지 인터페이스는 해당 Phase에서 위 초안을 다듬어 만든다.
+- Phase 2에서 `IFolderTreeService`, `IMarkdownFileFinder`, `ITextFileCodec`, `IAppLogger`를, Phase 4에서 `IViewerHost`,
+  `IDialogService`, `IShellLauncher`를 만들었다. 나머지는 해당 Phase에서 위 초안을 다듬어 만든다.
+- ViewModel이 보여 주는 문구는 `UiText` 상수로 두고 테스트도 같은 상수로 비교한다. App의 XAML도 `x:Static`으로 참조한다.
+- Core 테스트 프로젝트는 `InternalsVisibleTo`로 ViewModel의 내부 대기 지점(`PendingWork`, `ExpanderCheckCompleted` 등)을 쓴다.
 - 서비스는 실패를 예외 대신 결과 값으로 알린다: 폴더 읽기는 `FolderAccess`(`Ok`·`NotFound`·`AccessDenied`·`Unavailable`),
   파일 읽기는 `TextFileContent.HasDecodingErrors`. 예외로 나가는 것은 취소(`OperationCanceledException`)와 저장 실패뿐이다.
 
 ## 5. 주요 흐름
 
-1. **시작:** `App.OnStartup` → `CommandLineParser.Parse` → (`--register`/`--unregister`면 처리 후 종료)
-   → `SettingsStore.Load` → 테마 적용 → `MainWindow` 표시 → `MainViewModel.InitializeAsync(request)`
-   → `FolderTreeViewModel.RevealAsync(folder)` → `FileListViewModel.LoadAsync` → (파일 인수가 있으면) `DocumentViewModel.OpenAsync`.
+1. **시작:** `App.OnStartup` → 로그(`FileAppLogger` + 오래된 로그 정리) → 전역 예외 처리기 등록
+   → `CommandLineParser.Parse`(UI 스레드 밖) → (`--register`/`--unregister`면 처리 후 종료) → WebView2 Runtime 확인
+   → `SettingsStore.Load`(P8) → 테마 적용(P6) → `MainWindow` 표시 → `WebViewHost.InitializeAsync`와 `MainViewModel.InitializeAsync(request)`를
+   함께 진행 → `FolderTreeViewModel.RevealAsync(folder)` → `FileListViewModel.LoadAsync` → (파일 인수가 있으면) `DocumentViewModel.OpenAsync`
+   (뷰어 준비가 끝날 때까지 기다린다).
+   - Phase 4 시점: `--register`/`--unregister`는 Phase 9 전까지 아무것도 바꾸지 않고 로그를 남긴 뒤 종료 코드 1로 끝낸다.
+   - 창은 `App.xaml`의 `StartupUri` 없이 구성 루트가 만든다. 메인 창을 띄우기 전에는 `ShutdownMode.OnExplicitShutdown`이라
+     오류 대화상자를 닫아도 앱이 끝나지 않고, 창을 띄운 뒤 `OnMainWindowClose`로 바꾼다.
 2. **파일 열기:** 목록 선택 변경 → 미저장 확인(F-10) → `TextFileCodec.ReadAsync` → `MarkdownRenderer.RenderBody`
    → `IViewerHost.ShowDocumentAsync(bodyHtml, documentPath)`.
 3. **편집 미리보기:** 편집기 텍스트 변경 → 300ms 디바운스(이전 요청 취소) → `RenderBody` → `IViewerHost.UpdateBodyAsync`.
@@ -144,6 +159,10 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
     자동 id 확장은 이미 있으면 다시 넣지 않으므로 `UseAdvancedExtensions()`보다 **먼저** 넣어야 한다(뒤에 넣으면 무시됨, 2026-11-17 확인).
   - `UseYamlFrontMatter()` — front matter를 파싱하고 HTML로 출력하지 않는다.
 - 원시 HTML(`<script>` 포함)은 렌더러가 걸러 내지 않는다. 스크립트·프레임·폼은 표시 단계(§6.3 설정, §6.5 CSP)가 막는다.
+  **예외 — `<meta>`:** 출력 HTML의 날것 `<meta`(대소문자 무시)를 `&lt;meta`로 바꿔 글자로 보이게 한다(Phase 4). meta refresh는 클릭 없이
+  탐색을 일으키는데 WebView2가 이를 사용자 탐색으로 알려 표시 단계에서 막을 수 없기 때문이다(§6.4). 글자·코드의 `<`는 Markdig가
+  이미 `&lt;`로 바꾸므로 날것 `<meta`는 원시 HTML에서 온 것뿐이다. 지우지 않고 `<`만 바꾸므로 `<<meta>meta …>`처럼 지운 뒤 조각이
+  이어져 새 태그가 생기는 일이 없다.
 - 작업 목록은 `<ul class="contains-task-list">`·`<li class="task-list-item">` + 비활성 체크박스로 나온다. `viewer.css`가 이 클래스 이름을 쓴다.
 - 파이프라인은 한 번 만들어 재사용한다(스레드 안전하게 읽기 전용으로 쓴다).
 
@@ -152,12 +171,28 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 `NavigateToString`은 HTML 크기가 2MB로 제한되므로 문서 본문 전달에 쓰지 않는다.
 
 1. 앱 리소스 폴더를 가상 호스트 `https://appassets.example/`에 매핑하고(`SetVirtualHostNameToFolderMapping`),
-   템플릿 `viewer.html`(CSS 포함)을 **한 번만** 로드한다.
+   템플릿 `viewer.html`(CSS 포함)을 로드한다. 템플릿은 **문서 루트가 바뀔 때만** 다시 로드한다(아래 2).
 2. 문서가 있는 드라이브(또는 UNC 공유) 루트를 가상 호스트 `https://docroot.example/`에 매핑하고,
    `<base href>`를 **문서 파일 URL**(예: `https://docroot.example/Docs/guide.md`)로 바꾼다.
    → `../images/a.png` 같은 상대 경로가 풀리고, `#앵커`는 `<문서 URL>#앵커`로 해석되어 현재 문서의 앵커인지 판별하기 쉽다(§6.4).
    `<base href>`는 템플릿을 다시 로드하지 않고 `ExecuteScriptAsync`로 바꿀 수 있다. 한글·공백이 든 경로와
    `\\localhost\C$\…` 같은 UNC 루트 매핑도 동작한다 (PoC-2).
+   - **매핑은 이미 열린 페이지에 적용되지 않을 수 있다**(SDK 문서 "a reload of the page is needed to apply the new mapping").
+     템플릿을 먼저 로드하고 나중에 루트를 매핑했더니 상대 이미지가 보이지 않았고, 매핑 뒤 로드하면 보였다(2026-11-17 재현).
+     그래서 `WebViewHost`는 첫 문서를 보여 줄 때, 그리고 루트가 바뀔 때(다른 드라이브·UNC 공유)마다 매핑을 바꾼 뒤 템플릿을 다시 로드한다.
+     같은 루트 안에서 문서를 바꿀 때는 다시 로드하지 않는다. 루트를 바꿀 때 매핑만 바꾸고 다시 로드하지 않으면 새 루트의 그림이 보이지 않았다
+     (2026-11-17, Runtime 157, E2E `RelativeImage_IsDrawnBeforeAndAfterSwitchingDocumentRoot`를 코드를 일부러 깨서 돌려 확인).
+   - 문서 표시·본문 교체·앵커 스크롤은 잠금 하나(`SemaphoreSlim`)로 한 번에 하나씩 한다. 템플릿을 다시 로드하는 중에 다른 스크립트가 끼어들면
+     빈 페이지에서 실행되고, 두 요청이 동시에 템플릿을 로드하면 앞 탐색이 취소되며 그 완료 이벤트(실패)를 뒤 요청이 받을 수 있어서다.
+     WebView2 준비는 잠금 안에서 기다린다(기다리는 사이 복구가 컨트롤을 바꿨으면 새 컨트롤을 기다려야 한다). 잠금을 기다리는 사이
+     새 요청에 밀린(취소된) 요청은 실행하지 않는다. 실행을 시작한 표시는 취소돼도 끝까지 한다 — 템플릿만 바꾸고 멈추면 화면(빈 템플릿)과
+     마지막으로 보여 준 문서 기록이 어긋난다. 완료 이벤트는 앱이 시작한 템플릿 탐색의 `NavigationId`와 같은 것만 본다. 컨트롤을 새로 만들 때마다
+     세대 번호를 올려, 죽은 컨트롤에서 늦게 끝난 템플릿 로드가 새 컨트롤을 "템플릿 로드됨"으로 표시하지 않게 한다.
+   - 템플릿 로드와 `ExecuteScriptAsync`는 `ViewerResponseTimeout`(30초) 안에 끝나지 않으면 `TimeoutException`으로 끝낸다 — 응답 없는
+     프로세스가 잠금을 영원히 쥐지 않게 한다. 템플릿 로드가 시간을 넘기면 다음 요청이 처음부터 다시 로드한다. 문서 쪽은 "표시하지 못함"으로 알린다.
+   - 같은 드라이브의 관리 공유(`\\localhost\C$`)는 루트 아래 경로가 `C:\`와 같아, 매핑을 바꾸지 않아도 같은 파일로 풀려 차이가 보이지 않는다
+     (2026-11-17 확인). 루트 전환 E2E는 다른 드라이브의 폴더를 쓴다.
+   - 미확인: 같은 URL의 이미지 파일을 바꾼 뒤 `F5`로 다시 읽을 때 WebView2가 캐시한 옛 이미지를 쓰는지는 확인하지 않았다.
 3. 본문은 `ExecuteScriptAsync`로 `#content` 요소의 내용을 바꿔 넣는다(HTML 문자열은 JSON으로 인코딩).
    편집 미리보기도 같은 방식이라 스크롤 위치가 유지된다.
 4. 문서 안 스크립트는 `IsScriptEnabled = false`와 CSP `script-src 'none'`으로 막는다. 이 상태에서도 `ExecuteScriptAsync`는
@@ -201,21 +236,28 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 | `AreBrowserAcceleratorKeysEnabled` | `false` | `F5`·`Ctrl+R` 새로고침으로 템플릿이 다시 로드되어 본문이 사라지는 것을 막는다. 인쇄 등 브라우저 기능도 끈다. 이 설정에서는 `Ctrl+=`·`Ctrl+-`·`Ctrl+0`도 WebView2가 처리하지 않으므로, 앱이 줌 단축키를 직접 처리해 01 F-06의 단계를 그대로 쓴다 (PoC-3) |
 | `IsZoomControlEnabled` | `true` | `Ctrl+휠`은 WebView2가 처리하고(Chromium 단계, 예: 1.0 → 1.1) `ZoomFactorChanged`가 발생한다. 코드로 `ZoomFactor`를 바꿀 때는 이 이벤트가 발생하지 않는다 (PoC-3) |
 | `IsStatusBarEnabled` | `false` | 링크에 마우스를 올릴 때 나오는 URL 풍선을 숨긴다 |
-| 기본 컨텍스트 메뉴 | 켜고, `ContextMenuRequested`에서 "복사"·"모두 선택"만 남긴다 | 뒤로·새로고침·검사 등 브라우저 메뉴 제거 |
+| 기본 컨텍스트 메뉴 | 켜고, `ContextMenuRequested`에서 이름이 `copy`·`selectAll`인 항목만 남긴다. 남는 항목이 없으면 `Handled = true`로 메뉴를 띄우지 않는다 | 뒤로·새로고침·검사 등 브라우저 메뉴 제거 |
 | `AreDevToolsEnabled` | Debug 빌드만 `true` | |
 | 자동 완성·비밀번호 저장 | `false` | 필요 없는 기능 |
+| `AreHostObjectsAllowed` | `false` | 쓰지 않는 통로는 닫는다 |
 
+- **컨텍스트 메뉴 결과 (2026-11-17 실행 확인):** 항목 이름은 영어 레이블의 lower camel case다(SDK 문서 `CoreWebView2ContextMenuItem.Name`).
+  글자를 선택하고 우클릭하면 "복사 Ctrl+C"만 나오고, 선택 없이 우클릭하면 메뉴가 뜨지 않는다. Chromium은 문서 글자 위에서
+  "모두 선택"을 내놓지 않아(입력란에서만 나옴) 실제로는 "복사"만 보인다.
 - **단축키 전달 (PoC-3):** 문서 영역에 포커스가 있을 때(`document.hasFocus()`가 `true`) `Ctrl+E`·`Ctrl+S`·`Ctrl+B`·`F1`·`F5`·
   `Ctrl+=`·`Ctrl+-`·`Ctrl+0`이 모두 창의 WPF `PreviewKeyDown`으로 전달되었다. 앱 단축키는 창의 `InputBindings`로 처리한다.
-  `Ctrl+O`는 시험하지 않았다(같은 경로로 전달될 것으로 보고 Phase 4 E2E에서 확인한다).
+  `Ctrl+O`도 같은 경로로 전달되어 폴더 열기 대화상자가 열린다(2026-11-17 E2E `CtrlO_WithDocumentFocused_OpensFolderPicker`).
 - WPF `WebView2.IsKeyboardFocusWithin`은 문서 영역에 포커스가 있어도 `false`였다. 문서 영역 포커스 판단에 쓰지 않는다.
 
 ### 6.4 탐색 가로채기
 
-- `NavigationStarting`: 템플릿 최초 로드를 뺀 모든 탐색을 취소(`Cancel = true`)한다. **사용자가 시작한 탐색(`IsUserInitiated == true`)만**
-  URL을 `LinkClassifier`로 넘긴다. 본문의 `<meta http-equiv="refresh" content="0;url=…">`는 `innerHTML`로 넣어도 클릭 없이 탐색을 일으키고
-  (2026-11-17 Chromium 확인) CSP로 막을 수 없으므로, 그대로 넘기면 문서를 여는 것만으로 브라우저·탐색기가 열린다.
-  WebView2에서 meta refresh의 `IsUserInitiated`가 실제로 `false`인지는 Phase 4(4-6)에서 확인한다.
+- `NavigationStarting`: 앱이 시작한 템플릿 로드(§6.2)를 뺀 모든 탐색을 취소(`Cancel = true`)한다. **사용자가 시작한 탐색(`IsUserInitiated == true`)만**
+  URL을 `LinkClassifier`로 넘기고, 그 밖의 탐색은 URL 없이 로그만 남긴다.
+- **meta refresh — `IsUserInitiated`로는 막을 수 없다 (2026-11-17 WebView2 확인):** 본문의 `<meta http-equiv="refresh" content="0;url=…">`는
+  `innerHTML`로 넣어도 클릭 없이 탐색을 일으키고 CSP로 막을 수 없다. WebView2(Runtime 157)는 이 탐색을 **`IsUserInitiated == true`로 알렸고**,
+  앱이 그대로 링크로 처리해 다른 md 문서가 열렸다(E2E로 재현). 그래서 렌더러가 원시 HTML의 `<meta>`를 글자로 바꿔 요소 자체가 생기지 않게 한다
+  (§6.1, `MarkdownRenderer`). E2E `OpeningDocumentWithMetaRefresh_ShowsTagAsTextAndStaysOnDocument`가 이를 확인한다.
+  `IsUserInitiated` 검사는 그 밖의 문서 주도 탐색을 위해 그대로 둔다.
 - `NewWindowRequested`: `Handled = true`로 새 창을 막고 같은 처리를 한다(`target="_blank"` 링크).
 - `<base href>`가 있으면 `#앵커`도 `<base href>` 기준 URL로 해석되어 `NavigationStarting`이 발생한다(PoC-6에서 확인 — 이때 본문은 그대로 남는다).
   `<base href>`를 문서 파일 URL로 두므로 `<현재 문서 URL>#앵커` 형태가 되고, `LinkClassifier`가 "현재 문서 + 앵커"로 판별해
@@ -260,6 +302,8 @@ base-uri https://docroot.example;
 - `http://` 이미지는 페이지가 https라서 혼합 콘텐츠 정책에 따라 보이지 않을 수 있다.
 - `script-src 'none'`을 넣어도 `ExecuteScriptAsync`는 동작한다 (PoC-1). 위 CSP로 PoC를 실행해 확인했다.
 - `IShellLauncher.OpenExternal`은 `http`, `https`, `mailto` 스킴만 연다. 로컬 파일은 실행하지 않고 탐색기에서 선택만 한다.
+  허용 규칙은 Core `ExternalLaunchPolicy` 한곳에 두고 `LinkClassifier`(분류)와 App `ShellLauncher`(실행 직전 마지막 방어선)가 같이 쓴다.
+  탐색기 인수 `/select,"경로"`도 여기서 만들며, 상대 경로와 따옴표가 든 경로(인수를 끊고 다른 옵션을 끼워 넣을 수 있음)는 거부한다.
 
 ### 6.6 테마 전달
 
@@ -280,6 +324,10 @@ base-uri https://docroot.example;
 - 실패 결과: 폴더 없음 → `NotFound`, 접근 거부 → `AccessDenied`, 장치 미준비·파일 경로·빈 경로 등 → `Unavailable`.
   펼침 화살표용 `HasSubfoldersAsync`는 읽을 수 없으면 `false`를 돌려주고, 원인은 펼칠 때 `GetSubfoldersAsync`가 알린다.
 - 펼침 화살표: 자식 목록을 먼저 보여 준 뒤, 자식마다 하위 폴더 유무를 백그라운드에서 확인해 화살표를 갱신한다.
+- 다시 읽기(`F5`, Phase 4): 이름·경로·종류가 같고 **펼쳐 둔** 기존 자식 노드는 그대로 다시 쓴다 — 새로 만들면 펼쳐 둔 하위 트리가 접힌다.
+  접힌 자식은 새로 만든다: 다시 펼칠 때 하위 폴더를 새로 읽고, 그사이 생긴 하위 폴더에 맞춰 펼침 화살표도 다시 확인한다(접힌 노드까지
+  다시 쓰면 화살표가 지워진 노드가 화살표를 되찾지 못했다 — 2026-11-17 리뷰 지적). 대소문자만 바뀐 이름은 새 노드로 만들어 바뀐 이름을 보여 준다. 노드마다 읽기 번호를 두어, 펼침과 `F5`가 겹쳐 늦게 끝난 이전 읽기의
+  결과(성공·실패 모두)는 버리고, 이전 읽기의 화살표 확인도 멈춘다(하위 폴더 3만 개 폴더에서 같은 확인을 두 번 하지 않게).
 - 정렬: `StringComparer.CurrentCultureIgnoreCase` (한글 파일 이름 고려). 자연 정렬은 P2.
 
 ### 7.2 md 목록
@@ -409,7 +457,7 @@ MDFileViewer.exe --unregister
 | `MaxRecursiveResults` | 5,000 | 재귀 목록 최대 개수 (F-03) |
 | `DriveReadyTimeout` | 3초 | 드라이브 준비 확인 최대 대기 (§7.1) |
 | `LargeFileWarningBytes` | 5 × 1024 × 1024 | 큰 파일 경고 기준 (F-04) |
-| `StatusMessageMilliseconds` | 3,000 | 상태 표시줄 일시 메시지 표시 시간 |
+| `StatusMessageDuration` | 3초 (`TimeSpan`) | 상태 표시줄 일시 메시지 표시 시간 |
 | `MarkdownExtensions` | `.md`, `.markdown` | 대상 확장자 |
 | `ExcludedFolderNames` | `.git`, `node_modules` | 재귀 제외 폴더 |
 | `EditorTabSize` | 4 | 탭 키 공백 수 |
@@ -423,14 +471,22 @@ MDFileViewer.exe --unregister
 | `ShellMenuText` | `MDFileViewer로 열기` | 우클릭 메뉴 문구 |
 | `LogRetentionDays` | 7 | 로그 파일 보관 일수 |
 
+WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로 둔다.
+
+| 이름 | 값 | 의미 |
+|------|----|------|
+| `ViewerResponseTimeout` | 30초 | 템플릿 로드·스크립트 실행 최대 대기 (§6.2). 확인을 받은 큰 파일의 본문 전달도 넉넉히 끝나는 길이 |
+| `MaxRecoveriesWithoutNewDocument` | 3 | 사용자가 새 문서를 열기 전까지 연달아 WebView2를 되살리는 횟수 (§13) |
+
 ## 13. 오류 처리
 
 | 상황 | 처리 |
 |------|------|
 | 접근 거부, 파일 없음, 파일 잠김 | 사용자 문구로 알리고 계속 쓸 수 있게 한다. 로그에 경로와 예외 종류를 남긴다. |
-| WebView2 Runtime 없음 | 시작할 때 `CoreWebView2Environment.GetAvailableBrowserVersionString()`으로 확인한다. 없으면 설치 안내와 다운로드 페이지 링크를 보여 주고 종료한다. |
-| WebView2 프로세스 실패 | `CoreWebView2.ProcessFailed`를 받으면 뷰어를 다시 만들고 현재 문서를 다시 표시한다. |
-| 예상하지 못한 예외 | `DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`, `AppDomain.UnhandledException`에서 로그를 남기고 오류 대화상자를 띄운다. |
+| WebView2 Runtime 없음 | 시작할 때 `CoreWebView2Environment.GetAvailableBrowserVersionString()`으로 확인한다(빈 값이거나 `WebView2RuntimeNotFoundException`). 없으면 03 §10.2 대화상자("다운로드 페이지 열기"/"닫기")를 보여 주고 종료 코드 1로 끝낸다. 다운로드 페이지는 `https://developer.microsoft.com/microsoft-edge/webview2/`(2026-11-17 응답 확인). 이 경로는 Runtime이 설치된 PC에서 재현할 수 없어 Phase 11-6(깨끗한 PC)에서 확인한다. |
+| WebView2 프로세스 실패 | `CoreWebView2.ProcessFailed`에서 `BrowserProcessExited`·`RenderProcessExited`면 `MarkdownView`의 WebView2 컨트롤을 새로 만들고(환경도 새로 만든다) 마지막 문서를 다시 표시한다. 다시 보여 줄 문서는 §6.2의 잠금 안에서 고르므로, 되살리는 사이 사용자가 연 새 문서가 먼저 표시됐으면 그 문서를 보여 준다(옛 문서가 새 문서를 덮지 않음). 되살리는 중에 새 컨트롤도 끝나면 지금 복구를 마친 뒤 한 번 더 되살린다. 렌더러를 죽이는 문서처럼 다시 보여 줄 때마다 끝나는 경우를 막으려고, 사용자가 새 문서를 열기 전까지 `MaxRecoveriesWithoutNewDocument`(3)번까지만 되살리고, 넘으면 오류 로그를 남기고 이후 표시 요청을 바로 "표시하지 못함"으로 끝낸다(앱을 다시 시작해야 한다). `RenderProcessUnresponsive`(몇 초마다 다시 옴)와 그 밖의 보조 프로세스 실패는 로그만 남긴다(SDK 문서: 스스로 복구됨). 브라우저 프로세스 강제 종료 → 복구·재표시를 E2E로 자동 확인한다(§14.3). |
+| 새 요청에 밀린 요청의 늦은 실패 | 문서 열기·새로고침·md 목록 검색·트리 읽기는 새 요청이 오면 이전 요청을 취소하지만, 응답 없는 네트워크 드라이브처럼 취소에 반응하지 않는 읽기는 나중에 실패로 끝날 수 있다. 이런 실패는 화면(새 요청의 결과)을 바꾸지 않는다. 로그는 입출력·권한 예외면 정보로, 그 밖의 예외(결함일 수 있음)는 예외째 경고로 남긴다. 반대로 화면 표시까지 끝난 뒤 밀린 문서는 화면에 남아 있으므로 경로·상태 표시줄 값을 그 문서로 맞추되, 새 요청이 아직 읽는 중이면 "읽는 중" 상태는 그대로 둔다(앵커 이동은 하지 않음). 큰 파일 확인에서 "취소"하면 화면에 실제로 남아 있는 문서의 상태로 돌아간다(읽는 중이던 요청을 밀어낸 뒤라도 "읽는 중"에 머물지 않음). |
+| 예상하지 못한 예외 | UI 스레드(`DispatcherUnhandledException`): 로그 → `Handled = true` → 오류 대화상자, 앱은 계속 쓴다. 작업(`TaskScheduler.UnobservedTaskException`): 로그 → `SetObserved` → UI 스레드에서 대화상자. 프로세스(`AppDomain.UnhandledException`): 로그 → 시스템 메시지 상자(프로세스는 끝난다). 대화상자는 한 번에 하나만 띄운다. 주의: `Dispatcher.InvokeAsync`로 넘긴 작업의 예외는 `DispatcherUnhandledException`이 아니라 그 작업에 담긴다(2026-11-17 확인) — 전역 처리기로 보내야 하면 `BeginInvoke`를 쓴다. |
 | 로그 | `%LOCALAPPDATA%\MDFileViewer\logs\yyyyMMdd.log`. 시작할 때 "오늘 − 7일"보다 이전 날짜 파일을 지운다(오늘 포함 8일치 보관). 잠긴 파일은 건너뛰고 다음 시작 때 다시 시도한다. 여러 창이 같은 파일에 쓰므로 공유 쓰기로 연다. 기록 실패는 앱을 멈추지 않는다. 문서 내용은 로그에 쓰지 않는다. |
 
 ## 14. 테스트 전략
@@ -444,14 +500,19 @@ MDFileViewer.exe --unregister
 |------|-----------|
 | `CommandLineParser` | 인수 없음/폴더/파일/없는 경로/상대 경로/`C:"` 보정/`--register`/알 수 없는 옵션 |
 | `ZoomViewModel` (+ `ZoomSteps`) | 다음·이전 단계, 단계 사이 값에서 이동, 범위 끝에서 버튼 비활성, 100% 리셋 |
-| `MarkdownRenderer` | 표·작업 목록·각주·제목 id(한글, 중복) 출력, front matter 미출력, 빈 문서, 원시 HTML 유지 |
+| `MarkdownRenderer` | 표·작업 목록·각주·제목 id(한글, 중복) 출력, front matter 미출력, 빈 문서, 원시 HTML 유지, 원시 `<meta>`를 글자로(대소문자·탭·인라인·지운 뒤 재조립 시도), 코드의 `<meta>`는 그대로 |
 | `DocumentUrlMapper` | 루트(드라이브·UNC), 문서 URL 인코딩(공백·한글·`#`·`%` 포함 경로), 왕복 변환, 루트 밖·다른 호스트 거부 |
 | `ViewerScriptBuilder` | 값의 JSON 인코딩(따옴표·`</script>`·비ASCII·U+2028), 문서 표시 순서(`<base>` → 본문 → 맨 위로), 본문 교체·앵커·테마, 덮일 수 있는 `document.x` 미사용 |
 | viewer 템플릿 (`ViewerTemplateTests`) | CSP 메타, `data-theme`, 스크립트가 쓰는 요소 id, CSS 절대 URL, 스크립트 없음, 색 토큰이 03 §4와 같음 |
 | `LinkClassifier` | 외부/현재 문서 앵커/다른 md(앵커 포함)/로컬 파일·폴더/없는 파일/차단 스킴·내부 호스트/URL 디코딩 |
 | `TextFileCodec` | BOM 판별, UTF-8 엄격 디코딩 실패 → CP949, 손상 바이트 → U+FFFD + `HasDecodingErrors`, 나타낼 수 없는 문자 → 예외, 줄 끝 판별(혼합 포함), 저장 시 형식 보존 |
-| `DocumentViewModel` | 변경 표시, 저장 성공/실패, 미저장 확인의 저장/저장 안 함/취소 분기, 읽기 전용 |
-| `FileListViewModel` | 직속/재귀 토글, 정렬, 빈 목록 안내, 폴더 변경 시 이전 검색 취소 |
+| `DocumentViewModel` | (Phase 4) 열기·상태 표시줄 값, 앵커, 큰 파일 확인/취소(읽는 중 요청을 밀어낸 뒤 취소해도 "읽는 중"에 머물지 않음), 읽기 실패 종류별 문구, 표시 실패, 새 요청이 이전 요청 취소, 밀려난 요청의 늦은 실패가 새 문서를 덮지 않음(열기·새로고침, 결함성 예외는 경고 로그), 표시 뒤 밀린 문서를 기록하되 새 요청의 "읽는 중" 유지, 손상 안내, 새로고침은 본문만 교체. (Phase 7) 변경 표시, 저장 성공/실패, 미저장 확인의 저장/저장 안 함/취소 분기, 읽기 전용 |
+| `FileListViewModel` | 직속/재귀 토글, 정렬, 빈 목록 안내, 폴더 변경 시 이전 검색 취소, 밀려난 검색의 늦은 실패가 새 목록을 덮지 않음 |
+| `FolderTreeViewModel` | "내 PC"·드라이브, 지연 로딩·자리 표시, 화살표 정리, 접근 거부, 시작 폴더 펼침(숨김 폴더·UNC 공유 추가), 선택, 보이는 행 번호, 새로고침(펼친 노드 유지, 접힌 노드는 새로 만들어 화살표 재확인, 대소문자만 바뀐 이름, 늦게 끝난 이전 읽기 무시, 밀려난 화살표 확인 중단), 자식 교체는 컬렉션 변경 알림 한 번 |
+| `MainViewModel` | 시작 인수(없음·폴더·파일·없는 경로), 폴더·파일 선택 흐름, 링크 종류별 처리(외부·앵커·다른 md·로컬 파일·없는 파일·차단), 상태 메시지 시간, 폴더 열기, 새로고침, 주소 이동 |
+| `ExternalLaunchPolicy` | 허용 스킴(`http`·`https`·`mailto`)과 거부 스킴(`file`·UNC·`javascript`·`ms-settings` 등), 상대 URI 거부, 탐색기 인수(공백·UNC 경로), 상대 경로·드라이브 상대 경로·따옴표 경로 거부 |
+| `DisplayFormat` | 크기(B·KB·MB, 반올림 후 단위 결정 — 1,048,575 B는 `1 MB`), 시간대 변환, 인코딩·줄 끝 표기 |
+| Mvvm (`BulkObservableCollection`, `RelayCommand<T>`) | 한 번의 Reset 알림, 재진입 방지, 매개변수 형 변환·실행 가능 여부 |
 | `ShellIntegrationService` | 키 경로와 명령 문자열 생성, 상태 판별(가짜 `IRegistryAccess`) |
 | `JsonSettingsStore` | 왕복 저장, 누락 필드 기본값, 손상 파일 → `.bak` + 기본값 |
 
@@ -467,6 +528,11 @@ MDFileViewer.exe --unregister
 - 레지스트리: §8.4의 테스트 전용 루트에 등록·상태 확인·해제를 하고 흔적이 남지 않는지 확인한다.
 - **Phase 2 결과 (2026-11-17):** Core 테스트 124개 통과(Git Bash·PowerShell 양쪽), Core 줄 커버리지 94.4%·분기 93.2%.
   남은 `%TEMP%\MDFileViewer.Tests` 폴더 없음.
+- **Phase 4 결과 (2026-11-17):** Core 테스트 382개 통과, Core 줄 커버리지 94.4%·분기 90.2%. E2E 14개 통과. 빌드 경고 0개.
+- 늦게 끝나는 요청은 가짜의 `HeldCall<T>`로 재현한다 — 테스트가 끝내 줄 때까지 붙잡고, 취소에 반응할지(보통의 읽기) 반응하지 않을지
+  (응답 없는 네트워크 드라이브, 시작한 화면 표시)를 고른다.
+  호출이 실제로 시작될 때까지(`WaitUntilStartedAsync`) 기다린 뒤 다음 요청을 보내야 한다. 앞 단계(`Task.Run`)가 새 요청에 밀려 그 호출에
+  닿지 않으면 테스트가 엉뚱한 이유로 통과한다(2026-11-17 한 번 겪음).
 
 ### 14.3 E2E
 
@@ -474,8 +540,21 @@ MDFileViewer.exe --unregister
 - E2E는 실제 데스크톱 세션이 필요하므로 단위·통합 테스트와 따로 실행한다(`dotnet test tests/MDFileViewer.E2ETests`).
 - 테스트할 exe 경로는 E2E csproj가 빌드할 때 어셈블리 메타데이터(`AppExePath`)로 넣는다. 앱 프로젝트는 빌드 순서만 참조한다(`ReferenceOutputAssembly="false"`).
 - 키보드·마우스 입력을 보내는 E2E는 앱 창이 맨 앞이어야 한다. Windows의 포커스 가로채기 방지 때문에 테스트가 띄운 창이 맨 앞으로
-  오지 않을 수 있다(PoC-3에서 `Activate()`만으로는 실패). 입력 E2E를 처음 쓸 때(Phase 5) `AppSession`에 `AttachThreadInput` +
-  `SetForegroundWindow` 방식으로 창을 맨 앞에 올리는 기능을 넣는다. 이 방식은 다른 창에 입력을 보내지 않는다. 맨 앞이 아니면 입력을 보내지 않고 테스트를 실패로 처리한다.
+  오지 않을 수 있다(PoC-3에서 `Activate()`만으로는 실패). Phase 4에서 `AppSession.BringToForeground`(`AttachThreadInput` +
+  `SetForegroundWindow` + `BringWindowToTop`)를 넣었다. 이 방식은 다른 창에 입력을 보내지 않는다. 맨 앞이 아니면 입력을 보내지 않고 테스트를 실패로 처리한다.
+- 입력 안전 규칙(Phase 4): 클릭 직전에 다시 맨 앞인지, 누를 점이 앱 창 안인지, 그 점에 실제로 보이는 창이 앱 창인지(`WindowFromPoint`)
+  확인한다 — 스크롤로 화면 밖에 나간 요소도 좌표를 돌려주고, 항상 위 창이 덮고 있으면 맨 앞이어도 클릭이 그 창으로 간다.
+  입력을 보내는 E2E(클릭·`Ctrl+O`·`Enter`)는 실행 중에 사람이 PC를 쓰면 포커스를 빼앗겨 실패한다(2026-11-17, 같은 코드에서 실패 지점이
+  바뀌며 실패하다 손대지 않을 때 14/14 통과). 이 실패는 안전 장치가 입력을 막은 것이다 — PC를 쓰지 않을 때 다시 돌린다.
+  입력 없이 할 수 있는 조작은 UIA 패턴(`SelectionItem.Select`, `Toggle`, `Invoke`, `Value.SetValue`)으로 한다.
+- 요소 찾기(Phase 4): 대화상자는 메인 창의 직속 자식 창(`OwnedWindows`)에서 찾는다 — FlaUI `ModalWindows`는 자손 전체를 뒤져 문서(WebView2)
+  접근성 트리까지 내려가다 시간 초과가 났다. 문서 안 링크는 `Hyperlink` 형식과 이름으로 찾는다 — 이름만으로 찾으면 같은 글자의 목록 항목(`<li>`, 문서 폭 전체)이 잡힌다.
+- 전역 예외 처리는 Debug 빌드에서만 환경 변수 `MDFILEVIEWER_E2E_FAULT`(`dispatcher`·`task`)로 강제로 일으켜 확인한다. Release 빌드에는 이 코드가 없다.
+- 그림 표시는 화면을 찍어 그림 가운데 색을 본다(`Capture.Element`, FlaUI가 이미 쓰는 `System.Drawing.Common`). 디스플레이 색 관리로 `#2F6FDE`가
+  (67,111,214)로 찍혀(2026-11-17) 채널마다 ±40을 허용한다 — 흰 배경·깨진 그림 아이콘과는 확실히 구분된다. 루트 전환은 두 번째 샘플을 테스트 출력 폴더
+  (임시 폴더와 다른 드라이브)에 만들어 확인하고, 같은 드라이브면 실패로 알린다. 이전 화면의 그림을 잘못 보지 않도록 그림 없는 문서를 거친다.
+- WebView2 복구 E2E는 앱 프로세스가 직접 띄운 `msedgewebview2` 프로세스(부모 번호가 앱이고 앱보다 늦게 시작한 것, `ProcessTree`)만 끝낸다.
+  사용자가 쓰는 다른 프로그램의 WebView2는 건드리지 않는다.
 - 탐색기 우클릭 메뉴 3종은 탐색기 자체를 조작해야 하므로 실제 탐색기에서 수동으로 확인한다. 메뉴가 넘기는 인수 형태(`"%1"`, `"%V"`)로 exe를 실행하는 경우는 E2E로 자동화한다.
 
 ### 14.4 테스트로 다루지 않는 부분
@@ -506,3 +585,5 @@ dotnet publish src/MDFileViewer -c Release -r win-x64 --self-contained false -o 
 - 2026-11-17: PoC 6건 모두 통과 — 안 A 확정, `<base href>`를 문서 파일 URL로, CSP에 `script-src 'none'`, 줌 단축키는 앱이 처리, E2E 맨 앞 창 처리 방침, 테스트 명령 분리.
 - 2026-11-17: Phase 2 구현 반영 — 실패를 결과 값으로 알리는 원칙(§4.1), 드라이브 확인 시간 제한·실패 격리(§7.1), 검색 실패·잘림 규칙(§7.2), 엄격 디코딩·`HasDecodingErrors`·CP949 대체 문자(§7.3), md 아닌 파일 인수(§9), `DriveReadyTimeout`(§12), 로그 보관·공유 쓰기(§13), 테스트 환경 주의점(§14.2).
 - 2026-11-17: Phase 3 구현 반영 — 파이프라인 순서·한글 제목 id(§6.1), Core 구성과 `HtmlPageBuilder` → `DocumentUrlMapper`·`ViewerScriptBuilder` 분리, DOM clobbering 대응, 본문 `<base>` 무시(§6.2), 사용자 시작 탐색만 처리(meta refresh), `LinkClassifier` 분류 규칙·경로 안전 규칙(§6.4), 리소스 상수(§12), 단위 테스트 표(§14.1).
+- 2026-11-17: Phase 4 리뷰 반영 — 트리 새로고침은 펼친 노드만 재사용(§7.1), 시작한 표시는 끝까지·컨트롤 세대 번호(§6.2), 늦은 실패 로그 수준·표시 뒤 밀린 문서 기록(§13), 테스트 표·결과·`HeldCall` 모드(§14.1·§14.2), 클릭 지점 가림 확인·PC 사용 중 E2E 실패(§14.3).
+- 2026-11-17: Phase 4 구현 반영 — 실제 인터페이스(§4.1), 시작 흐름(§5), 원시 `<meta>` 글자 처리(§6.1), 루트마다 템플릿 재로드·표시 잠금·응답 시간 제한(§6.2), 컨텍스트 메뉴·`Ctrl+O` 확인(§6.3), meta refresh는 `IsUserInitiated=true`(§6.4), `ExternalLaunchPolicy`(§6.5), 트리 새로고침의 노드 재사용·늦은 읽기 무시(§7.1), WebView2 상수(§12), 복구 횟수 제한·늦은 실패 처리·전역 예외(§13), 단위 테스트 표·Phase 4 결과·`HeldCall`(§14.1·§14.2), E2E 입력 안전·요소 찾기·그림 색 확인·루트 전환·프로세스 복구 규칙(§14.3).

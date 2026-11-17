@@ -10,7 +10,8 @@ MDFileViewer/
 ├── src/
 │   ├── MDFileViewer/               # WPF 앱 → MDFileViewer.exe
 │   │   ├── App.xaml(.cs)           # 구성 루트, 인수 처리, 전역 예외 처리
-│   │   ├── Views/                  # MainWindow, HelpWindow, 대화상자
+│   │   ├── AppPaths.cs             # %LOCALAPPDATA% 아래 로그·WebView2 폴더, 리소스 폴더 경로
+│   │   ├── Views/                  # MainWindow, HelpWindow, 대화상자(MessageDialog)
 │   │   ├── Controls/               # MarkdownView(WebView2 래퍼), EditorView(AvalonEdit 래퍼)
 │   │   ├── Services/               # ThemeService, DialogService, ShellLauncher, WebViewHost
 │   │   ├── Themes/                 # Light.xaml, Dark.xaml(색상 토큰), Controls.xaml(공통 스타일)
@@ -23,7 +24,9 @@ MDFileViewer/
 │       ├── Services/               # 파일·렌더링·설정·셸 통합·로그
 │       ├── ViewModels/
 │       ├── Resources/              # viewer.html, viewer.css, help.md (출력 폴더로 복사)
-│       └── AppConstants.cs         # 이름 있는 상수 (02 §12)
+│       ├── AppConstants.cs         # 이름 있는 상수 (02 §12)
+│       ├── UiText.cs               # 화면 문구 (03 §10). E2E도 같은 상수로 비교한다
+│       └── DisplayFormat.cs        # 크기·시각·인코딩·줄 끝 표기
 ├── tests/
 │   ├── MDFileViewer.Core.Tests/    # src/MDFileViewer.Core 폴더 구조를 그대로 따른다
 │   └── MDFileViewer.E2ETests/      # FlaUI(UIA3) UI 자동화 E2E
@@ -75,6 +78,15 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
   예외: `AsyncRelayCommand.Execute`(`ICommand`는 void만 허용)는 작업을 `async void` 도우미로 기다린다. 작업 안의 예외는 생성자로 받은
   오류 처리기로 넘기고, 오류 처리기 자신이 던진 예외만 호출한 UI 스레드에서 다시 던져 전역 예외 처리(4-8)로 가게 한다.
   `AsyncRelayCommand`의 `IsRunning`·`Cancel`은 UI 스레드에서만 쓴다.
+  예외: Debug 빌드의 E2E 강제 예외 도우미(`App.ForceUnobservedTaskCollection`)는 기다릴 호출자가 없는 디스패처 작업이라 `async void`를 쓴다.
+- **디스패처:** 결과를 기다리지 않고 UI 스레드에 일을 넘길 때는 `Dispatcher.BeginInvoke`를 쓴다. `InvokeAsync`는 안에서 난 예외를
+  돌려준 작업에 담아, 아무도 그 작업을 기다리지 않으면 전역 예외 처리(로그·오류 창)를 건너뛴다(2026-11-17 확인, 02 §13).
+  결과나 완료를 `await`할 때만 `InvokeAsync`를 쓴다.
+- **늦게 끝난 요청:** 새 요청이 이전 요청을 취소하는 흐름에서는 `catch (OperationCanceledException) when (token.IsCancellationRequested)` 다음에
+  `catch (Exception) when (token.IsCancellationRequested)`를 두어, 취소에 반응하지 않고 늦게 실패한 이전 요청이 새 결과를 덮지 않게 한다
+  (정보 로그만 남긴다, 02 §13).
+- **App의 `using`:** WPF 프로젝트의 암시적 using에는 `System.IO`가 없다(`System.Windows.Shapes.Path`와 이름이 겹치기 때문). 파일 경로를 쓰는
+  App 코드는 `using System.IO;`를 명시한다.
 - **UI 스레드:** 파일·레지스트리 접근과 렌더링 준비는 UI 스레드 밖에서 하고, ViewModel 속성 갱신은 UI 스레드에서 한다.
 - **크기:** 함수는 50줄 이하, 파일은 800줄 이하(보통 200~400줄), 중첩은 4단계 이하. 조건이 쌓이면 이른 반환을 쓴다.
 - **매직 넘버 금지:** 의미 있는 값은 `AppConstants`(02 §12)에 이름 있는 상수로 둔다.
@@ -101,6 +113,9 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 파일 쓰기 도구로 C# 문자열에 ` ` 같은 유니코드 이스케이프를 쓰면 실제 문자로 저장될 수 있다(2026-11-17, U+2028이 컴파일 오류를 냄).
   보이지 않는 문자·줄 구분 문자는 `char.ConvertFromUtf32(0x2028)`처럼 코드 값으로 만든다.
 - `dotnet new` 템플릿은 BOM이 붙은 파일을 만들므로, 템플릿으로 만든 파일은 BOM을 지우고 CRLF로 맞춘다.
+- 파일 쓰기 도구로 새로 만든 파일은 LF로 저장될 수 있다(2026-11-17 확인). 새 파일을 만든 뒤 CRLF·BOM 없음을 확인한다.
+- CRLF 파일을 셸의 한 줄 치환(perl·sed·인라인 python)으로 고치면 역슬래시·따옴표가 든 줄에서 조용히 실패하거나 역슬래시가 사라졌다
+  (2026-11-17, `@"하위\sub.md"`가 `@"하위sub.md"`로 바뀜). 경로·이스케이프가 든 줄은 편집 도구로 고치고, 고친 뒤 해당 줄을 다시 확인한다.
 
 ## 5. Git
 
@@ -126,6 +141,16 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 테스트끼리 상태를 공유하지 않는다. 실제 시간이 지나기를 기다리는 단언을 쓰지 않는다.
   디바운스처럼 시간에 기대는 코드는 BCL의 `TimeProvider`를 주입받고, 테스트에서는 직접 만든 가짜 `TimeProvider`로 시간을 흘려보낸다.
 - 테스트용 가짜 구현은 테스트 프로젝트의 `Fakes/`에 둔다.
+- 늦게 끝나는 호출은 `HeldCall<T>`로 재현하고(취소에 반응할지 고른다), 호출이 실제로 시작된 뒤(`WaitUntilStartedAsync`) 다음 요청을 보낸다(02 §14.2).
+  가짜의 전역 관문을 걸었다가 바로 푸는 방식은 앞에 `Task.Run`이 있으면 관문이 적용되지 않는다(2026-11-17 리뷰 지적).
+- 새 요청에 밀린 늦은 실패는 `AppLoggerExtensions.LogSupersededFailure`로 남긴다(입출력·권한은 정보, 그 밖은 예외째 경고).
+- **E2E 입력 안전(02 §14.3):** 입력을 보내기 전에 앱 창을 맨 앞으로 올리고(`BringToForeground`), 클릭 직전에 다시 맨 앞인지·누를 점이
+  앱 창 안인지·그 점을 다른 창이 덮지 않았는지(`IsPointOnApp`) 확인한다. 아니면 입력을 보내지 않고 실패시킨다. 입력 없이 되는 조작은 UIA 패턴으로 한다.
+  입력 E2E는 PC를 쓰지 않을 때 돌린다 — 쓰는 중이면 안전 장치 때문에 실패한다.
+  대화상자는 `OwnedWindows`, 문서 링크는 `FindLink`로 찾는다. 테스트가 끝내는 프로세스는 앱의 자식(`ProcessTree`)으로만 좁힌다.
+- **잘못된 이유로 통과하지 않는지 확인:** 화면 결과(그림 표시 등)를 보는 E2E와 경합을 재현하는 단위 테스트는, 처음 쓸 때 고친 코드를 잠시
+  되돌리거나 일부러 깨서 테스트가 실패하는지 한 번 확인한다(2026-11-17, 같은 드라이브 관리 공유로는 루트 전환 검사가 실패하지 않아 다른 드라이브로 바꿈).
+- Debug 빌드 전용 시험 장치(예: `MDFILEVIEWER_E2E_FAULT`)는 `[Conditional("DEBUG")]`나 `#if DEBUG`로 Release 빌드에서 빠지게 한다.
 
 ## 7. 의존성 추가 절차
 
@@ -146,3 +171,5 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-17: Phase 1 반영 — 솔루션 파일 `MDFileViewer.slnx`, E2E 폴더 확정, XAML 들여쓰기·템플릿 BOM 처리 규칙.
 - 2026-11-17: Phase 2 반영 — `AsyncRelayCommand`의 `async void` 예외(§3.2), Git 현재 상태(§5), 임시 폴더 정리·접근 거부 테스트·표본 확인 규칙(§6).
 - 2026-11-17: Phase 3 반영 — `.html`·`.css` 인코딩·줄 끝·들여쓰기, 유니코드 이스케이프 주의(§4).
+- 2026-11-17: Phase 4 리뷰 반영 — `HeldCall` 취소 반응 선택·전역 관문 주의·늦은 실패 로그 도우미, E2E 클릭 지점 가림 확인·PC 사용 중 실행 금지(§6).
+- 2026-11-17: Phase 4 반영 — 폴더 구조에 `AppPaths`·`UiText`·`DisplayFormat`·`MessageDialog`(§1), E2E 도우미 `async void` 예외·`BeginInvoke` 규칙·늦은 실패 처리·App의 `using System.IO`(§3.2), 새 파일 줄 끝·셸 치환 주의(§4), `HeldCall`·E2E 입력 안전·일부러 깨서 확인·Debug 전용 시험 장치(§6).

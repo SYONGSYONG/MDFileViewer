@@ -30,7 +30,7 @@ public static class LinkClassifier
             return new LinkTarget.Blocked(url);
         }
 
-        return uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeMailto
+        return ExternalLaunchPolicy.IsAllowedExternalUri(uri)
             ? new LinkTarget.External(uri)
             : new LinkTarget.Blocked(url);
     }

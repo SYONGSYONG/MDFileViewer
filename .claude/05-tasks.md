@@ -15,7 +15,7 @@
 | 1 | 솔루션 골격 + PoC | ✅ |
 | 2 | Core — 파일 시스템·텍스트·명령줄 | ✅ |
 | 3 | Core — 렌더링·링크 | ✅ |
-| 4 | 메인 창 (보기 모드) | ⬜ |
+| 4 | 메인 창 (보기 모드) | 🔄 (4-6 수동 확인 남음) |
 | 5 | 줌 | ⬜ |
 | 6 | 테마 | ⬜ |
 | 7 | 편집 모드 | ⬜ |
@@ -76,14 +76,17 @@
 
 | # | 작업 | 산출물 | 검증 방법 | 상태 | 비고 |
 |---|------|--------|-----------|------|------|
-| 4-1 | `MainWindow` 레이아웃 — 툴바, 3열, 구분선, 상태 표시줄 | `App/Views/` | 실행해 03 §2.1과 비교, 최소 크기에서 겹침 없음 | ⬜ | |
-| 4-2 | `FolderTreeViewModel` + 트리 View (지연 로딩) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ⬜ | |
-| 4-3 | `FileListViewModel` + 목록 View (토글, 정렬, 빈 상태, 취소) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ⬜ | |
-| 4-4 | `MarkdownView`(WebView2 래퍼) + `WebViewHost` | `App/Controls/`, `App/Services/` | 샘플 문서 표시, 스크립트 미실행 확인, `<img name="getElementById">`가 든 문서 뒤에도 다른 문서·테마 전환 동작 | ⬜ | |
-| 4-5 | `DocumentViewModel` 열기 흐름, 큰 파일 경고, 읽기 실패 안내 | Core | 단위 테스트 통과 | ⬜ | |
-| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작, `<meta http-equiv="refresh">` 문서를 열어도 브라우저·탐색기가 열리지 않음(`IsUserInitiated` 확인) | ⬜ | |
-| 4-7 | 시작 폴더 자동 펼침·선택, 파일 인수 처리 | Core, App | 인수 3종(없음/폴더/파일)으로 실행해 01 F-01 수용 기준 확인, 문서 영역 포커스 상태의 `Ctrl+O` 동작 E2E 확인 | ⬜ | |
-| 4-8 | 전역 예외 처리, WebView2 Runtime 확인, 프로세스 실패 복구 | `App.xaml.cs` | 강제 예외로 로그·대화상자 확인 | ⬜ | |
+| 4-1 | `MainWindow` 레이아웃 — 툴바, 3열, 구분선, 상태 표시줄 | `App/Views/` | 실행해 03 §2.1과 비교, 최소 크기에서 겹침 없음 | ✅ | 2026-11-17 기본 크기(1440×900)·최소 크기(900×560)로 실행해 화면을 찍어 비교, 겹침 없음. 빈 상태 문구 확인. 툴바는 Phase 4 범위(폴더 열기·주소 표시줄)만 — 나머지 버튼은 각 Phase(03 §2.1 Phase 4 구현 세부) |
+| 4-2 | `FolderTreeViewModel` + 트리 View (지연 로딩) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ✅ | 2026-11-17 `FolderTreeViewModelTests` 통과(새로고침의 펼친 노드 재사용·접힌 노드 화살표 재확인·늦은 읽기 무시 포함). 실행: System32\drivers·FileRepository(형제 981개)·WinSxS(3만 개) 펼침·선택 행 화면 표시, UI 멈춤 최대 247ms(`WM_NULL` 응답 측정, 개선 전 2,459ms) |
+| 4-3 | `FileListViewModel` + 목록 View (토글, 정렬, 빈 상태, 취소) | Core, App | ViewModel 단위 테스트 통과 + 실행 확인 | ✅ | 2026-11-17 `FileListViewModelTests` 통과(밀려난 검색의 늦은 실패 포함), E2E `IncludeSubfoldersAndHeaderSort_ChangeListWithoutInput` 통과 |
+| 4-4 | `MarkdownView`(WebView2 래퍼) + `WebViewHost` | `App/Controls/`, `App/Services/` | 샘플 문서 표시, 스크립트 미실행 확인, `<img name="getElementById">`가 든 문서 뒤에도 다른 문서 동작 (테마 전환 쪽은 6-3에서 확인) | ✅ | 2026-11-17 E2E `RelativeImage_IsDrawnBeforeAndAfterSwitchingDocumentRoot`(첫 문서·다른 드라이브로 루트 전환 뒤 상대 그림 색 확인, 코드를 일부러 깨면 실패함을 확인), `AfterDocumentThatClobbersDom_NextDocumentStillOpens` 통과. 문서 안 `<script>` 미실행은 실행 화면으로 확인. UNC 루트 표시는 실행 확인 |
+| 4-5 | `DocumentViewModel` 열기 흐름, 큰 파일 경고, 읽기 실패 안내 | Core | 단위 테스트 통과 | ✅ | 2026-11-17 `DocumentViewModelTests` 통과(큰 파일 취소 후 상태 복귀, 밀려난 요청의 늦은 실패, 표시 뒤 밀린 문서 기록 포함) |
+| 4-6 | 링크 처리 연결 (`IShellLauncher`) | Core, App | 링크 샘플 문서에서 01 F-05 표대로 동작, `<meta http-equiv="refresh">` 문서를 열어도 브라우저·탐색기가 열리지 않음(`IsUserInitiated` 확인) | 🔄 | 2026-11-17 E2E로 앵커·다른 md·없는 파일 링크, meta refresh(글자로 표시, 탐색 없음) 통과. 웹·로컬 파일 링크는 `MainViewModelTests`(가짜 셸)와 `ExternalLaunchPolicyTests`로 확인. **남은 것:** 실제 브라우저·탐색기가 열리는지는 사용자 PC에 창을 띄우므로 자동으로 누르지 않았다 — 사용자 수동 확인 필요 |
+| 4-7 | 시작 폴더 자동 펼침·선택, 파일 인수 처리 | Core, App | 인수 3종(없음/폴더/파일)으로 실행해 01 F-01 수용 기준 확인, 문서 영역 포커스 상태의 `Ctrl+O` 동작 E2E 확인 | ✅ | 2026-11-17 E2E `Launch_WithoutArguments…`·`Launch_WithFolderArgument…`·`Launch_WithMarkdownFileArgument…`·`Launch_WithMissingPath…`·`CtrlO_WithDocumentFocused_OpensFolderPicker` 통과 |
+| 4-8 | 전역 예외 처리, WebView2 Runtime 확인, 프로세스 실패 복구 | `App.xaml.cs` | 강제 예외로 로그·대화상자 확인 (Runtime 없는 경우는 11-6에서 확인) | ✅ | 2026-11-17 E2E `ForcedUnhandledException_IsLoggedAndShowsErrorDialog`(UI 스레드·작업 2건), `KillingWebViewBrowserProcess_RecreatesViewerAndShowsDocumentAgain` 통과. Runtime이 설치된 PC라 "Runtime 없음" 대화상자는 재현할 수 없어 11-6으로 넘김 |
+
+- Phase 4 검증 (2026-11-17): `dotnet build` 경고 0·오류 0, Core 382/382 통과, Core 줄 94.4%·분기 90.2%, E2E 14/14 통과.
+  csharp-reviewer 2회(CRITICAL·HIGH 0건) 지적은 반영하거나 반대 이유를 History.txt에 남겼다. 4-6의 수동 확인이 끝나면 Phase 4를 ✅로 바꾼다.
 
 ## Phase 5 — 줌
 
@@ -98,7 +101,7 @@
 |---|------|--------|-----------|------|------|
 | 6-1 | `Light.xaml`·`Dark.xaml` 토큰, 공통 컨트롤 스타일 | `App/Themes/` | 03 §4 토큰과 값 일치 확인 | ⬜ | |
 | 6-2 | `ThemeService` — 전환, 시스템 감지(`AppsUseLightTheme`, `WM_SETTINGCHANGE`), 제목 표시줄 | `App/Services/` | 실행해 3가지 모드 전환, Windows 앱 모드 변경 즉시 반영 확인 | ⬜ | |
-| 6-3 | 문서 CSS·WebView2 배경 테마 연동 | Core, App | 전환할 때 흰 화면 번쩍임 없음, 스크롤 유지 | ⬜ | |
+| 6-3 | 문서 CSS·WebView2 배경 테마 연동 | Core, App | 전환할 때 흰 화면 번쩍임 없음, 스크롤 유지, `<img name="getElementById">`가 든 문서(E2E 샘플 `clobber.md`)를 연 상태에서도 테마 전환 동작(4-4에서 넘김) | ⬜ | |
 
 ## Phase 7 — 편집 모드
 
@@ -142,7 +145,7 @@
 | 11-3 | E2E — 아래 시나리오 (FlaUI 자동화, 탐색기 메뉴 자체는 9-4에서 수동) | `tests/MDFileViewer.E2ETests`, 결과 기록 | 10개 시나리오 모두 통과 | ⬜ | |
 | 11-4 | 성능 목표 측정 (01 §7) | 측정 기록 | 4개 목표 모두 충족 | ⬜ | |
 | 11-5 | 접근성 점검 — 키보드만으로 전체 흐름, 대비 | 점검 기록 | 03 §4 대비 기준 충족, 마우스 없이 E2E 1·4·5·7 수행 가능 | ⬜ | |
-| 11-6 | 배포 — `dotnet publish`, zip, README(설치·등록 방법) | `publish/`, `README.md` | 깨끗한 폴더에 풀어 실행·등록·해제 확인 | ⬜ | |
+| 11-6 | 배포 — `dotnet publish`, zip, README(설치·등록 방법) | `publish/`, `README.md` | 깨끗한 폴더에 풀어 실행·등록·해제 확인, WebView2 Runtime이 없는 PC(또는 가상 머신)에서 안내 대화상자·다운로드 페이지 열기 확인(4-8에서 넘김) | ⬜ | |
 
 ### E2E 시나리오
 
@@ -164,3 +167,4 @@
 - 2026-11-17: Phase 1 완료(1-2~1-9). 1-1 Git 초기화는 사용자 요청 대기(⏸). 4-7에 `Ctrl+O` E2E 확인 추가.
 - 2026-11-17: 1-1 완료(Git 초기화, 첫 커밋 `739459f`). Phase 2 완료(2-1~2-6) — 테스트 124개, 커버리지 94.4%.
 - 2026-11-17: Phase 3 완료(3-1~3-3) — 테스트 251개, 커버리지 94.6%. 3-2 산출물 이름 변경, 4-4·4-6 검증 항목 추가(DOM clobbering, meta refresh).
+- 2026-11-17: Phase 4 — 4-1~4-5·4-7·4-8 완료(Core 382개, 커버리지 94.4%, E2E 14개). 4-6은 실제 브라우저·탐색기 열림 수동 확인 대기(🔄). 4-4의 테마 전환 확인을 6-3으로, 4-8의 Runtime 없음 확인을 11-6으로 넘김.
