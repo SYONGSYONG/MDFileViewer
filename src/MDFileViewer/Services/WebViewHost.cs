@@ -1,6 +1,7 @@
 using MDFileViewer.Controls;
 using MDFileViewer.Core;
 using MDFileViewer.Core.Abstractions;
+using MDFileViewer.Core.Models;
 using MDFileViewer.Core.Services;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -41,6 +42,11 @@ public sealed class WebViewHost : IViewerHost
     private bool _isRecovering;
     private bool _isRecoveryPending;
     private int _recoveryCount;
+    private EffectiveTheme _theme = EffectiveTheme.Light;
+    private double _zoomFactor = AppConstants.DefaultZoomFactor;
+
+    // 앱이 넣은 배율로 WebView2가 이벤트를 보내도 사용자 조작으로 보지 않는다
+    private bool _isSettingZoom;
 
     // 컨트롤을 새로 만들 때마다 올린다. 죽은 컨트롤에서 늦게 끝난 템플릿 로드가 새 컨트롤의 상태를 바꾸지 않게 한다.
     private int _webViewGeneration;
@@ -56,6 +62,8 @@ public sealed class WebViewHost : IViewerHost
     }
 
     public event EventHandler<LinkActivatedEventArgs>? LinkActivated;
+
+    public event EventHandler<double>? ZoomFactorChanged;
 
     /// <summary>WebView2를 준비한다. 문서 표시 요청은 준비가 끝날 때까지 기다린다.</summary>
     public Task InitializeAsync()
@@ -86,6 +94,62 @@ public sealed class WebViewHost : IViewerHost
 
     public Task ScrollToAnchorAsync(string anchorId, CancellationToken cancellationToken) =>
         RunInGateAsync(core => ExecuteScriptAsync(core, ViewerScriptBuilder.ScrollToAnchor(anchorId)), cancellationToken);
+
+    public Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken) =>
+        RunInGateAsync(core => _isTemplateLoaded ? ExecuteScriptAsync(core, ViewerScriptBuilder.ScrollToRatio(ratio)) : Task.CompletedTask, cancellationToken);
+
+    /// <summary>
+    /// 테마를 바꾼다. 바탕색은 바로 바꿔 흰 화면이 번쩍이지 않게 하고(02 §6.6), 템플릿이 아직 없으면 기억만 한다 — 템플릿을 불러온 뒤 문서보다 먼저 넣는다.
+    /// </summary>
+    public Task ApplyThemeAsync(EffectiveTheme theme, CancellationToken cancellationToken)
+    {
+        _theme = theme;
+        _view.SetBackground(theme);
+
+        // 준비 전(InitializeAsync 전)에는 잠금 안에서 준비를 기다릴 대상이 없다 — 기억한 값을 템플릿을 불러올 때 넣는다
+        if (!_isTemplateLoaded)
+        {
+            return Task.CompletedTask;
+        }
+
+        return RunInGateAsync(core => _isTemplateLoaded ? ExecuteScriptAsync(core, ViewerScriptBuilder.SetTheme(theme)) : Task.CompletedTask, cancellationToken);
+    }
+
+    public void SetZoomFactor(double factor)
+    {
+        _zoomFactor = factor;
+        ApplyZoom(_view.WebView);
+    }
+
+    private void ApplyZoom(WebView2 webView)
+    {
+        if (webView.CoreWebView2 is null || Math.Abs(webView.ZoomFactor - _zoomFactor) < AppConstants.ZoomStepTolerance)
+        {
+            return;
+        }
+
+        _isSettingZoom = true;
+        try
+        {
+            webView.ZoomFactor = _zoomFactor;
+        }
+        finally
+        {
+            _isSettingZoom = false;
+        }
+    }
+
+    // PoC-3: Ctrl+휠은 WebView2가 처리하고 이 이벤트를 보낸다. 코드로 바꾼 값은 보내지 않지만 WPF 컨트롤이 보낼 때를 막아 둔다.
+    private void OnZoomFactorChanged(object? sender, EventArgs e)
+    {
+        if (_isSettingZoom || sender is not WebView2 webView || !ReferenceEquals(webView, _view.WebView))
+        {
+            return;
+        }
+
+        _zoomFactor = webView.ZoomFactor;
+        ZoomFactorChanged?.Invoke(this, _zoomFactor);
+    }
 
     /// <summary>
     /// 잠금을 얻고 WebView2 준비를 기다린 뒤 실행한다. 준비는 잠금 안에서 기다린다 — 기다리는 사이 복구가 컨트롤을 바꿨으면
@@ -137,6 +201,9 @@ public sealed class WebViewHost : IViewerHost
         core.NewWindowRequested += OnNewWindowRequested;
         core.ContextMenuRequested += OnContextMenuRequested;
         core.ProcessFailed += OnProcessFailed;
+        webView.ZoomFactorChanged += OnZoomFactorChanged;
+        _view.SetBackground(_theme);
+        ApplyZoom(webView);
         _logger.Info($"WebView2 준비 완료 (Runtime {environment.BrowserVersionString})");
     }
 
@@ -211,6 +278,12 @@ public sealed class WebViewHost : IViewerHost
         }
 
         _isTemplateLoaded = true;
+
+        // 템플릿은 밝게 테마로 시작한다. 다시 불러올 때(루트 전환·복구)마다 문서를 넣기 전에 지금 테마를 넣는다.
+        if (_theme != EffectiveTheme.Light)
+        {
+            await ExecuteScriptAsync(core, ViewerScriptBuilder.SetTheme(_theme));
+        }
     }
 
     // 막은 탐색도 완료 이벤트(실패)를 보내므로, 허용한 템플릿 탐색의 id와 같은 것만 본다

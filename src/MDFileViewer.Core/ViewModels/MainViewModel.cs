@@ -7,14 +7,18 @@ using MDFileViewer.Core.Services;
 namespace MDFileViewer.Core.ViewModels;
 
 /// <summary>
-/// 메인 창 — 트리(폴더·md 파일)와 뷰어를 잇고 시작 인수, 링크, 툴바 명령을 처리한다 (02 §5 주요 흐름). UI 스레드에서 쓴다.
+/// 메인 창 — 트리(폴더·md 파일)와 문서 탭·뷰어를 잇고 시작 인수, 링크, 툴바 명령을 처리한다 (02 §5 주요 흐름, §17.1). UI 스레드에서 쓴다.
+/// 탭·편집은 MainViewModel.Tabs.cs, 트리·탭 우클릭 메뉴는 MainViewModel.Menus.cs에 있다.
 /// </summary>
-public sealed class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject
 {
     private readonly IDialogService _dialogs;
     private readonly IShellLauncher _shell;
     private readonly IAppLogger _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IFolderWatcher _watcher;
+    private readonly Func<string, bool> _fileExists;
+    private readonly Func<string, bool> _directoryExists;
     private readonly Lock _statusGate = new();
     private bool _isSelectingInCode;
     private string _title = UiText.AppName;
@@ -24,28 +28,31 @@ public sealed class MainViewModel : ObservableObject
     private ITimer? _statusTimer;
     private long _statusVersion;
 
-    public MainViewModel(
-        FolderTreeViewModel tree,
-        DocumentViewModel document,
-        IViewerHost viewer,
-        IDialogService dialogs,
-        IShellLauncher shell,
-        IAppLogger logger,
-        TimeProvider timeProvider)
+    public MainViewModel(FolderTreeViewModel tree, DocumentViewModel document, IViewerHost viewer, MainServices services)
     {
         Tree = tree;
         Document = document;
-        _dialogs = dialogs;
-        _shell = shell;
-        _logger = logger;
-        _timeProvider = timeProvider;
+        _dialogs = services.Dialogs;
+        _shell = services.Shell;
+        _logger = services.Logger;
+        _timeProvider = services.Time;
+        _watcher = services.Watcher;
+        _fileExists = services.FileExists;
+        _directoryExists = services.DirectoryExists;
+        _uiContext = SynchronizationContext.Current;
 
         OpenFolderCommand = new AsyncRelayCommand(_ => OpenFolderAsync(), OnCommandFailed);
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync(), OnCommandFailed);
         NavigateAddressCommand = new AsyncRelayCommand(_ => NavigateAddressAsync(), OnCommandFailed);
+        InitializeTabCommands();
+        InitializeMenuCommands();
+        InitializeDropCommand();
+        Zoom = CreateZoom(viewer);
 
         tree.SelectionChanged += (_, node) => OnTreeSelectionChanged(node);
+        tree.SelectionRestoreRequested += (_, node) => SelectWithoutOpening(node);
         document.PropertyChanged += OnDocumentPropertyChanged;
+        document.Saved += (_, _) => ShowStatus(UiText.Saved);
         viewer.LinkActivated += (_, e) => Track(HandleLinkAsync(e.Url));
     }
 
@@ -53,14 +60,20 @@ public sealed class MainViewModel : ObservableObject
 
     public DocumentViewModel Document { get; }
 
-    /// <summary>제목 표시줄 (03 §10.1): 파일이 열려 있으면 파일 이름, 아니면 폴더 이름.</summary>
+    /// <summary>문서 줌 (01 F-06). 모든 탭이 같은 배율을 쓴다.</summary>
+    public ZoomViewModel Zoom { get; }
+
+    /// <summary>툴바 테마 메뉴 (01 F-11). 실제 적용은 App의 ThemeService가 한다. 테마 없이 만든 경우(테스트) <c>null</c>.</summary>
+    public ThemeViewModel? Theme { get; init; }
+
+    /// <summary>제목 표시줄 (03 §10.1): 파일이 열려 있으면 파일 이름(변경이 있으면 앞에 `*`), 아니면 폴더 이름.</summary>
     public string Title
     {
         get => _title;
         private set => SetProperty(ref _title, value);
     }
 
-    /// <summary>트리에서 고른 폴더(md 파일을 골랐으면 그 파일이 있는 폴더). "내 PC"를 고르면 <c>null</c>.</summary>
+    /// <summary>트리에서 고른 폴더(md 파일을 골랐으면 그 파일이 있는 폴더). "내 PC"·"즐겨찾기"를 고르면 <c>null</c>.</summary>
     public string? CurrentFolderPath
     {
         get => _currentFolderPath;
@@ -91,7 +104,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>폴더 열기 (`Ctrl+O`).</summary>
     public AsyncRelayCommand OpenFolderCommand { get; }
 
-    /// <summary>새로고침 (`F5`) — 선택한 폴더(파일이면 그 파일이 있는 폴더)의 자식과 열린 문서를 다시 읽는다.</summary>
+    /// <summary>새로고침 (`F5`) — 선택한 폴더(파일이면 그 파일이 있는 폴더)의 자식과 활성 탭 문서를 다시 읽는다.</summary>
     public AsyncRelayCommand RefreshCommand { get; }
 
     public AsyncRelayCommand NavigateAddressCommand { get; }
@@ -100,7 +113,13 @@ public sealed class MainViewModel : ObservableObject
     internal Task PendingWork { get; private set; } = Task.CompletedTask;
 
     /// <summary>시작 요청대로 트리를 펼치고 폴더·파일을 연다 (01 F-01).</summary>
-    public async Task InitializeAsync(StartupRequest request, CancellationToken cancellationToken)
+    public Task InitializeAsync(StartupRequest request, CancellationToken cancellationToken) =>
+        InitializeAsync(request, SessionState.Empty, cancellationToken);
+
+    /// <summary>
+    /// 시작 요청대로 연다. 인수 없이 시작하면 지난 폴더와 탭을 되살린다(01 F-14·F-17) — 폴더·파일 인수로 시작하면 되살리지 않는다.
+    /// </summary>
+    public async Task InitializeAsync(StartupRequest request, SessionState previous, CancellationToken cancellationToken)
     {
         await Tree.InitializeAsync(cancellationToken);
         switch (request)
@@ -113,6 +132,9 @@ public sealed class MainViewModel : ObservableObject
                 break;
             case StartupRequest.InvalidPath invalid:
                 _dialogs.ShowError(UiText.PathNotFoundTitle, string.Format(UiText.PathNotFoundFormat, invalid.RawArgument));
+                break;
+            default:
+                await RestoreSessionAsync(previous, cancellationToken);
                 break;
         }
     }
@@ -127,9 +149,10 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 트리를 md 파일까지 펼쳐 그 파일 노드를 고르고, 앵커가 있으면 그 위치로 연다 (01 F-01·F-05). 폴더가 없으면 상태 표시줄로 알린다.
+    /// 파일을 탭에 열고 트리를 그 파일까지 펼쳐 고른다. 앵커가 있으면 그 위치로 연다 (01 F-01·F-05·F-17). 시작 인수·주소 표시줄은 고정 탭,
+    /// 링크는 미리보기 탭이다. 폴더가 없으면 상태 표시줄로 알린다.
     /// </summary>
-    public async Task NavigateToFileAsync(string filePath, string? anchorId = null)
+    public async Task NavigateToFileAsync(string filePath, string? anchorId = null, bool isPreview = false)
     {
         var node = await Tree.ExpandToFileAsync(filePath, CancellationToken.None);
         if (node is null)
@@ -139,7 +162,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         SelectWithoutOpening(node);
-        await Document.OpenAsync(node.FullPath, anchorId);
+        await OpenInTabAsync(node.FullPath, anchorId, isPreview, syncTree: false);
     }
 
     /// <summary>뷰어에서 눌린 링크를 현재 문서 기준으로 분류해 처리한다 (01 F-05).</summary>
@@ -181,7 +204,7 @@ public sealed class MainViewModel : ObservableObject
                 await Document.ScrollToAnchorAsync(anchor.AnchorId);
                 break;
             case LinkTarget.MarkdownDocument markdown:
-                await NavigateToFileAsync(markdown.FilePath, markdown.AnchorId);
+                await NavigateToFileAsync(markdown.FilePath, markdown.AnchorId, isPreview: true);
                 break;
             case LinkTarget.LocalFile local:
                 RunShell(() => _shell.RevealInExplorer(local.Path));
@@ -209,24 +232,57 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    // 폴더를 고르면 주소·제목만 바꾸고 열린 문서는 둔다(01 F-02). md 파일을 고르면 연다(01 F-03) — 코드로 고른 경우는 호출자가 연다.
+    // 지난 폴더를 고르고 탭을 되살린다. 없어진 폴더·파일은 조용히 건너뛴다 — 사용자가 고른 경로가 아니므로 알리지 않는다.
+    private async Task RestoreSessionAsync(SessionState previous, CancellationToken cancellationToken)
+    {
+        if (previous.LastFolder is { Length: > 0 } lastFolder)
+        {
+            await Tree.RevealAsync(lastFolder, cancellationToken);
+        }
+
+        // 끊긴 네트워크 드라이브의 탭은 존재 확인이 오래 걸린다 — UI 스레드 밖에서 확인한다(명령줄 해석과 같은 이유, 02 §9)
+        var existing = await Task.Run(
+            () => previous.Tabs.Files
+                .Where(tab => !string.IsNullOrWhiteSpace(tab.Path) && _fileExists(tab.Path))
+                .Select(tab => tab.Path)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase),
+            cancellationToken);
+        if (Tabs.Restore(previous.Tabs, existing.Contains) is { } active)
+        {
+            await ActivateTabAsync(active);
+        }
+    }
+
+    // 폴더를 고르면 주소·제목만 바꾸고 열린 문서는 둔다(01 F-02). md 파일을 고르면 미리보기 탭으로 연다(01 F-03·F-17) —
+    // 코드로 고른 경우는 호출자가 연다.
     private void OnTreeSelectionChanged(TreeNodeViewModel node)
     {
         var folder = node.IsMarkdownFile ? node.Parent : node;
-        CurrentFolderPath = folder is null || folder.Kind == TreeNodeKind.ThisPc ? null : folder.FullPath;
+        CurrentFolderPath = folder is null || !folder.IsFolderLike ? null : folder.FullPath;
         AddressText = CurrentFolderPath ?? string.Empty;
         UpdateTitle();
         if (node.IsMarkdownFile && !_isSelectingInCode)
         {
-            Track(Document.OpenAsync(node.FullPath));
+            Track(OpenInTabAsync(node.FullPath, anchorId: null, isPreview: true, syncTree: false));
         }
     }
 
     private void OnDocumentPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DocumentViewModel.FileName))
+        switch (e.PropertyName)
         {
-            UpdateTitle();
+            case nameof(DocumentViewModel.FileName):
+                UpdateTitle();
+                break;
+            case nameof(DocumentViewModel.FilePath):
+                WatchActiveFile();
+                break;
+            case nameof(DocumentViewModel.ActiveTab):
+                OnActiveTabChanged();
+                break;
+            case nameof(DocumentViewModel.IsEditing) or nameof(DocumentViewModel.CanSave):
+                OnEditStateChanged();
+                break;
         }
     }
 
@@ -253,10 +309,15 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    // 자식을 다시 읽는 동안 화면 트리가 선택을 부모 폴더로 옮길 수 있어(자식 컬렉션이 통째로 바뀔 때) 다시 읽은 뒤 고를 노드를 다시 고른다.
-    // 그사이 사용자가 다른 노드를 골랐으면 트리가 null을 돌려주어 그 선택을 둔다.
+    // 저장하지 않은 변경이 있으면 먼저 묻는다(01 F-10). 자식을 다시 읽는 동안 화면 트리가 선택을 부모 폴더로 옮길 수 있어
+    // (자식 컬렉션이 통째로 바뀔 때) 다시 읽은 뒤 고를 노드를 다시 고른다. 그사이 사용자가 다른 노드를 골랐으면 트리가 null을 돌려주어 그 선택을 둔다.
     private async Task RefreshAsync()
     {
+        if (Tabs.ActiveTab is { } active && !await Document.ResolveUnsavedChangesAsync(active))
+        {
+            return;
+        }
+
         if (await Tree.RefreshSelectedAsync(CancellationToken.None) is { } selected)
         {
             SelectWithoutOpening(selected);
@@ -264,7 +325,7 @@ public sealed class MainViewModel : ObservableObject
 
         if (Document.FilePath is not null)
         {
-            await Document.ReloadAsync();
+            await Document.ReloadActiveTabAsync();
         }
     }
 
@@ -288,7 +349,8 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdateTitle()
     {
-        var name = Document.FileName ?? FolderName(CurrentFolderPath);
+        var fileName = Document.FileName is { } file && Tabs.ActiveTab is { IsDirty: true } ? "*" + file : Document.FileName;
+        var name = fileName ?? FolderName(CurrentFolderPath);
         Title = name is null ? UiText.AppName : string.Format(UiText.WindowTitleFormat, name);
     }
 

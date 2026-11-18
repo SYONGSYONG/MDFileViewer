@@ -1,4 +1,5 @@
 using MDFileViewer.Core.Abstractions;
+using MDFileViewer.Core.Models;
 
 namespace MDFileViewer.Core.Tests.Fakes;
 
@@ -6,6 +7,14 @@ namespace MDFileViewer.Core.Tests.Fakes;
 internal sealed class FakeViewerHost : IViewerHost
 {
     public event EventHandler<LinkActivatedEventArgs>? LinkActivated;
+
+    public event EventHandler<double>? ZoomFactorChanged;
+
+    public List<double> ScrollRatios { get; } = [];
+
+    public List<EffectiveTheme> Themes { get; } = [];
+
+    public double ZoomFactor { get; private set; } = 1.0;
 
     public List<(string BodyHtml, string DocumentPath)> Shown { get; } = [];
 
@@ -53,6 +62,22 @@ internal sealed class FakeViewerHost : IViewerHost
         Anchors.Add(anchorId);
         return Task.CompletedTask;
     }
+
+    public Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken)
+    {
+        ScrollRatios.Add(ratio);
+        return Task.CompletedTask;
+    }
+
+    public Task ApplyThemeAsync(EffectiveTheme theme, CancellationToken cancellationToken)
+    {
+        Themes.Add(theme);
+        return Task.CompletedTask;
+    }
+
+    public void SetZoomFactor(double factor) => ZoomFactor = factor;
+
+    public void RaiseZoom(double factor) => ZoomFactorChanged?.Invoke(this, factor);
 
     public void RaiseLink(string url) => LinkActivated?.Invoke(this, new LinkActivatedEventArgs(url));
 }

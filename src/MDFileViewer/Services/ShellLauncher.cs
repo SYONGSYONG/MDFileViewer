@@ -38,4 +38,18 @@ public sealed class ShellLauncher : IShellLauncher
         var explorerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), ExplorerFileName);
         using var process = Process.Start(new ProcessStartInfo(explorerPath, arguments) { UseShellExecute = false });
     }
+
+    // 폴더 경로를 셸에 그대로 넘기면 기본 폴더 처리기(탐색기)가 연다. 인수 문자열을 만들지 않아 따옴표 해석 차이가 없다.
+    public void OpenFolder(string folderPath)
+    {
+        if (!ExternalLaunchPolicy.IsOpenableFolderPath(folderPath) || !Directory.Exists(folderPath))
+        {
+            throw new ArgumentException("탐색기에서 열 수 없는 폴더입니다.", nameof(folderPath));
+        }
+
+        using var process = Process.Start(new ProcessStartInfo(folderPath) { UseShellExecute = true });
+    }
+
+    // 클립보드는 다른 프로그램이 잠깐 잡고 있으면 실패한다(COMException) — 호출자(RunShell)가 상태 표시줄로 알린다
+    public void CopyToClipboard(string text) => System.Windows.Clipboard.SetText(text);
 }

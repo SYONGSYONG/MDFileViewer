@@ -108,6 +108,7 @@ public sealed partial class ViewerScriptBuilderTests
         ViewerScriptBuilder.UpdateBody("<p>a</p>"),
         ViewerScriptBuilder.ScrollToAnchor("a"),
         ViewerScriptBuilder.SetTheme(EffectiveTheme.Dark),
+        ViewerScriptBuilder.ScrollToRatio(0.5),
     };
 
     [Theory]
@@ -117,6 +118,28 @@ public sealed partial class ViewerScriptBuilderTests
         // Assert — 본문의 `<img name="getElementById">` 같은 원시 HTML이 `document.x`를 덮으면 이후 스크립트가 모두 실패한다
         // (Chromium에서 확인, 2026-11-17). `document`는 프로토타입 메서드의 call 인수로만 쓴다.
         Assert.DoesNotContain("document.", script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0.0, "0")]
+    [InlineData(0.25, "0.25")]
+    [InlineData(1.0, "1")]
+    [InlineData(-0.5, "0")]
+    [InlineData(7.0, "1")]
+    public void ScrollToRatio_ScrollsToFractionOfScrollableHeight(double ratio, string expected)
+    {
+        // Act
+        var script = ViewerScriptBuilder.ScrollToRatio(ratio);
+
+        // Assert — 범위 밖 값은 0~1로 자르고, 소수점은 문화권과 상관없이 점으로 쓴다
+        Assert.Contains($"window.scrollTo(0,{expected}*", script, StringComparison.Ordinal);
+        Assert.Contains("scrollHeight", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ScrollToRatio_NotANumber_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ViewerScriptBuilder.ScrollToRatio(double.NaN));
     }
 
     private static string[] DecodeLiterals(string script) =>

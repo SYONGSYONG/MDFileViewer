@@ -21,6 +21,7 @@ public sealed class MainViewModelTests
     private readonly FakeShellLauncher _shell = new();
     private readonly FakeAppLogger _logger = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 17, 0, 0, 0, TimeSpan.Zero));
+    private readonly FakeFolderWatcher _watcher = new();
 
     public MainViewModelTests()
     {
@@ -510,16 +511,16 @@ public sealed class MainViewModelTests
     private MainViewModel CreateMain()
     {
         var tree = new FolderTreeViewModel(_treeService, _logger);
-        var document = new DocumentViewModel(_codec, _viewer, _dialogs, _logger, _time, _ => new FileMetadata(1, _time.GetUtcNow()));
-        return new MainViewModel(tree, document, _viewer, _dialogs, _shell, _logger, _time);
+        var document = new DocumentViewModel(_codec, _viewer, _dialogs, _logger, _time, _ => new FileMetadata(1, _time.GetUtcNow()), new FakeTextBufferFactory());
+        return NoSyncContext.Create(() => new MainViewModel(tree, document, _viewer, new MainServices(_dialogs, _shell, _logger, _time) { Watcher = _watcher, FileExists = _codec.Exists }));
     }
 
     private MainViewModel CreateMainWithRealServices(FakeViewerHost viewer)
     {
         var logger = new FakeAppLogger();
         var tree = new FolderTreeViewModel(new FolderTreeService(logger), logger);
-        var document = new DocumentViewModel(new TextFileCodec(), viewer, _dialogs, logger, _time, FileMetadataReader.Read);
-        return new MainViewModel(tree, document, viewer, _dialogs, _shell, logger, _time);
+        var document = new DocumentViewModel(new TextFileCodec(), viewer, _dialogs, logger, _time, FileMetadataReader.Read, new FakeTextBufferFactory());
+        return new MainViewModel(tree, document, viewer, new MainServices(_dialogs, _shell, logger, _time));
     }
 
     private async Task<MainViewModel> CreateInitializedMainAsync()

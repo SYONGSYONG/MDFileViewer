@@ -1,5 +1,6 @@
 using System.Windows.Automation;
 using System.Windows.Controls;
+using MDFileViewer.Core.Models;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace MDFileViewer.Controls;
@@ -12,32 +13,47 @@ public sealed class MarkdownView : ContentControl
 {
     private const string WebViewAutomationId = "DocumentWebView";
 
+    // 테마 바탕색(03 §4 Surface.Document). 템플릿을 불러오기 전·다시 만든 직후에 잠깐 보이는 면이 흰색으로 번쩍이지 않게 한다 (02 §6.6).
+    private static readonly System.Drawing.Color LightBackground = System.Drawing.Color.FromArgb(0xFF, 0xFF, 0xFF);
+    private static readonly System.Drawing.Color DarkBackground = System.Drawing.Color.FromArgb(0x1F, 0x22, 0x28);
+
+    private System.Drawing.Color _background = LightBackground;
+
     public MarkdownView()
     {
         Focusable = false;
-        WebView = CreateWebView();
+        WebView = CreateWebView(_background);
         Content = WebView;
     }
 
     public WebView2 WebView { get; private set; }
 
+    /// <summary>바탕색을 테마에 맞춘다. 다시 만든 컨트롤도 이 색으로 시작한다.</summary>
+    public void SetBackground(EffectiveTheme theme)
+    {
+        _background = theme == EffectiveTheme.Dark ? DarkBackground : LightBackground;
+        WebView.DefaultBackgroundColor = _background;
+    }
+
     /// <summary>기존 WebView2를 버리고 새것으로 바꾼다. 새 컨트롤은 아직 초기화되지 않았다.</summary>
     public WebView2 ReplaceWebView()
     {
         var old = WebView;
-        WebView = CreateWebView();
+        WebView = CreateWebView(_background);
         Content = WebView;
         old.Dispose();
         return WebView;
     }
 
-    private static WebView2 CreateWebView()
+    private static WebView2 CreateWebView(System.Drawing.Color background)
     {
         var webView = new WebView2
         {
-            // 템플릿을 불러오기 전 잠깐 보이는 바탕을 문서 바탕(Surface.Document, 밝게)과 맞춘다. 테마별 색은 Phase 6에서 바꾼다.
-            DefaultBackgroundColor = System.Drawing.Color.White,
+            DefaultBackgroundColor = background,
             Focusable = true,
+
+            // 놓은 파일을 WebView2가 직접 받아 그 파일로 이동하려 하지 않게 한다 — 끌어다 놓기는 창이 처리한다(02 §6.3·§17.10, PoC-7)
+            AllowExternalDrop = false,
         };
         AutomationProperties.SetAutomationId(webView, WebViewAutomationId);
         return webView;

@@ -166,6 +166,30 @@ public sealed class CommandLineParserTests
         Assert.IsType<StartupRequest.Unregister>(result.Request);
     }
 
+    [Theory]
+    [InlineData("--unregister", "--silent")]
+    [InlineData("--SILENT", "--unregister")]
+    public void Parse_SilentOption_SetsSilentWithoutIgnoringIt(string first, string second)
+    {
+        // Act — 01 F-01: 설치 파일 제거 단계는 결과 창 없이 해제한다
+        var result = CommandLineParser.Parse([first, second], Environment.CurrentDirectory);
+
+        // Assert
+        Assert.IsType<StartupRequest.Unregister>(result.Request);
+        Assert.True(result.IsSilent);
+        Assert.Empty(result.IgnoredArguments);
+    }
+
+    [Fact]
+    public void Parse_WithoutSilent_IsNotSilent()
+    {
+        // Act
+        var result = CommandLineParser.Parse(["--register"], Environment.CurrentDirectory);
+
+        // Assert
+        Assert.False(result.IsSilent);
+    }
+
     [Fact]
     public void Parse_UnknownOptionAndExtraPaths_AreReportedAsIgnored()
     {

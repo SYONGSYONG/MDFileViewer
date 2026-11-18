@@ -14,4 +14,7 @@ public enum TreeNodeKind
 
     /// <summary>폴더 안의 md 파일 (01 F-03). 자식이 없고, 고르면 뷰어에 연다.</summary>
     MarkdownFile,
+
+    /// <summary>트리 맨 위 "즐겨찾기" 노드 (01 F-16). 경로가 없고, 자식은 등록한 폴더다.</summary>
+    Favorites,
 }

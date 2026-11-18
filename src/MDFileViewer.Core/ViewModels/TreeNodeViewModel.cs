@@ -29,7 +29,11 @@ public sealed class TreeNodeViewModel : ObservableObject
         Kind = entry.Kind;
         IsPlaceholder = isPlaceholder;
         Children = new ReadOnlyObservableCollection<TreeNodeViewModel>(_children);
-        _children.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasExpander));
+        _children.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasExpander));
+            OnPropertyChanged(nameof(ToolTip));
+        };
     }
 
     public TreeNodeViewModel? Parent { get; }
@@ -47,6 +51,12 @@ public sealed class TreeNodeViewModel : ObservableObject
     /// <summary>"불러오는 중…" 자리 표시 노드. 선택·펼침 대상이 아니다.</summary>
     public bool IsPlaceholder { get; }
 
+    /// <summary>"즐겨찾기" 바로 아래 항목 (01 F-16). 우클릭 메뉴에 제거·순서 바꾸기가 나온다.</summary>
+    public bool IsFavoriteEntry => Parent?.Kind == TreeNodeKind.Favorites;
+
+    /// <summary>폴더·드라이브 노드(우클릭 메뉴의 폴더 항목, 즐겨찾기 추가 대상).</summary>
+    public bool IsFolderLike => !IsPlaceholder && Kind is not (TreeNodeKind.ThisPc or TreeNodeKind.Favorites or TreeNodeKind.MarkdownFile);
+
     public ReadOnlyObservableCollection<TreeNodeViewModel> Children { get; }
 
     public bool HasExpander => _children.Count > 0;
@@ -56,9 +66,19 @@ public sealed class TreeNodeViewModel : ObservableObject
         get => _isExpanded;
         set
         {
-            if (SetProperty(ref _isExpanded, value) && value && !IsPlaceholder && !IsMarkdownFile)
+            if (!SetProperty(ref _isExpanded, value) || IsPlaceholder || IsMarkdownFile)
+            {
+                return;
+            }
+
+            if (value)
             {
                 _owner.OnNodeExpanded(this);
+            }
+            else
+            {
+                // 접으면 아래로 펼쳐 둔 폴더도 화면에서 사라진다 — 다시 펼칠 때 FolderTreeViewModel이 이어서 감시한다
+                StopWatchingRecursive();
             }
         }
     }
@@ -93,7 +113,38 @@ public sealed class TreeNodeViewModel : ObservableObject
         }
     }
 
-    public string? ToolTip => Access == FolderAccess.AccessDenied ? UiText.FolderAccessDenied : null;
+    public string? ToolTip => this switch
+    {
+        { Kind: TreeNodeKind.Favorites, HasExpander: false } => UiText.FavoritesEmptyHint,
+        { Access: FolderAccess.AccessDenied } => UiText.FolderAccessDenied,
+        { IsFavoriteEntry: true } => FullPath,
+        _ => null,
+    };
+
+    /// <summary>펼쳐 둔 동안 이 폴더의 변경을 감시한다 (01 F-18). 감시를 시작하지 못했으면 <c>null</c>.</summary>
+    internal IDisposable? Watch { get; private set; }
+
+    internal void StartWatching(IDisposable? watch)
+    {
+        StopWatching();
+        Watch = watch;
+    }
+
+    internal void StopWatching()
+    {
+        Watch?.Dispose();
+        Watch = null;
+    }
+
+    // 트리에서 빠지거나 접힌 노드는 아래로 펼쳐 둔 폴더까지 감시를 멈춘다(감시가 쌓이지 않게)
+    internal void StopWatchingRecursive()
+    {
+        StopWatching();
+        foreach (var child in _children)
+        {
+            child.StopWatchingRecursive();
+        }
+    }
 
     /// <summary>자식 읽기가 끝나면 완료된다. 읽기를 시작하지 않았으면 이미 완료된 Task다.</summary>
     internal Task ChildrenLoaded => _childrenLoaded ?? Task.CompletedTask;
@@ -123,16 +174,17 @@ public sealed class TreeNodeViewModel : ObservableObject
     /// </summary>
     internal List<TreeNodeViewModel> ReuseOrCreateChildren(IEnumerable<TreeEntry> entries, Func<TreeEntry, TreeNodeViewModel> create)
     {
-        var existing = new Dictionary<string, TreeNodeViewModel>(StringComparer.Ordinal);
+        // 경로로 찾는다 — 이름으로 찾으면 이름이 같은 즐겨찾기(C:\a\docs, D:\b\docs)가 서로 가려 매번 새 노드가 됐다(리뷰 2026-11-18)
+        var existing = new Dictionary<string, TreeNodeViewModel>(StringComparer.OrdinalIgnoreCase);
         foreach (var child in _children)
         {
             if (!child.IsPlaceholder)
             {
-                existing.TryAdd(child.DisplayName, child);
+                existing.TryAdd(child.FullPath, child);
             }
         }
 
-        return [.. entries.Select(entry => existing.TryGetValue(entry.DisplayName, out var child) && child.Matches(entry)
+        return [.. entries.Select(entry => existing.TryGetValue(entry.FullPath, out var child) && child.Matches(entry)
             ? child.PrepareForReuse()
             : create(entry))];
     }
@@ -143,6 +195,13 @@ public sealed class TreeNodeViewModel : ObservableObject
         if (_children.Count == children.Count && _children.Zip(children).All(pair => ReferenceEquals(pair.First, pair.Second)))
         {
             return;
+        }
+
+        // 항목이 수만 개인 폴더도 자동 새로고침마다 다시 맞추므로 목록 검색(O(n²)) 대신 참조 집합을 쓴다
+        var kept = new HashSet<TreeNodeViewModel>(children, ReferenceEqualityComparer.Instance);
+        foreach (var removed in _children.Where(child => !kept.Contains(child)).ToList())
+        {
+            removed.StopWatchingRecursive();
         }
 
         _children.ReplaceAll(children);
@@ -177,8 +236,9 @@ public sealed class TreeNodeViewModel : ObservableObject
     private TreeNodeViewModel CreatePlaceholder() =>
         new(_owner, this, new TreeEntry(string.Empty, UiText.Loading, TreeNodeKind.Folder), isPlaceholder: true);
 
+    // 대소문자만 바뀐 이름은 새 노드로 만들어 바뀐 이름을 보여 준다
     private bool Matches(TreeEntry entry) =>
-        string.Equals(FullPath, entry.FullPath, StringComparison.OrdinalIgnoreCase) && Kind == entry.Kind;
+        string.Equals(DisplayName, entry.DisplayName, StringComparison.Ordinal) && Kind == entry.Kind;
 
     // 펼친 폴더와 파일은 그대로 둔다. 접힌 폴더는 다음 펼침에서 새로 읽도록 되돌리고 화살표 확인을 받게 자리 표시를 둔다.
     // 진행 중이던 읽기는 번호를 올려 결과를 버리게 한다.
@@ -195,6 +255,12 @@ public sealed class TreeNodeViewModel : ObservableObject
         Access = FolderAccess.Ok;
         if (_children is not [{ IsPlaceholder: true }])
         {
+            // 빠지는 자식 아래 펼쳐 둔 폴더의 감시가 남아 화면에 없는 노드를 계속 다시 읽지 않게 한다
+            foreach (var child in _children)
+            {
+                child.StopWatchingRecursive();
+            }
+
             _children.ReplaceAll([CreatePlaceholder()]);
         }
 

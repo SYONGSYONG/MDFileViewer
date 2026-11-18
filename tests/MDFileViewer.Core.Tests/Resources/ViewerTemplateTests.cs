@@ -127,6 +127,47 @@ public sealed partial class ViewerTemplateTests
         Assert.Contains(".footnotes", css, StringComparison.Ordinal);
     }
 
+    // 단어 단위로만 끊으면 창을 줄였을 때 표가 최소 폭에서 멈춰 오른쪽이 잘려 보였다(2026-11-18 사용자 결정 — 칸 안 줄 바꿈 늘리기).
+    // 칸은 공백에서 먼저 끊고(keep-all — 한글 단어 유지), 그래도 한 줄에 안 들어가는 단어만 글자 사이에서 끊어 표가 창 폭에 맞는다 (03 §6).
+    // 짧은 하이픈 단어(.nobr)는 그대로 끊지 않는다.
+    [Fact]
+    public void Stylesheet_TableCellsWrapLongWordsToFitNarrowViewer()
+    {
+        // Arrange
+        var css = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerStylesheetFileName));
+
+        // Act
+        var start = css.IndexOf(".markdown-body td {", StringComparison.Ordinal);
+        Assert.True(start >= 0, "표 칸(th, td) 규칙이 없습니다.");
+        var block = css[start..css.IndexOf('}', start)];
+
+        // Assert — 본문의 keep-all을 덮지 않아야 한글 단어가 공백이 있는데도 중간에서 끊기지 않는다
+        Assert.Contains("overflow-wrap: anywhere;", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("word-break", block, StringComparison.Ordinal);
+        Assert.Contains("white-space: nowrap;", css[css.IndexOf(".markdown-body .nobr {", StringComparison.Ordinal)..], StringComparison.Ordinal);
+    }
+
+    // 본문 폭 860px에서는 넓은 표가 옆 공간이 남는데도 가로 스크롤됐고, 표만 넓히면 좁은 글 아래로 튀어나와 보였다(2026-11-18 사용자 결정).
+    // 글과 표 모두 최대 폭 없이 뷰어 폭(좌우 여백 제외)을 쓴다 (03 §6).
+    [Fact]
+    public void Stylesheet_BodyAndTablesUseFullViewerWidth()
+    {
+        // Arrange
+        var css = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerStylesheetFileName));
+
+        // Act
+        var bodyStart = css.IndexOf(".markdown-body {", StringComparison.Ordinal);
+        var body = css[bodyStart..css.IndexOf('}', bodyStart)];
+        var tableStart = css.IndexOf(".markdown-body table {", StringComparison.Ordinal);
+        Assert.True(tableStart >= 0, "표 규칙이 없습니다.");
+        var table = css[tableStart..css.IndexOf('}', tableStart)];
+
+        // Assert
+        Assert.DoesNotContain("max-width", body, StringComparison.Ordinal);
+        Assert.Contains("max-width: 100%;", table, StringComparison.Ordinal);
+        Assert.DoesNotContain("transform", table, StringComparison.Ordinal);
+    }
+
     private static string ReadTemplate() =>
         File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerTemplateFileName));
 

@@ -28,7 +28,7 @@
 
 | 방식 | 파일 | 특징 |
 |------|------|------|
-| 포터블 | `MDFileViewer-Portable-<버전>.exe` | 설치 없이 이 파일 하나만 복사해 실행합니다. 처음 실행할 때 임시 폴더(`%TEMP%\.net`)에 풀리므로 첫 실행만 몇 초 더 걸립니다. |
+| 포터블 | `MDFileViewer-Portable-<버전>.exe` | 설치 없이 이 파일만 복사해 실행합니다(함께 나오는 `LICENSE.txt`·`THIRD-PARTY-NOTICES.txt`도 같이 넘겨 주세요). 처음 실행할 때 임시 폴더(`%TEMP%\.net`)에 풀리므로 첫 실행만 몇 초 더 걸립니다. |
 | 설치 파일 | `MDFileViewer-Setup-<버전>.exe` | 사용자 단위로 설치합니다(관리자 권한 불필요, 기본 위치 `%LOCALAPPDATA%\Programs\MDFileViewer`). 시작 메뉴 바로 가기를 만들고, Windows 설정의 "설치된 앱"에서 제거할 수 있습니다. |
 
 명령줄에서 폴더나 파일을 넘겨 시작할 수도 있습니다.
@@ -53,7 +53,7 @@ dotnet test tests/MDFileViewer.E2ETests                                     # E2
 ```
 
 - 버전은 `Directory.Build.props`의 `<Version>` 한 곳에서만 바꿉니다. 두 배치 파일이 이 값을 읽어 파일 이름과 설치 파일 버전에 넣고,
-  산출물 폴더에 사용법 매뉴얼을 `manual_<버전>.md`로 함께 복사합니다.
+  산출물 폴더에 사용법 매뉴얼을 `manual_<버전>.md`로 함께 복사합니다. 앱 폴더(설치 폴더, 포터블은 exe 옆)에는 `LICENSE.txt`와 `THIRD-PARTY-NOTICES.txt`가 들어갑니다.
 - E2E는 실제 데스크톱에서 앱을 조작합니다. 실행하는 동안 마우스·키보드를 쓰면 안전 장치가 입력을 멈춰 실패하므로, PC를 쓰지 않을 때 돌립니다.
   메신저 알림처럼 창을 맨 앞으로 가져가는 프로그램도 꺼 두는 것이 좋습니다.
 
@@ -82,6 +82,8 @@ MDFileViewer/
 ├── installer/setup.iss        # Inno Setup 설치 파일 스크립트
 ├── publish-portable.bat       # 포터블 exe 만들기
 ├── publish-setup.bat          # 설치 파일 만들기
+├── LICENSE                    # MIT 라이선스
+├── THIRD-PARTY-NOTICES.txt    # 함께 배포하는 구성 요소의 라이선스
 └── .claude/                   # 개발 문서(명세·설계·규칙·작업 순서)
 ```
 
@@ -110,3 +112,9 @@ MDFileViewer/
 | Phase 9 | 탐색기 우클릭 메뉴 "MDFileViewer로 열기" 등록·해제 | 예정 |
 | Phase 10 | 창 위치·패널 너비·테마 저장과 복원 | 예정 |
 | Phase 11 | 리뷰·성능 측정·접근성 점검, 배포 마무리 | 진행 중(배포 배치 파일·README·매뉴얼 먼저) |
+
+## 라이선스
+
+[MIT 라이선스](LICENSE) — Copyright (c) 2026 SYONG
+
+배포본에는 Markdig(BSD-2-Clause), AvalonEdit(MIT), WebView2 SDK(Microsoft BSD 계열), .NET·WPF 런타임(MIT)이 들어갑니다. 각 라이선스 원문은 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)에 있습니다.

@@ -1,4 +1,5 @@
 using MDFileViewer.Core.Models;
+using MDFileViewer.Core.Services;
 using MDFileViewer.Core.Tests.Fakes;
 using MDFileViewer.Core.ViewModels;
 
@@ -8,6 +9,8 @@ public sealed class FolderTreeViewModelTests
 {
     private readonly FakeFolderTreeService _service = new();
     private readonly FakeAppLogger _logger = new();
+    private readonly FakeFolderWatcher _watcher = new();
+    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 18, 0, 0, 0, TimeSpan.Zero));
 
     public FolderTreeViewModelTests()
     {
@@ -23,7 +26,7 @@ public sealed class FolderTreeViewModelTests
     [Fact]
     public async Task GetVisibleRowIndex_CountsOnlyRowsOfExpandedNodesAbove()
     {
-        // Arrange — 펼친 결과: 내 PC(0) · C:(1) · Docs(2) · Guide(3) · readme.md(4) · todo.md(5) · Windows(6) · Z:(7)
+        // Arrange — 펼친 결과: 즐겨찾기(0, 비어 있음) · 내 PC(1) · C:(2) · Docs(3) · Guide(4) · readme.md(5) · todo.md(6) · Windows(7) · Z:(8)
         var tree = CreateTree();
         var guide = await tree.RevealAsync(@"C:\Docs\Guide", CancellationToken.None);
         var drive = tree.ThisPc.Children.Single(child => child.FullPath == @"C:\");
@@ -31,11 +34,12 @@ public sealed class FolderTreeViewModelTests
         var network = tree.ThisPc.Children.Single(child => child.FullPath == @"Z:\");
 
         // Act & Assert
-        Assert.Equal(0, tree.GetVisibleRowIndex(tree.ThisPc));
-        Assert.Equal(3, tree.GetVisibleRowIndex(guide!));
-        Assert.Equal(5, tree.GetVisibleRowIndex(Child(guide!.Parent!, "todo.md")));
-        Assert.Equal(6, tree.GetVisibleRowIndex(windows));
-        Assert.Equal(7, tree.GetVisibleRowIndex(network));
+        Assert.Equal(0, tree.GetVisibleRowIndex(tree.Favorites));
+        Assert.Equal(1, tree.GetVisibleRowIndex(tree.ThisPc));
+        Assert.Equal(4, tree.GetVisibleRowIndex(guide!));
+        Assert.Equal(6, tree.GetVisibleRowIndex(Child(guide!.Parent!, "todo.md")));
+        Assert.Equal(7, tree.GetVisibleRowIndex(windows));
+        Assert.Equal(8, tree.GetVisibleRowIndex(network));
     }
 
     [Fact]
@@ -51,7 +55,7 @@ public sealed class FolderTreeViewModelTests
         drive.IsExpanded = false;
 
         // Assert — 접힌 C: 아래 행은 세지 않고, 그 안의 노드는 화면에 없다
-        Assert.Equal(2, tree.GetVisibleRowIndex(network));
+        Assert.Equal(3, tree.GetVisibleRowIndex(network));
         Assert.Null(tree.GetVisibleRowIndex(guide!));
     }
 
@@ -83,8 +87,9 @@ public sealed class FolderTreeViewModelTests
         // Act
         await tree.InitializeAsync(CancellationToken.None);
 
-        // Assert
-        var thisPc = Assert.Single(tree.Roots);
+        // Assert — 뿌리는 즐겨찾기(01 F-16) 다음 내 PC
+        Assert.Equal([TreeNodeKind.Favorites, TreeNodeKind.ThisPc], tree.Roots.Select(root => root.Kind));
+        var thisPc = tree.Roots[1];
         Assert.Equal(UiText.ThisPc, thisPc.DisplayName);
         Assert.Equal(TreeNodeKind.ThisPc, thisPc.Kind);
         Assert.True(thisPc.IsExpanded);
@@ -261,7 +266,7 @@ public sealed class FolderTreeViewModelTests
         Assert.Equal(@"\\server\share\", share.FullPath);
         Assert.Equal(@"\\server\share", share.DisplayName);
         Assert.Equal(TreeNodeKind.NetworkDrive, share.Kind);
-        Assert.Same(tree.Roots[0], share.Parent);
+        Assert.Same(tree.ThisPc, share.Parent);
     }
 
     [Fact]
@@ -625,7 +630,206 @@ public sealed class FolderTreeViewModelTests
         Assert.Equal(0, changes);
     }
 
+    [Fact]
+    public async Task Favorites_ShowRegisteredFoldersInOrderAboveThisPc()
+    {
+        // Arrange — 01 F-16
+        var favorites = new FavoritesList([@"C:\Windows", @"C:\Docs", @"C:\"]);
+        var tree = CreateWatchedTree(favorites);
+
+        // Act
+        await tree.InitializeAsync(CancellationToken.None);
+
+        // Assert
+        Assert.True(tree.Favorites.IsExpanded);
+        Assert.Equal(["Windows", "Docs", @"C:\"], tree.Favorites.Children.Select(child => child.DisplayName));
+        Assert.All(tree.Favorites.Children, child => Assert.True(child.IsFavoriteEntry));
+        Assert.Equal(@"C:\Docs", tree.Favorites.Children[1].ToolTip);
+        Assert.Equal(TreeNodeKind.LocalDrive, tree.Favorites.Children[2].Kind);
+    }
+
+    [Fact]
+    public async Task Favorites_Empty_ShowsHintWithoutExpander()
+    {
+        // Arrange
+        var tree = CreateWatchedTree(new FavoritesList([]));
+
+        // Act
+        await tree.InitializeAsync(CancellationToken.None);
+
+        // Assert
+        Assert.False(tree.Favorites.HasExpander);
+        Assert.Equal(UiText.FavoritesEmptyHint, tree.Favorites.ToolTip);
+    }
+
+    [Fact]
+    public async Task Favorites_ListChange_RebuildsFavoriteNodes()
+    {
+        // Arrange
+        var favorites = new FavoritesList([@"C:\Docs"]);
+        var tree = CreateWatchedTree(favorites);
+        await tree.InitializeAsync(CancellationToken.None);
+
+        // Act
+        favorites.Add(@"C:\Windows");
+        await tree.Favorites.ChildrenLoaded;
+        favorites.Remove(@"C:\Docs");
+        await tree.Favorites.ChildrenLoaded;
+
+        // Assert
+        Assert.Equal([@"C:\Windows"], tree.Favorites.Children.Select(child => child.FullPath));
+    }
+
+    [Fact]
+    public async Task FavoriteEntry_ExpandsLikeFolder()
+    {
+        // Arrange
+        var tree = CreateWatchedTree(new FavoritesList([@"C:\Docs"]));
+        await tree.InitializeAsync(CancellationToken.None);
+        var docs = tree.Favorites.Children.Single();
+
+        // Act
+        docs.IsExpanded = true;
+        await docs.ChildrenLoaded;
+
+        // Assert
+        Assert.Equal(["Guide", "readme.md", "todo.md"], docs.Children.Select(child => child.DisplayName));
+        Assert.False(Child(docs, "Guide").IsFavoriteEntry);
+    }
+
+    [Fact]
+    public async Task ExpandedFolder_NewFileAppears_RefreshesAfterDelay()
+    {
+        // Arrange — 01 F-18: 펼쳐 둔 폴더에 파일이 생기면 자동으로 다시 읽는다
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+        _service.SetFiles(@"C:\Docs", "new.md", "readme.md", "todo.md");
+        var readsBefore = _service.ChildRequests.Count(path => path == @"C:\Docs");
+
+        // Act — 알림이 몰려도 한 번만 읽는다
+        _watcher.RaiseChanged(@"C:\Docs");
+        _watcher.RaiseChanged(@"C:\Docs");
+        _time.Advance(AppConstants.AutoRefreshDelay);
+        await docs.ChildrenLoaded;
+
+        // Assert
+        Assert.Contains((@"C:\Docs", (string?)null), _watcher.Active);
+        Assert.Equal(["Guide", "new.md", "readme.md", "todo.md"], docs.Children.Select(child => child.DisplayName));
+        Assert.Equal(readsBefore + 1, _service.ChildRequests.Count(path => path == @"C:\Docs"));
+    }
+
+    [Fact]
+    public async Task CollapsingFolder_StopsWatching()
+    {
+        // Arrange
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+
+        // Act
+        docs.IsExpanded = false;
+
+        // Assert
+        Assert.DoesNotContain((@"C:\Docs", (string?)null), _watcher.Active);
+    }
+
+    [Fact]
+    public async Task CollapsingAncestor_StopsWatchingExpandedSubfolders_AndReexpandingResumes()
+    {
+        // Arrange — 리뷰(2026-11-18): 상위를 접어도 화면에 없는 하위 폴더들을 계속 감시하고 다시 읽었다
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+        var guide = await ExpandAsync(Child(docs, "Guide"));
+
+        // Act
+        docs.IsExpanded = false;
+        var whileCollapsed = _watcher.Active.ToList();
+        docs.IsExpanded = true;
+        await docs.ChildrenLoaded;
+
+        // Assert
+        Assert.DoesNotContain((guide.FullPath, (string?)null), whileCollapsed);
+        Assert.Contains((guide.FullPath, (string?)null), _watcher.Active);
+    }
+
+    [Fact]
+    public async Task Favorites_TwoFoldersWithSameName_KeepTheirNodesOnReload()
+    {
+        // Arrange — 리뷰(2026-11-18): 이름이 같은 즐겨찾기는 다시 읽을 때마다 새 노드가 되어 펼침·감시가 풀렸다
+        var favorites = new FavoritesList([@"C:\Docs", @"C:\Windows\Docs"]);
+        var tree = CreateWatchedTree(favorites);
+        await tree.InitializeAsync(CancellationToken.None);
+        await tree.Favorites.ChildrenLoaded;
+        var before = tree.Favorites.Children.ToList();
+
+        // Act
+        await tree.Favorites.ReloadChildrenAsync();
+
+        // Assert
+        Assert.Equal(2, before.Count);
+        Assert.Equal(before, tree.Favorites.Children);
+    }
+
+    [Fact]
+    public async Task AutoRefresh_ReusingCollapsedFolder_StopsWatchingItsExpandedSubfolders()
+    {
+        // Arrange — 접힌 폴더를 다시 쓰면 자식이 자리 표시로 바뀌어 트리에서 빠진다. 그 아래 펼쳐 둔 폴더의 감시가 남으면 안 된다
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+        var guide = await ExpandAsync(Child(docs, "Guide"));
+        Assert.Contains((guide.FullPath, (string?)null), _watcher.Active);
+        docs.IsExpanded = false;
+        var drive = docs.Parent!;
+
+        // Act
+        _watcher.RaiseChanged(drive.FullPath);
+        _time.Advance(AppConstants.AutoRefreshDelay);
+        await drive.ChildrenLoaded;
+
+        // Assert
+        Assert.Same(docs, Child(drive, "Docs"));
+        Assert.DoesNotContain((guide.FullPath, (string?)null), _watcher.Active);
+    }
+
+    [Fact]
+    public async Task AutoRefresh_ReplacingChildren_RequestsReselectingFileInsideFolder()
+    {
+        // Arrange — 자식 목록이 통째로 바뀌면 화면 트리가 그 안의 선택을 풀므로 앱이 다시 고르게 한다(F5와 같은 이유, 02 §17.6)
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+        var readme = Child(docs, "readme.md");
+        readme.IsSelected = true;
+        var requested = new List<TreeNodeViewModel>();
+        tree.SelectionRestoreRequested += (_, node) => requested.Add(node);
+        _service.SetFiles(@"C:\Docs", "new.md", "readme.md", "todo.md");
+
+        // Act
+        _watcher.RaiseChanged(@"C:\Docs");
+        _time.Advance(AppConstants.AutoRefreshDelay);
+        await docs.ChildrenLoaded;
+
+        // Assert
+        Assert.Equal([readme], requested);
+    }
+
+    [Fact]
+    public async Task AutoRefresh_UnsupportedLocation_KeepsWorkingWithoutWatch()
+    {
+        // Arrange — 감시를 시작하지 못하는 위치는 F5로 다시 읽는다
+        _watcher.Unsupported.Add(@"C:\Docs");
+        var tree = CreateWatchedTree(new FavoritesList([]));
+
+        // Act
+        var docs = await tree.RevealAsync(@"C:\Docs", CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(docs);
+        Assert.DoesNotContain((@"C:\Docs", (string?)null), _watcher.Active);
+    }
+
     private FolderTreeViewModel CreateTree() => new(_service, _logger);
+
+    private FolderTreeViewModel CreateWatchedTree(FavoritesList favorites) =>
+        NoSyncContext.Create(() => new FolderTreeViewModel(_service, _logger, favorites, _watcher, _time));
 
     private async Task<FolderTreeViewModel> CreateInitializedTreeAsync()
     {
@@ -635,7 +839,7 @@ public sealed class FolderTreeViewModelTests
     }
 
     private static TreeNodeViewModel Drive(FolderTreeViewModel tree, string root) =>
-        tree.Roots[0].Children.Single(child => child.FullPath == root);
+        tree.ThisPc.Children.Single(child => child.FullPath == root);
 
     private static async Task<TreeNodeViewModel> ExpandAsync(TreeNodeViewModel node)
     {

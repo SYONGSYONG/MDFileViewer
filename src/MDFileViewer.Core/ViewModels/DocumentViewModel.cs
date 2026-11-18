@@ -9,7 +9,7 @@ namespace MDFileViewer.Core.ViewModels;
 /// 뷰어 영역 — 파일을 읽고 렌더링해 <see cref="IViewerHost"/>에 보여 준다 (01 F-04, 02 §5 흐름 2). UI 스레드에서 쓴다.
 /// 읽기와 렌더링은 UI 스레드 밖에서 하고, 새 요청이 오면 이전 요청을 취소한다.
 /// </summary>
-public sealed class DocumentViewModel : ObservableObject
+public sealed partial class DocumentViewModel : ObservableObject
 {
     // Win32 ERROR_SHARING_VIOLATION(32)·ERROR_LOCK_VIOLATION(33)을 HRESULT로 바꾼 값. 다른 프로그램이 파일을 잠근 경우다.
     private const int SharingViolationHResult = unchecked((int)0x80070020);
@@ -21,12 +21,17 @@ public sealed class DocumentViewModel : ObservableObject
     private readonly IAppLogger _logger;
     private readonly TimeProvider _timeProvider;
     private readonly Func<string, FileMetadata> _readMetadata;
+    private readonly ITextBufferFactory _bufferFactory;
+    private readonly Debouncer _previewDebouncer;
     private CancellationTokenSource? _openCancellation;
     private DocumentState _state = DocumentState.Empty;
 
     // 화면에 실제로 남아 있는 상태(Loading 제외). 큰 파일을 거절하면 여기로 돌아간다 — 읽는 중이던 요청을
     // 밀어낸 뒤라면 "직전 State"는 Loading이라 그것으로 되돌리면 Loading에 갇힌다.
     private DocumentState _settledState = DocumentState.Empty;
+
+    // 마지막 열기를 사용자가 큰 파일 확인에서 취소했다(탭이 이전 문서를 보여 주지 않게 할 때 쓴다)
+    private bool _lastOpenDeclined;
     private bool _isDocumentVisible;
     private string? _filePath;
     private TextFileContent? _content;
@@ -35,13 +40,15 @@ public sealed class DocumentViewModel : ObservableObject
     private string? _messageHint = UiText.NoDocumentHint;
 
     /// <param name="readMetadata">파일 크기·수정 시각을 읽는다. 파일이 없으면 <see cref="FileNotFoundException"/>을 낸다.</param>
+    /// <param name="bufferFactory">편집을 시작할 때 탭의 편집 버퍼를 만든다 (02 §17.1).</param>
     public DocumentViewModel(
         ITextFileCodec codec,
         IViewerHost viewer,
         IDialogService dialogs,
         IAppLogger logger,
         TimeProvider timeProvider,
-        Func<string, FileMetadata> readMetadata)
+        Func<string, FileMetadata> readMetadata,
+        ITextBufferFactory bufferFactory)
     {
         _codec = codec;
         _viewer = viewer;
@@ -49,6 +56,10 @@ public sealed class DocumentViewModel : ObservableObject
         _logger = logger;
         _timeProvider = timeProvider;
         _readMetadata = readMetadata;
+        _bufferFactory = bufferFactory;
+
+        // 타이머 스레드에서 끝난 대기를 UI 스레드로 넘긴다 — 버퍼와 뷰어는 UI 스레드에서만 쓴다. 테스트(문맥 없음)는 그 자리에서 돈다.
+        _previewDebouncer = new Debouncer(timeProvider, AppConstants.PreviewDebounce, OnPreviewDue, SynchronizationContext.Current);
     }
 
     public DocumentState State
@@ -88,7 +99,7 @@ public sealed class DocumentViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(EncodingText));
                 OnPropertyChanged(nameof(LineEndingText));
-                OnPropertyChanged(nameof(Notice));
+                OnEditStateChanged();
             }
         }
     }
@@ -102,6 +113,7 @@ public sealed class DocumentViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(SizeText));
                 OnPropertyChanged(nameof(LastWriteText));
+                OnEditStateChanged();
             }
         }
     }
@@ -128,28 +140,41 @@ public sealed class DocumentViewModel : ObservableObject
 
     public string? LastWriteText => Metadata is null ? null : DisplayFormat.FormatDateTime(Metadata.LastWriteTime, _timeProvider.LocalTimeZone);
 
-    /// <summary>상태 표시줄에 계속 보여 줄 경고. 지금은 손상된 파일 안내뿐이다 (01 F-04).</summary>
-    public string? Notice => Content is { HasDecodingErrors: true } ? UiText.DecodingErrorsNotice : null;
+    /// <summary>
+    /// 상태 표시줄에 계속 보여 줄 경고 — 손상된 파일(01 F-04), 편집 모드의 저장 불가 이유(01 F-07).
+    /// </summary>
+    public string? Notice => (IsEditing, Content, Metadata) switch
+    {
+        (true, { HasDecodingErrors: true }, _) => UiText.DecodingSaveBlockedNotice,
+        (true, _, { IsReadOnly: true }) => UiText.ReadOnlyNotice,
+        (_, { HasDecodingErrors: true }, _) => UiText.DecodingErrorsNotice,
+        _ => null,
+    };
 
     /// <summary>
     /// 파일을 열어 보여 준다. 큰 파일이면 먼저 묻는다. 예외를 내지 않는다 — 실패는 <see cref="State"/>·<see cref="Message"/>로 알린다.
     /// </summary>
     /// <returns>문서를 보여 줬으면 <c>true</c>. 취소·실패·새 요청에 밀린 경우 <c>false</c>.</returns>
-    public async Task<bool> OpenAsync(string path, string? anchorId = null)
+    public Task<bool> OpenAsync(string path, string? anchorId = null) => OpenCoreAsync(path, anchorId, confirmLargeFile: true);
+
+    // 이미 연 적이 있는 탭으로 돌아올 때는 큰 파일 확인을 다시 묻지 않는다 (01 F-17)
+    private async Task<bool> OpenCoreAsync(string path, string? anchorId, bool confirmLargeFile)
     {
         var cancellation = StartNewRequest();
         var token = cancellation.Token;
         var isDisplaying = false;
+        _lastOpenDeclined = false;
         State = DocumentState.Loading;
         try
         {
             var metadata = await Task.Run(() => _readMetadata(path), token);
-            if (metadata.SizeBytes > AppConstants.LargeFileWarningBytes && !ConfirmLargeFile(metadata))
+            if (confirmLargeFile && metadata.SizeBytes > AppConstants.LargeFileWarningBytes && !ConfirmLargeFile(metadata))
             {
                 // 묻는 동안 다른 요청이 시작됐으면 State는 그 요청의 것이다
                 if (!token.IsCancellationRequested)
                 {
                     State = _settledState;
+                    _lastOpenDeclined = true;
                 }
 
                 return false;
@@ -191,11 +216,18 @@ public sealed class DocumentViewModel : ObservableObject
     }
 
     /// <summary>지금 문서를 다시 읽는다 (`F5`). 스크롤 위치를 유지하도록 본문만 바꾼다.</summary>
-    public async Task ReloadAsync()
+    public async Task ReloadAsync() => await ReloadCoreAsync(keepShownOnFailure: false);
+
+    /// <param name="keepShownOnFailure">
+    /// 실패해도 보던 문서를 그대로 둔다(자동 새로고침). 다른 프로그램이 쓰는 동안 잠깐 잠기는 일이 흔해, 오류 화면으로 바꾸면
+    /// 감시까지 끊겨 잠금이 풀려도 되돌아오지 않았다(리뷰 2026-11-18). `F5`는 사용자가 고른 동작이라 실패를 그대로 보여 준다.
+    /// </param>
+    /// <returns>실패했으면 <c>false</c>. 다시 읽을 문서가 없거나 새 요청에 밀린 경우는 <c>true</c>.</returns>
+    private async Task<bool> ReloadCoreAsync(bool keepShownOnFailure)
     {
         if (FilePath is not { } path || State != DocumentState.Shown)
         {
-            return;
+            return true;
         }
 
         var cancellation = StartNewRequest();
@@ -208,18 +240,27 @@ public sealed class DocumentViewModel : ObservableObject
             isDisplaying = true;
             await _viewer.UpdateBodyAsync(bodyHtml, token);
             ShowLoaded(path, content, metadata, isSuperseded: token.IsCancellationRequested);
+            return true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // 다른 파일을 열어 그만둔 새로고침이다
+            return true;
         }
         catch (Exception exception) when (token.IsCancellationRequested)
         {
             LogSupersededFailure(path, exception);
+            return true;
+        }
+        catch (Exception exception) when (keepShownOnFailure)
+        {
+            _logger.Warn($"바뀐 파일을 다시 읽지 못했습니다: {path}", exception);
+            return false;
         }
         catch (Exception exception)
         {
             ShowFailure(path, exception, isDisplaying);
+            return false;
         }
     }
 
@@ -269,6 +310,7 @@ public sealed class DocumentViewModel : ObservableObject
         FilePath = path;
         Content = content;
         Metadata = metadata;
+        RememberInActiveTab(path, content, metadata);
         _settledState = DocumentState.Shown;
         if (!isSuperseded || State != DocumentState.Loading)
         {

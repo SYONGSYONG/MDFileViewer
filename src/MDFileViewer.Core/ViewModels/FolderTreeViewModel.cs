@@ -17,20 +17,50 @@ public sealed class FolderTreeViewModel : ObservableObject
 
     private readonly IFolderTreeService _service;
     private readonly IAppLogger _logger;
+    private readonly FavoritesList _favorites;
+    private readonly IFolderWatcher _watcher;
+    private readonly TimeProvider _time;
+
+    // 감시 알림은 파일 시스템 스레드에서 온다. 다시 읽기는 컬렉션을 바꾸므로 만든 스레드(UI)로 넘긴다.
+    private readonly SynchronizationContext? _uiContext;
     private TreeNodeViewModel? _selectedNode;
 
+    /// <summary>즐겨찾기 없이, 자동 새로고침 없이 쓴다(감시 없는 트리).</summary>
     public FolderTreeViewModel(IFolderTreeService service, IAppLogger logger)
+        : this(service, logger, new FavoritesList([]), NullFolderWatcher.Instance, TimeProvider.System)
+    {
+    }
+
+    public FolderTreeViewModel(IFolderTreeService service, IAppLogger logger, FavoritesList favorites, IFolderWatcher watcher, TimeProvider time)
     {
         _service = service;
         _logger = logger;
+        _favorites = favorites;
+        _watcher = watcher;
+        _time = time;
+        _uiContext = SynchronizationContext.Current;
+        Favorites = new TreeNodeViewModel(this, parent: null, new TreeEntry(string.Empty, UiText.Favorites, TreeNodeKind.Favorites));
         ThisPc = new TreeNodeViewModel(this, parent: null, new TreeEntry(string.Empty, UiText.ThisPc, TreeNodeKind.ThisPc));
-        Roots = new ReadOnlyObservableCollection<TreeNodeViewModel>([ThisPc]);
+        Roots = new ReadOnlyObservableCollection<TreeNodeViewModel>([Favorites, ThisPc]);
+        _favorites.Changed += (_, _) => Observe(Favorites.ReloadChildrenAsync(), "즐겨찾기를 다시 읽지 못했습니다.");
     }
 
     /// <summary>선택한 노드(폴더·md 파일)가 바뀌었다. 사용자가 고른 경우와 코드로 고른 경우 모두 알린다.</summary>
     public event EventHandler<TreeNodeViewModel>? SelectionChanged;
 
+    /// <summary>
+    /// 자동 새로고침(01 F-18)이 고른 노드가 있는 폴더의 자식을 바꿨다 — 화면 트리가 그 선택을 풀었으므로 앱이 이 노드를 다시 고른다
+    /// (F5의 <see cref="RefreshSelectedAsync"/>와 같은 이유, 02 §17.6). 고른 파일이 없어졌으면 그 폴더다.
+    /// </summary>
+    public event EventHandler<TreeNodeViewModel>? SelectionRestoreRequested;
+
     public ReadOnlyObservableCollection<TreeNodeViewModel> Roots { get; }
+
+    /// <summary>트리 맨 위 "즐겨찾기" (01 F-16). 자식은 <see cref="FavoritesList"/> 순서를 따른다.</summary>
+    public TreeNodeViewModel Favorites { get; }
+
+    /// <summary>트리가 보여 주는 즐겨찾기 목록. 우클릭 메뉴가 바꾸고 App이 설정에 저장한다.</summary>
+    public FavoritesList FavoriteFolders => _favorites;
 
     public TreeNodeViewModel ThisPc { get; }
 
@@ -40,9 +70,15 @@ public sealed class FolderTreeViewModel : ObservableObject
         private set => SetProperty(ref _selectedNode, value);
     }
 
-    /// <summary>드라이브를 읽고 "내 PC"를 펼친다.</summary>
+    /// <summary>즐겨찾기와 드라이브를 읽고 둘 다 펼친다.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
+        if (!Favorites.HasStartedLoading)
+        {
+            await Favorites.EnsureChildrenLoadedAsync();
+            Favorites.IsExpanded = true;
+        }
+
         await ThisPc.EnsureChildrenLoadedAsync();
         cancellationToken.ThrowIfCancellationRequested();
         ThisPc.IsExpanded = true;
@@ -165,7 +201,99 @@ public sealed class FolderTreeViewModel : ObservableObject
         return null;
     }
 
-    internal void OnNodeExpanded(TreeNodeViewModel node) => _ = node.EnsureChildrenLoadedAsync();
+    // 기다리지 않는 작업의 예외는 버려지면 GC 때에야 보고된다 — 실패하면 바로 로그에 남긴다(리뷰 2026-11-18).
+    // 읽기 실패 자체는 LoadChildrenAsync가 노드 상태로 보여 주므로 여기 오는 것은 예상하지 못한 결함뿐이다.
+    private void Observe(Task task, string failureMessage) =>
+        task.ContinueWith(failed => _logger.Error(failureMessage, failed.Exception!), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+    internal void OnNodeExpanded(TreeNodeViewModel node)
+    {
+        Observe(node.EnsureChildrenLoadedAsync(), $"폴더를 펼치지 못했습니다: {node.FullPath}");
+        if (node.IsFolderLike)
+        {
+            StartWatching(node);
+        }
+
+        // 접을 때 멈춘, 아래로 펼쳐 둔 채인 폴더들의 감시를 이어 간다
+        foreach (var descendant in ExpandedDescendants(node))
+        {
+            StartWatching(descendant);
+        }
+    }
+
+    private static IEnumerable<TreeNodeViewModel> ExpandedDescendants(TreeNodeViewModel node)
+    {
+        foreach (var child in node.Children.Where(child => child is { IsExpanded: true, IsFolderLike: true }))
+        {
+            yield return child;
+            foreach (var descendant in ExpandedDescendants(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    // 펼친 폴더 하나만(하위 폴더 제외) 감시한다. 알림이 몰려도 AutoRefreshDelay 뒤 한 번만 다시 읽는다.
+    // 감시를 시작하지 못하는 위치(일부 네트워크 공유)는 F5로만 다시 읽는다 — 감시기가 실패를 로그에 남긴다.
+    private void StartWatching(TreeNodeViewModel node)
+    {
+        var debouncer = new Debouncer(_time, AppConstants.AutoRefreshDelay, () => Observe(AutoRefreshAsync(node), $"폴더를 자동으로 다시 읽지 못했습니다: {node.FullPath}"), _uiContext);
+        var subscription = _watcher.Watch(node.FullPath, fileName: null, debouncer.Trigger);
+        if (subscription is null)
+        {
+            debouncer.Dispose();
+            node.StartWatching(null);
+            return;
+        }
+
+        node.StartWatching(new CompositeDisposable(subscription, debouncer));
+    }
+
+    private async Task AutoRefreshAsync(TreeNodeViewModel folder)
+    {
+        if (!folder.IsExpanded)
+        {
+            return;
+        }
+
+        var selected = SelectedNode;
+        var before = folder.Children.ToList();
+        await folder.ReloadChildrenAsync();
+        var changed = before.Count != folder.Children.Count || before.Where((child, index) => !ReferenceEquals(child, folder.Children[index])).Any();
+        if (!changed || selected is null || !ReferenceEquals(SelectedNode, selected) || !IsDescendantOf(selected, folder))
+        {
+            return;
+        }
+
+        SelectionRestoreRequested?.Invoke(this, FindRestoreTarget(selected, folder));
+    }
+
+    // 고른 노드가 아직 트리에 붙어 있으면 그 노드, 바로 아래 파일이 이름 대소문자만 바뀌었으면 새 노드, 없어졌으면 그 폴더
+    private static TreeNodeViewModel FindRestoreTarget(TreeNodeViewModel selected, TreeNodeViewModel folder)
+    {
+        for (var current = selected; !ReferenceEquals(current, folder); current = current.Parent!)
+        {
+            if (!current.Parent!.Children.Contains(current))
+            {
+                return ReferenceEquals(current, selected) ? FindChildByPath(folder, selected.FullPath) ?? folder : folder;
+            }
+        }
+
+        return selected;
+    }
+
+    private static bool IsDescendantOf(TreeNodeViewModel node, TreeNodeViewModel ancestor)
+    {
+        for (var current = node.Parent; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     internal void OnNodeSelected(TreeNodeViewModel node)
     {
@@ -194,27 +322,13 @@ public sealed class FolderTreeViewModel : ObservableObject
         node.IsLoading = true;
         try
         {
-            if (node.Kind == TreeNodeKind.ThisPc)
+            var load = node.Kind switch
             {
-                var drives = await _service.GetDrivesAsync(CancellationToken.None);
-                if (node.IsCurrentLoad(version))
-                {
-                    node.ReplaceChildren(node.ReuseOrCreateChildren(drives, drive => CreateNode(node, drive)));
-                }
-
-                return;
-            }
-
-            var listing = await _service.GetChildrenAsync(node.FullPath, CancellationToken.None);
-            if (!node.IsCurrentLoad(version))
-            {
-                return;
-            }
-
-            node.Access = listing.Access;
-            var children = node.ReuseOrCreateChildren(listing.Entries, entry => CreateNode(node, entry));
-            node.ReplaceChildren(children);
-            node.ExpanderCheckCompleted = RemoveEmptyExpandersAsync(node, version, children);
+                TreeNodeKind.Favorites => LoadFavoritesAsync(node, version),
+                TreeNodeKind.ThisPc => LoadDrivesAsync(node, version),
+                _ => LoadFolderAsync(node, version),
+            };
+            await load;
         }
         catch (Exception exception) when (!node.IsCurrentLoad(version))
         {
@@ -233,6 +347,37 @@ public sealed class FolderTreeViewModel : ObservableObject
                 node.IsLoading = false;
             }
         }
+    }
+
+    private Task LoadFavoritesAsync(TreeNodeViewModel node, int version)
+    {
+        var favorites = node.ReuseOrCreateChildren(_favorites.Paths.Select(CreateFavoriteEntry), entry => CreateNode(node, entry));
+        node.ReplaceChildren(favorites);
+        node.ExpanderCheckCompleted = RemoveEmptyExpandersAsync(node, version, favorites);
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadDrivesAsync(TreeNodeViewModel node, int version)
+    {
+        var drives = await _service.GetDrivesAsync(CancellationToken.None);
+        if (node.IsCurrentLoad(version))
+        {
+            node.ReplaceChildren(node.ReuseOrCreateChildren(drives, drive => CreateNode(node, drive)));
+        }
+    }
+
+    private async Task LoadFolderAsync(TreeNodeViewModel node, int version)
+    {
+        var listing = await _service.GetChildrenAsync(node.FullPath, CancellationToken.None);
+        if (!node.IsCurrentLoad(version))
+        {
+            return;
+        }
+
+        node.Access = listing.Access;
+        var children = node.ReuseOrCreateChildren(listing.Entries, entry => CreateNode(node, entry));
+        node.ReplaceChildren(children);
+        node.ExpanderCheckCompleted = RemoveEmptyExpandersAsync(node, version, children);
     }
 
     // 목록을 먼저 보여 주고 화살표는 뒤에서 하나씩 정리한다. 하위 폴더가 많은 폴더(System32 등)에서도 펼치자마자 목록이 보이게 한다.
@@ -360,6 +505,19 @@ public sealed class FolderTreeViewModel : ObservableObject
         }
 
         return node;
+    }
+
+    // 드라이브 루트(`C:\`)는 이름이 없어 경로를 그대로 보여 주고 드라이브 아이콘을 쓴다. 등록할 때 있는지 확인했으므로 종류만 정한다.
+    private static TreeEntry CreateFavoriteEntry(string path)
+    {
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        if (name.Length > 0)
+        {
+            return new TreeEntry(path, name, TreeNodeKind.Folder);
+        }
+
+        var kind = path.StartsWith(UncPrefix, StringComparison.Ordinal) ? TreeNodeKind.NetworkDrive : TreeNodeKind.LocalDrive;
+        return new TreeEntry(path, path, kind);
     }
 
     private static TreeNodeViewModel? FindChild(TreeNodeViewModel parent, string name) =>

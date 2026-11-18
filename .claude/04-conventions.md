@@ -9,13 +9,15 @@ MDFileViewer/
 ├── .claude/                        # 프로젝트 문서 (00~05, History.txt)
 ├── src/
 │   ├── MDFileViewer/               # WPF 앱 → MDFileViewer.exe
-│   │   ├── App.xaml(.cs)           # 구성 루트, 인수 처리, 전역 예외 처리
+│   │   ├── App.xaml(.cs)           # 구성 루트, 인수 처리, 전역 예외 처리, 설정 읽기·저장
+│   │   ├── App.Shell.cs            # 탐색기 메뉴 등록·해제, 도움말 창, 정보
 │   │   ├── Properties/PublishProfiles/  # 발행 프로필 win-x64-singlefile(포터블)·win-x64-folder(설치 파일)
 │   │   ├── AppPaths.cs             # %LOCALAPPDATA% 아래 로그·WebView2 폴더, 리소스 폴더 경로
 │   │   ├── app.manifest            # 모니터별 DPI(Per-Monitor V2), 실행 수준 asInvoker (02 §4.2)
-│   │   ├── Views/                  # MainWindow, HelpWindow, 대화상자(MessageDialog)
-│   │   ├── Controls/               # MarkdownView(WebView2 래퍼), EditorView(AvalonEdit 래퍼)
-│   │   ├── Services/               # ThemeService, DialogService, ShellLauncher, WebViewHost, WindowFitter
+│   │   ├── Views/                  # MainWindow(.Editing·.Menus 부분 파일), HelpWindow, 대화상자(MessageDialog)
+│   │   ├── Controls/               # MarkdownView(WebView2 래퍼), 변환기. 편집기(AvalonEdit)는 MainWindow에 직접 둔다
+│   │   ├── Services/               # ThemeService, SystemThemeSource, DialogService, ShellLauncher, WebViewHost, WindowFitter,
+│   │   │                           # AvalonTextBuffer(탭 편집 버퍼), MarkdownHighlighting(xshd 읽기)
 │   │   ├── Themes/                 # Light.xaml, Dark.xaml(색상 토큰), Controls.xaml(공통 스타일)
 │   │   ├── Highlighting/           # Markdown-Light.xshd, Markdown-Dark.xshd
 │   │   └── Assets/                 # 앱 아이콘
@@ -42,6 +44,8 @@ MDFileViewer/
 ├── .editorconfig
 ├── .gitignore
 ├── MDFileViewer.slnx                # 솔루션 (.NET 10 SDK 기본 형식)
+├── LICENSE                       # MIT 라이선스 원문 (02 §15.2, 2026-11-18)
+├── THIRD-PARTY-NOTICES.txt       # 배포본에 들어가는 제3자 구성 요소의 라이선스 원문 (02 §15.2)
 └── README.md                     # 소개·설치·빌드 방법 (GitHub 첫 화면)
 ```
 
@@ -191,3 +195,5 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-17: 사용자 결정 — 배포 스크립트 구조(`publish-*.bat`, `installer/setup.iss`, 발행 프로필) 추가(§1), `.manifest`·`.pubxml`·`.iss` 인코딩과 배치 파일 화면 문구(§4), 배포 산출물 `.gitignore`(§5).
 - 2026-11-18: E2E 좌표 규칙 — DIP 거리에 배율, 누르기 전 `ScrollIntoView`(§6).
 - 2026-11-18: 폴더 구조에 `docs/manual.md`(사용자 결정)·README 설명(§1), 원격 저장소와 공개 저장소 주의(§5).
+- 2026-11-18: 사용자 결정 — 폴더 구조에 `LICENSE`·`THIRD-PARTY-NOTICES.txt` 추가(§1).
+- 2026-11-18: §1 폴더 구조에 Phase 5~10 파일 반영(App.Shell.cs, MainWindow 부분 파일, 편집기는 MainWindow에 직접, App Services 추가분).

@@ -395,7 +395,7 @@ public sealed class DocumentViewModelTests
     }
 
     private DocumentViewModel CreateDocument() =>
-        new(_codec, _viewer, _dialogs, _logger, _time, ReadMetadata);
+        new(_codec, _viewer, _dialogs, _logger, _time, ReadMetadata, new FakeTextBufferFactory());
 
     private FileMetadata ReadMetadata(string path) =>
         _metadata.TryGetValue(path, out var metadata) ? metadata : throw new FileNotFoundException("없음", path);

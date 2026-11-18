@@ -73,4 +73,18 @@ public sealed class ExternalLaunchPolicyTests
         Assert.False(built);
         Assert.Null(arguments);
     }
+
+    [Theory]
+    [InlineData(@"C:\Docs", true)]
+    [InlineData(@"C:\", true)]
+    [InlineData(@"\\server\share", true)]
+    [InlineData(@"Docs", false)]
+    [InlineData(@"C:Docs", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsOpenableFolderPath_AcceptsOnlyFullyQualifiedPaths(string? path, bool expected)
+    {
+        // Act & Assert — 트리 우클릭 "탐색기에서 열기"
+        Assert.Equal(expected, ExternalLaunchPolicy.IsOpenableFolderPath(path));
+    }
 }

@@ -203,6 +203,8 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
   이어져 새 태그가 생기는 일이 없다.
 - 작업 목록은 `<ul class="contains-task-list">`·`<li class="task-list-item">` + 비활성 체크박스로 나온다. `viewer.css`가 이 클래스 이름을 쓴다.
 - 파이프라인은 한 번 만들어 재사용한다(스레드 안전하게 읽기 전용으로 쓴다).
+- **표 칸 하이픈 단어(2026-11-18):** `Markdown.Parse` 뒤 HTML로 내기 전에, 표(`Table`) 안 `LiteralInline`에서 공백 없이 하이픈이 든 20자 이하
+  단어를 `<span class="nobr">…</span>`(`HtmlInline` 두 개 사이의 `LiteralInline`)로 감싼다 — 글자는 평소처럼 이스케이프된다. 코드 스팬·표 밖 글은 건드리지 않는다.
 
 ### 6.2 표시 방식 (안 A — PoC-1·2·5·6으로 확정, 2026-11-17)
 
@@ -278,6 +280,7 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 | `AreDevToolsEnabled` | Debug 빌드만 `true` | |
 | 자동 완성·비밀번호 저장 | `false` | 필요 없는 기능 |
 | `AreHostObjectsAllowed` | `false` | 쓰지 않는 통로는 닫는다 |
+| `AllowExternalDrop` | `false` | 뷰어 위에 놓은 파일을 WebView2가 열지 않고 창이 받게 한다 (§17.10, PoC-7) |
 
 - **컨텍스트 메뉴 결과 (2026-11-17 실행 확인):** 항목 이름은 영어 레이블의 lower camel case다(SDK 문서 `CoreWebView2ContextMenuItem.Name`).
   글자를 선택하고 우클릭하면 "복사 Ctrl+C"만 나오고, 선택 없이 우클릭하면 메뉴가 뜨지 않는다. Chromium은 문서 글자 위에서
@@ -473,13 +476,19 @@ MDFileViewer.exe --unregister
   "layout": { "treePanelWidth": 320, "editorSplitRatio": 0.5 },
   "theme": "System",
   "lastFolder": "D:\\Docs",
-  "editor": { "showLineNumbers": true, "wordWrap": true }
+  "editor": { "showLineNumbers": true, "wordWrap": true },
+  "favorites": ["D:\\Docs", "C:\\Notes"],
+  "tabs": { "files": [{ "path": "D:\\Docs\\a.md", "isPreview": false }], "activeIndex": 0 },
+  "declinedShellReregistrationExe": null
 }
 ```
 
 - `theme`: `System` | `Light` | `Dark`.
+- `declinedShellReregistrationExe`: 탐색기 메뉴 재등록 제안을 `[나중에]`로 거절한 exe 경로. 이 exe로 시작하면 다시 묻지 않는다(01 F-13, 2026-11-18).
 - 알 수 없는 필드는 무시하고, 없는 필드는 기본값을 쓴다. `version`은 형식이 바뀔 때 이전 형식을 옮기는 데 쓴다.
-- 읽기 실패(JSON 오류 등) → 기본값으로 시작하고 원본을 `settings.json.bak`으로 옮긴다.
+- 항목 하나의 형식이 틀리면(모르는 테마 이름, 객체 자리에 문자열 등) 그 항목만 기본값을 쓴다(2026-11-18).
+- 파일 자체가 JSON 객체가 아니면 → 기본값으로 시작하고 원본을 `settings.json.bak`으로 옮긴다.
+- 쓰기: 같은 폴더의 `settings.json.<GUID>.tmp`에 쓰고 디스크까지 내려 쓴 뒤(`Flush(true)`) 바꿔 끼운다 — 창 여러 개가 함께 써도 임시 파일이 겹치지 않는다.
 
 ## 11. PoC 확인 항목 (Phase 1)
 
@@ -496,6 +505,7 @@ MDFileViewer.exe --unregister
 | PoC-4 | .NET 10에서 CP949 디코딩에 추가 패키지가 필요한가 | 필요하면 승인 요청, 거절되면 CP949 미지원 + 안내 | ✅ 통과 — 추가 패키지 없이 `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`만으로 동작. 엄격한 UTF-8 디코더는 CP949 바이트에서 `DecoderFallbackException`을 낸다 (`TextEncodingPlatformTests` → Phase 2에서 `TextFileCodecTests`로 흡수) |
 | PoC-5 | 2MB 넘는 문서를 `ExecuteScriptAsync`로 넣을 수 있는가 | `WebResourceRequested` + `Navigate` (§6.2) | ✅ 통과 — ASCII 3MB 154ms, 한글 150만 자 372ms. 대안 불필요 |
 | PoC-6 | `<base>`가 있을 때 `#앵커` 클릭이 `NavigationStarting`으로 들어오는가 | 안 B에서 템플릿 스크립트로 앵커 처리 | ✅ 통과 — `#far`가 `<base href>#far`로 `NavigationStarting`에 들어오고, 취소하면 본문이 유지됨. `<base href>`를 문서 파일 URL로 두기로 결정(§6.2·§6.4). `_blank`는 `NewWindowRequested`만, `javascript:`는 이벤트 없음 |
+| PoC-7 (2026-11-18) | `AllowExternalDrop=false`일 때 뷰어 위에 놓은 파일이 창의 WPF `PreviewDrop`으로 오는가 | `NavigationStarting`의 `file:` 이동을 드롭으로 넘김 (§17.10) | ⏳ 실행 확인 전 — 앱 실행이 필요해 사용자 확인 뒤 진행 |
 
 ## 12. 상수
 
@@ -521,6 +531,13 @@ MDFileViewer.exe --unregister
 | `ShellMenuText` | `MDFileViewer로 열기` | 우클릭 메뉴 문구 |
 | `LogRetentionDays` | 7 | 로그 파일 보관 일수 |
 | `WorkAreaFillRatio` | 0.9 | 시작 창이 모니터 작업 영역에 들어가지 않을 때 줄이는 비율 (§4.2, 03 §2.1) |
+| `ZoomStepTolerance` | 0.001 | 줌 단계 비교 허용 오차 (§17.2) |
+| `AutoRefreshDelay` | 0.5초 | 폴더·문서 변경 알림을 모았다가 다시 읽기까지 기다리는 시간 (§17.6) |
+| `MinTreePanelWidth` / `DefaultTreePanelWidth` | 160 / 320 | 트리 패널 너비 (03 §2.1) |
+| `MinEditorSplitRatio` / `MaxEditorSplitRatio` | 0.2 / 0.8 | 편집기:미리보기 비율 범위 — 밖이면 기본값 (§17.8) |
+| `SettingsFileName` | `settings.json` | 설정 파일 (§10) |
+| `HelpFileName` | `help.md` | 도움말 문서 (§17.4) |
+| `MaxDroppedFiles` | 20 | 한 번에 끌어다 놓아 여는 md 파일 수 (§17.10, 01 F-19) |
 
 WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로 둔다.
 
@@ -660,9 +677,185 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - 두 배치 파일 모두 산출물 폴더에 사용법 매뉴얼 `docs/manual.md`를 `manual_<버전>.md`로 함께 복사한다(배포본과 매뉴얼을 한 묶음으로 넘기기 위해,
   System3SWTools와 같은 방식). 복사하지 못하면 경고만 하고 배포본은 그대로 둔다. 설치 파일 안에는 넣지 않는다(2026-11-18 사용자 결정).
 
+### 15.2 라이선스와 제3자 고지 (2026-11-18 사용자 결정)
+
+- **이 앱:** MIT 라이선스, 저작권자 `SYONG`(사용자 닉네임). 원문은 레포 루트 `LICENSE`(`Copyright (c) 2026 SYONG`).
+- **배포본에 들어가는 제3자 구성 요소와 라이선스** (NuGet 패키지 nuspec·동봉 파일로 확인, 2026-11-18):
+
+  | 구성 요소 | 버전 | 라이선스 | 저작권 표기 (출처) |
+  |-----------|------|----------|---------------------|
+  | Markdig | 1.6.0 | BSD-2-Clause | Alexandre Mutel (nuspec `copyright`) |
+  | AvalonEdit | 6.3.1.120 | MIT | 2000-2025 AlphaSierraPapa for the SharpDevelop Team (nuspec) |
+  | Microsoft.Web.WebView2 (SDK) | 1.0.4314.35 | Microsoft BSD 계열 (패키지 `LICENSE.txt`) + 패키지 `NOTICE.txt` | Microsoft Corporation |
+  | .NET 런타임 (`Microsoft.NETCore.App`) | 10.0.x | MIT (런타임 팩 `LICENSE.TXT`) + 자체 `THIRD-PARTY-NOTICES.TXT` | .NET Foundation and Contributors |
+  | Windows Desktop 런타임 (WPF) | 10.0.x | MIT (런타임 팩 `LICENSE`) | .NET Foundation and Contributors |
+
+  self-contained 배포라 .NET·WPF 런타임이 배포본에 들어간다. 테스트 전용 패키지(xUnit, FlaUI, coverlet 등)는 배포본에 들어가지 않아 넣지 않는다.
+  WebView2 Runtime은 배포본에 넣지 않고 사용자 PC의 것을 쓴다(§13).
+- **고지 파일:** 레포 루트 `THIRD-PARTY-NOTICES.txt`에 위 구성 요소의 라이선스 원문을 모은다. .NET 런타임 자체의 제3자 고지(1,400여 줄)는 원문을 옮기지 않고
+  출처(런타임 팩의 `THIRD-PARTY-NOTICES.TXT`, dotnet/runtime 저장소)를 적는다. 패키지 버전을 올리면 이 표와 고지 파일을 함께 확인한다.
+- **배포본에 넣는 방법:** 앱 프로젝트가 두 파일을 `LICENSE.txt`·`THIRD-PARTY-NOTICES.txt`로 출력·발행 폴더에 복사한다
+  (`ExcludeFromSingleFile` — 단일 exe 안에 묻히면 사용자가 볼 수 없다).
+  - 설치 파일: 발행 폴더 전체를 설치하므로 설치 폴더에 두 파일이 들어간다. 설치 마법사에 라이선스 화면(`LicenseFile`)을 보인다.
+    `AppPublisher`·`AppCopyright`는 `SYONG`.
+  - 포터블: `publish-portable.bat`이 exe와 함께 두 파일을 `ReleasePortable\`에 복사한다(실패하면 멈춤 — 고지 없는 배포를 막는다).
+- **exe 속성:** `Directory.Build.props`의 `Authors`·`Company`=`SYONG`, `Copyright`=`Copyright (c) 2026 SYONG` — 탐색기 파일 속성 "저작권"에 보인다.
+- **"정보" 창:** 저작권 한 줄과 라이선스 파일 위치를 보인다(03 §10.2).
+
 ## 16. 환경 변수와 시크릿
 
 - 이 앱은 API 키·토큰 같은 시크릿을 쓰지 않는다. 필요한 환경 변수도 없다.
+
+## 17. Phase 5~10 설계 (2026-11-18)
+
+### 17.1 문서 탭과 편집 (01 F-07~F-10, F-17)
+
+- **뷰어는 하나다.** WebView2 컨트롤 하나(`WebViewHost`)가 활성 탭의 문서를 보여 준다. 편집 모드에서는 같은 컨트롤이 오른쪽 미리보기 칸으로
+  옮겨 간다 — 메인 창 문서 영역은 `[편집기 열][구분선][뷰어 열]` 격자이고, 보기 모드에서는 편집기 열과 구분선을 접는다. WebView2를 둘 두지 않아
+  메모리·복구 경로가 하나다.
+- **Core 구성:**
+  - `DocumentTabViewModel` — 탭 하나: `FilePath`, `FileName`, `IsPreview`(미리보기 탭), `IsEditing`, `Buffer`(`ITextBuffer?`, 편집을 시작하면 생김),
+    `IsDirty`(= `Buffer.IsModified`), `IsActive`.
+  - `DocumentTabsViewModel` — 탭 목록·활성 탭·미리보기 탭 규칙(01 F-17), 다음/이전 탭, 복원용 스냅숏(`TabsSettings`).
+  - `DocumentViewModel` — 지금까지처럼 활성 탭의 문서를 읽고 렌더링해 뷰어에 보낸다. 더한 것: 편집 미리보기(`OnBufferChanged` → 300ms 디바운스 →
+    `UpdateBodyAsync`), 저장(`SaveAsync`), 읽기 전용 판단(`FileMetadata.IsReadOnly`), 바깥 변경 재적용.
+  - `MainViewModel` — 트리 선택·링크·주소·시작 인수를 탭 열기로 바꾸고(`OpenInTabAsync(path, anchor, isPreview)`), 탭 전환·닫기·모드 전환·
+    창 닫기의 F-10 확인을 조정한다.
+- **`ITextBuffer`(Core 인터페이스, App이 AvalonEdit `TextDocument`로 구현):** `GetText()`, `IsModified`(실행 취소 기록이 저장 시점과 다른지 —
+  AvalonEdit `UndoStack.IsOriginalFile`의 반대), `MarkSaved()`, `ReplaceText(text)`(바깥 변경 재적용, 실행 취소 기록 초기화), `Changed` 이벤트.
+  탭마다 `TextDocument`를 따로 두므로 탭을 옮겨도 편집 내용과 실행 취소 기록이 남는다. 키마다 전체 텍스트를 꺼내지 않는다 — 변경 알림만 받고,
+  디바운스가 끝날 때와 저장할 때 한 번 꺼낸다. `ITextBufferFactory.Create(text)`로 만든다(테스트는 가짜 버퍼).
+- **변경이 있는 탭은 늘 편집 모드다.** 보기 모드로 돌아가려면 F-10 확인(저장/저장 안 함/취소)을 거치므로, 보기 모드 탭은 언제나 디스크 내용을 보여 준다.
+  탭을 전환하면 보기 모드 탭은 파일을 다시 읽고(바깥 변경이 자동으로 보임), 편집 모드 탭은 버퍼 텍스트를 렌더링한다.
+- **저장:** `TextFileCodec.WriteAsync(path, text, 원래 형식)` → `EncoderFallbackException`이면 UTF-8 제안 대화상자(01 F-10) → 승인하면
+  `TextFileFormat(Utf8, 원래 줄 끝)`으로 다시 쓴다. 성공하면 `Buffer.MarkSaved()`, 메타데이터를 다시 읽고 "저장됨"을 보여 준다.
+  저장 실패 문구는 예외 종류별(읽기 전용·권한 → "파일에 쓸 권한이 없습니다", 잠김 → "다른 프로그램이 파일을 사용 중입니다", 그 밖 → "파일을 저장하지 못했습니다").
+- **`IDialogService.AskSaveChanges(fileName)` → `UnsavedChangesChoice`(`Save`·`Discard`·`Cancel`)**, **`ConfirmConvertToUtf8()`**를 더한다.
+  `MessageDialog`는 세 번째 버튼을 받는다.
+- **창 닫기:** `MainWindow.Closing`에서 `MainViewModel.ConfirmCloseAll()`(변경 있는 탭마다 묻고, 저장은 동기로 기다리지 않도록 먼저 닫기를 취소한 뒤
+  비동기로 저장하고 끝나면 다시 닫는다). 하나라도 `[취소]`면 닫지 않는다.
+- **편집기 설정:** 줄 번호·자동 줄 바꿈(설정 저장), 탭 키 공백 4칸(`ConvertTabsToSpaces`, `IndentationSize = EditorTabSize`), 찾기
+  (`SearchPanel.Install`), 구문 강조는 `Highlighting/Markdown-Light.xshd`·`Markdown-Dark.xshd`(03 §7)를 테마에 따라 바꾼다.
+- **스크롤 동기화:** 편집기 `ScrollOffsetChanged` → 세로 비율(0~1) → `IViewerHost.ScrollToRatioAsync(ratio)`(`window.scrollTo(0, ratio × (scrollHeight − innerHeight))`).
+  미리보기를 다시 그린 뒤에도 같은 비율로 맞춘다.
+
+### 17.2 줌 (01 F-06)
+
+- `ZoomViewModel`(Core): `Factor`, `PercentText`, `ZoomIn`·`ZoomOut`·`Reset` 명령(끝 단계에서 비활성), `OnViewerZoomChanged(factor)`(`Ctrl+휠`이 바꾼 값을
+  받아 50%~300% 밖이면 끝 값으로 되돌림). 다음 단계는 `ZoomSteps`에서 현재보다 큰(작은) 가장 가까운 값이다. 비교에는 `ZoomStepTolerance`(0.001)를 둔다
+  — WebView2가 돌려주는 값이 1.1 대신 1.1000000238처럼 올 수 있다.
+- `IViewerHost`에 `ZoomFactor`(설정)와 `ZoomFactorChanged`를 더한다. WebView2를 다시 만들면(복구) 마지막 배율을 다시 넣는다. 도움말 창의 뷰어도 같은
+  `ZoomViewModel`을 따른다.
+
+### 17.3 테마 (01 F-11)
+
+- `ThemeViewModel`(Core): `Mode`(`ThemeMode.System`·`Light`·`Dark`), `Effective`(`EffectiveTheme`), 시스템 테마는 `ISystemThemeSource`(App:
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`, 메인 창 `WM_SETTINGCHANGE`의 `ImmersiveColorSet`)로 받는다.
+- `ThemeService`(App): `Effective`가 바뀌면 앱 리소스의 `Themes/Light.xaml`↔`Dark.xaml`을 바꿔 끼우고(같은 키, `DynamicResource`), 열린 창마다 DWM
+  `DWMWA_USE_IMMERSIVE_DARK_MODE`(20)를 켜고/끄고, 모든 뷰어에 `ApplyThemeAsync`(스크립트 `SetTheme` + `DefaultBackgroundColor`)를 보내고, 편집기 xshd를 바꾼다.
+- `WebViewHost`는 마지막 테마를 기억해 템플릿을 다시 불러온 뒤(루트 전환·복구) 문서 스크립트 앞에 테마 스크립트를 먼저 보낸다.
+
+### 17.4 도움말 (01 F-12)
+
+- `Resources/help.md`(15개 문법 + 단축키 표 + `{{version}}` 자리). `HelpDocument`(Core)가 버전을 채우고 `## ` 제목을 목차(`HelpSection(제목, 앵커 id)`)로 뽑는다
+  — 앵커 id는 렌더러와 같은 GitHub 규칙이어야 하므로 렌더 결과의 `<h2 id="…">`에서 읽는다.
+- `HelpWindow`(App): 왼쪽 WPF `ListBox` 목차, 오른쪽 자기 `MarkdownView` + `WebViewHost`. 문서 경로는 출력 폴더의 `Resources\help.md`라 그 드라이브가 문서 루트다.
+  링크는 `LinkClassifier`로 나눠 앵커만 스크롤하고, 외부 링크는 `IShellLauncher`로 연다. 창은 하나만 두고 이미 있으면 앞으로 가져온다.
+
+### 17.5 즐겨찾기 (01 F-16)
+
+- `TreeNodeKind.Favorites`(뿌리 노드)를 더한다. `FolderTreeViewModel.Roots`는 `[즐겨찾기, 내 PC]`. 즐겨찾기 항목은 `Kind = Folder`(드라이브면 드라이브 종류)인
+  일반 노드라 펼치기·`F5`·자동 새로고침을 그대로 쓴다. 노드에 `IsFavoriteEntry`(즐겨찾기 바로 아래 항목)를 둔다.
+- `FavoritesList`(Core): 경로 목록(대소문자 무시 중복 금지), 추가·제거·위/아래 이동. 바뀌면 `Changed` → 트리가 즐겨찾기 노드의 자식을 다시 만들고, `MainViewModel`이
+  설정에 바로 저장한다(`ISettingsStore.Save`).
+- `RevealAsync`·`ExpandToFileAsync`는 지금처럼 "내 PC" 쪽에서 찾는다.
+
+### 17.6 자동 새로고침 (01 F-18)
+
+- `IFolderWatcher.Watch(path, filter, onChanged)` → `IDisposable`(Core 인터페이스, Core `FolderWatcher`가 `FileSystemWatcher`로 구현 —
+  `IncludeSubdirectories = false`, `NotifyFilter = FileName | DirectoryName | LastWrite | Size`). 시작하지 못하면(`ArgumentException`·`IOException` 등) `null`과 로그.
+  `Error` 이벤트(버퍼 넘침 등)도 변경으로 본다 — 다시 읽으면 맞춰진다.
+- 트리: 노드를 펼치고 자식을 읽으면 그 폴더를 감시하고, 접거나 부모가 다시 만들면 멈춘다. 변경 알림은 감시 스레드에서 오므로 `FolderTreeViewModel`이 만들어질 때의
+  `SynchronizationContext`(WPF 디스패처)로 넘기고, `AutoRefreshDelay`(0.5초) 디바운스 뒤 `ReloadChildrenAsync`를 한다. md 아닌 파일만 바뀐 경우에도 다시 읽지만,
+  목록이 같으면 컬렉션을 바꾸지 않으므로(§7.1) 화면은 그대로다. 앱이 선택을 옮긴 노드가 다시 읽기로 Reset 되면 `MainViewModel`이 다시 고른다(`F5`와 같은 이유).
+- 열린 문서: 활성 탭 파일만 감시한다(다른 탭은 전환할 때 다시 읽는다). 알림이 오면 메타데이터(크기·수정 시각)를 읽어 마지막으로 읽거나 저장한 값과 같으면
+  무시한다 — 앱이 직접 저장한 변경과 같은 내용의 중복 알림을 거른다.
+
+### 17.7 셸 통합 (01 F-13)
+
+- `RegistryAccess(rootPath)`(Core, `Microsoft.Win32.Registry` — `net10.0-windows` BCL), `ShellIntegrationService(IRegistryAccess)`: `Register(exePath)`, `Unregister()`,
+  `GetStatus(exePath)` → `ShellRegistrationStatus`(`NotRegistered`·`Registered`·`RegisteredElsewhere(path)`). 키·값은 §8.1 표 그대로.
+- `--register`/`--unregister`는 결과를 메시지 상자로 알리고 0/1로 끝낸다. `--silent`(01 F-01)를 함께 주면 메시지 상자 없이 끝낸다 — 설치 파일 제거 단계가
+  `{app}\MDFileViewer.exe --unregister --silent`를 부른다(`[UninstallRun]`).
+- 시작할 때 `RegisteredElsewhere`면 03 §10.2 "메뉴 재등록"을 묻는다. 등록되지 않았으면 묻지 않는다.
+
+### 17.8 설정 (01 F-14)
+
+- `AppSettings` record(§10 형식), `ISettingsStore`(`Load()`·`Save(AppSettings)`), `JsonSettingsStore(path, logger)` — 읽기 실패 시 `.bak`으로 옮기고 기본값, 쓰기는
+  임시 파일 → `File.Replace`(없으면 `File.Move`). 값 검사: 너비·비율은 범위 밖이면 기본값, 경로 목록은 빈 값을 버린다.
+- App이 시작할 때 읽어 창 위치(DIP, 최대화면 `WindowState`)·트리 너비·분할 비율·테마·편집기 옵션을 넣고, 닫을 때 모아 저장한다. 창 위치가 모니터 밖이면
+  `WindowFitter`(§4.2)가 작업 영역 안으로 옮긴다.
+
+### 17.9 구현 반영 (2026-11-18)
+
+- **`MainViewModel` 생성:** `(FolderTreeViewModel, DocumentViewModel, IViewerHost, MainServices)`. `MainServices` record = 대화상자·셸·로그·시간 + `Watcher`(기본 감시 없음)
+  + `FileExists`(탭 복원 확인, 기본 `File.Exists`). 테마 메뉴는 init 속성 `Theme`(`ThemeViewModel`). 시작은 `InitializeAsync(request, SessionState(LastFolder, Tabs))` —
+  인수가 없을 때만 되살린다. 부분 파일: `MainViewModel.Tabs.cs`(탭·편집·저장·창 닫기·활성 파일 감시), `MainViewModel.Menus.cs`(우클릭 메뉴 명령).
+- **편집 레이아웃:** 편집기(AvalonEdit `TextEditor`)는 `MainWindow`에 직접 둔다(별도 `EditorView` 없음). 탐색 패널은 `IsNavigationPanelVisible`이 정하고,
+  보기 → 편집 전환에서 접었다가 편집 → 보기(보기 모드 탭으로 옮김 포함)에서 되돌린다.
+- **`F5`:** 활성 탭에 변경이 있으면 F-10 확인 뒤 `ReloadActiveTabAsync` — 편집 중인 탭은 편집 모드를 유지하고 버퍼를 파일 내용으로 바꾼다.
+- **창 닫기:** `Closing`을 멈추고 확인한 뒤 `Dispatcher.BeginInvoke(Close)`로 닫는다 — "저장 안 함"은 `await` 없이 끝나 아직 `Closing` 처리 중이라 바로
+  `Close()`를 부를 수 없다(E2E로 찾음). 확인 중 예외가 나면 창을 남긴다(저장 안 된 변경 보호). 확인이 진행 중이면 다시 누른 X는 무시한다.
+- **저장 중 입력:** `ITextBuffer.Version`(내용이 바뀔 때마다 증가)을 쓰기 전에 기억하고, 쓰기 뒤 같을 때만 `MarkSaved`한다 — 쓰는 동안 친 글자는
+  파일에 없으므로 변경 있음(`*`·●)으로 남긴다.
+- **트리 감시 해제:** 접힌 폴더를 다시 쓸 때(`PrepareForReuse`) 빠지는 자식 아래 펼쳐 둔 폴더의 감시도 멈춘다. `ReplaceChildren`의 빠진 노드 찾기는 참조 집합.
+  폴더를 접으면 그 아래 전체(`StopWatchingRecursive`)를 멈추고, 다시 펼치면 `OnNodeExpanded`가 펼쳐 둔 채인 하위 폴더의 감시를 다시 건다.
+  자식 재사용은 경로(대소문자 무시)로 찾고 이름(대소문자 구분)·종류가 같을 때만 다시 쓴다 — 이름이 같은 즐겨찾기가 서로 가리지 않는다.
+- **리뷰 반영 (2026-11-18, csharp·code·security 리뷰):**
+  - 큰 파일 확인에서 취소한 새 탭은 `ShowNotOpened`(빈 상태 + "큰 파일이라 열지 않았습니다"). `BeginEdit`은 보여 주는 파일이 활성 탭 파일일 때만 된다.
+  - 저장 전 `ConfirmOverwriteIfChangedOutsideAsync`: 지금 메타데이터가 `KnownMetadata`와 다르면 `IDialogService.Confirm`으로 덮어쓸지 묻는다.
+    저장할 수 없는 탭(읽기 전용·손상)은 이유를 `ShowError`로 알린다.
+  - 바깥 변경: await 뒤 활성 탭이 바뀌었으면 무시, 읽는 동안 `ITextBuffer.Version`이 바뀌었으면 충돌로 돌린다. 알린 충돌은 `ConflictMetadata`에
+    기억해 같은 변경으로 다시 알리지 않는다. 보기 탭 다시 읽기 실패는 `ReloadCoreAsync(keepShownOnFailure: true)` → `ExternalChangeResult.ReloadFailed`.
+  - 탭 활성화는 요청 번호(`_activationRequest`)로 마지막 요청만 문서를 바꾼다. "다른 탭 모두 닫기"는 남길 탭으로 먼저 옮긴다.
+  - 탭 복원의 파일 존재 확인은 `Task.Run`(끊긴 UNC).
+  - `JsonSettingsStore`: 항목마다 따로 읽어(`ReadItems`) 틀린 항목만 기본값, 최상위가 JSON 객체가 아닐 때만 `.bak`. 임시 파일은 GUID 이름 +
+    `Flush(flushToDisk: true)`. 새 항목 `declinedShellReregistrationExe`.
+  - `ShellIntegrationService`: `GetStatus`가 네 키를 모두 본다(`Incomplete` 추가), `Register`가 실패하면 앱 키를 지우고 다시 던진다.
+  - `MarkdownRenderer` 정규식: 시간 제한 1초, 하이픈 단어는 앞쪽 내다보기로 길이(20자)를 먼저 제한.
+  - `ThemeService.ApplyAsync`는 적용 번호로 앞선 적용을 멈춘다. `SystemThemeSource`는 레지스트리 예외를 밝게로 본다.
+  - 테마 메뉴의 `DataContext`는 `PlacementTarget.DataContext.Theme` — 버튼 클릭으로 코드에서 연(`IsOpen`) 메뉴는 DataContext를 물려받지 않아
+    항목 명령이 비었다(E2E로 재현·확인).
+  - 반영하지 않은 지적과 이유: `ShellLauncher.OpenFolder`를 `explorer.exe` 인수로 바꾸기(인수 따옴표 해석이 확인되지 않아 셸 실행 유지 — 위 항목),
+    `Debouncer`의 컨텍스트 없음 금지(단위 테스트가 컨텍스트 없이 같은 스레드 실행을 쓴다), 읽기 전용 파일 편집 막기(01 F-07 결정: 편집은 되고 저장만
+    막는다), 문서 루트를 드라이브 전체로 매핑(`../` 상대 그림을 위해 — 스크립트·CSP로 읽어 내보낼 수 없다), `File.Replace`의 ACL·대체 스트림·
+    심볼릭 링크 보존, 설치 파일 서명(배포 결정), 도움말 이중 렌더(작은 문서라 체감 없음).
+- **트리 감시:** 노드마다 감시 구독과 `Debouncer`를 `CompositeDisposable`로 묶어, 접거나 부모가 노드를 빼면 함께 끝낸다. 자동 새로고침이 고른 노드가 있는
+  폴더의 자식을 바꾸면 `SelectionRestoreRequested`로 다시 고르게 한다.
+- **탐색기에서 열기(폴더):** 인수 문자열을 만들지 않고 폴더 경로 자체를 셸 실행한다(`ExternalLaunchPolicy.IsOpenableFolderPath` — 완전한 경로만).
+- **테마:** 뷰어 준비 전에 받은 테마는 기억만 하고 템플릿을 불러올 때 넣는다(준비 전 잠금 진입 예외를 없앰).
+- **E2E 설정 격리:** Debug 빌드에서만 `MDFILEVIEWER_E2E_SETTINGS` 환경 변수가 설정 파일 경로를 바꾼다. E2E는 세션마다 임시 경로를 준다 — 사용자의 실제
+  `settings.json`을 읽거나 덮지 않는다. Release 빌드는 늘 기본 위치다.
+- **단위 테스트의 동기화 컨텍스트:** 타이머를 쓰는 ViewModel은 만들 때의 컨텍스트로 실행을 넘기므로, 테스트는 `NoSyncContext.Create`로 컨텍스트 없이 만들어
+  `FakeTimeProvider.Advance`가 같은 스레드에서 바로 실행하게 한다(xUnit 컨텍스트는 다른 스레드에서 나중에 돌려 확인과 경쟁했다).
+
+### 17.10 끌어다 놓아 열기 (01 F-19, 2026-11-18)
+
+- **분류 (Core `DroppedPathsClassifier`, 순수 함수):** 놓은 경로 목록과 `fileExists`·`directoryExists` 함수를 받아 `DroppedPaths`
+  (`MarkdownFiles`, `Folder`, `SkippedCount`)를 돌려준다. 빈 경로·`Path.GetFullPath`가 거절하는 경로·없는 경로는 건너뜀으로 센다.
+  같은 파일을 두 번 놓으면(대소문자 무시) 한 번만 연다. md 파일이 하나라도 있으면 폴더는 건너뜀으로 세고 `Folder`는 `null`이다.
+  md 파일이 `MaxDroppedFiles`(20)를 넘으면 앞 20개만 연다.
+- **열기 (`MainViewModel.OpenDroppedAsync`):** 분류는 `Task.Run`에서 한다(끊긴 UNC 확인이 오래 걸려 UI를 멈추지 않게 — 링크 분류와 같은 이유).
+  둘째 파일부터 거꾸로 `Tabs.OpenOrGet(path, isPreview: false)` 한 뒤 첫 파일을 `NavigateToFileAsync`로 연다 — 새 탭은 활성 탭 오른쪽에
+  끼므로 거꾸로 넣어야 놓은 순서가 된다. 폴더면 `NavigateToFolderAsync`. 건너뛴 항목이 있으면 `UiText.DropSkippedFormat`, 열 것이 없으면
+  `UiText.DropNothingToOpen`을 상태 표시줄에 보인다. `MainServices.DirectoryExists`(기본 `Directory.Exists`)는 테스트가 바꾼다.
+- **창 (App `MainWindow`):** 창에 `AllowDrop`을 켜고 `PreviewDragOver`·`PreviewDrop`(터널링)에서 `DataFormats.FileDrop`일 때만
+  처리하고 `Handled = true` — 편집기(AvalonEdit)가 파일 경로를 글자로 넣지 않게 한다. 파일이 아닌 끌기(편집기 안 글자 옮기기)는 건드리지 않는다.
+  끄는 동안의 커서는 존재 확인 없이 정한다(파일 목록이면 복사, 아니면 놓을 수 없음) — 마우스가 움직일 때마다 디스크를 묻지 않는다.
+- **뷰어 영역 (PoC-7):** WebView2는 자체 창(HWND)으로 그려진다. 기본값(`AllowExternalDrop = true`)에서는 WebView2가 드롭을 직접 받으므로
+  창의 WPF 이벤트로 오지 않을 수 있고, 그 뒤 WebView2가 일으키는 이동을 §6.4가 어떻게 분류할지도 확인하지 않았다. 그래서
+  `AllowExternalDrop = false`로 WebView2가 드롭을 받지 않게 한다. 그때 창이 그 드롭을 받는지는 실행해서 확인한다(PoC-7, 확인 전).
+  창이 받지 못하면 대안은 `NavigationStarting`의 `file:` 이동을 드롭으로 넘기는 것이다.
 
 ## 변경 이력
 
@@ -679,3 +872,10 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - 2026-11-17: csharp-reviewer 3차 반영 — `F5` 중 사용자 선택 유지·목록에 없는 노드는 다시 읽으면 빠짐·겹친 이동의 중복 노드 방지(§7.1), 매니페스트 지원 OS(§4.2), 테스트 표(§14.1), 배포 측정값·배치 파일 안전장치(§15.1).
 - 2026-11-18: E2E 좌표와 배율 — 테스트 프로세스 Per-Monitor V2, DIP 거리에 배율, 누르기 전 행을 화면 안으로, 맨 앞 창 진단(§14.3).
 - 2026-11-18: 배포 산출물 폴더에 사용법 매뉴얼 함께 복사(§15.1).
+- 2026-11-18: Phase 5~10·즐겨찾기·문서 탭·자동 새로고침 설계(§17 새로 씀), 설정 형식에 즐겨찾기·탭(§10), 상수(§12).
+- 2026-11-18: Phase 5~10 구현 반영(§17.9) — MainServices·SessionState, 편집 레이아웃, F5 편집 탭 다시 읽기, 창 닫기 지연, 감시 묶음, 폴더 셸 실행, 테마 준비 전 처리, E2E 설정 격리, 테스트 동기화 컨텍스트.
+- 2026-11-18: csharp-reviewer HIGH 반영(§17.9) — 저장 중 입력 보존(`ITextBuffer.Version`), 창 닫기 확인 실패 시 창 유지·중복 닫기 무시, 접힌 폴더 재사용 시 하위 감시 해제.
+- 2026-11-18: 사용자 지적 — 표 칸의 짧은 하이픈 단어를 줄 바꿈 없는 span으로 감쌈(§6.1).
+- 2026-11-18: 리뷰 3종 반영(§17.9) — 큰 파일 취소 탭, 덮어쓰기 확인, 바깥 변경 경합·실패·충돌 1회, 탭 활성화 번호, 접힌 하위 감시, 즐겨찾기 재사용 키, 설정 항목별 읽기·GUID 임시 파일·flush·재등록 거절 항목, 셸 등록 상태·되돌림, 정규식 시간 제한, 테마 적용 번호·메뉴 DataContext. 반영하지 않은 지적과 이유.
+- 2026-11-18: 사용자 요청 — 끌어다 놓아 열기 설계(§17.10), `AllowExternalDrop`(§6.3), PoC-7(§11), `MaxDroppedFiles`(§12).
+- 2026-11-18: 사용자 결정 — MIT 라이선스(저작권자 SYONG), 제3자 구성 요소 표·고지 파일·배포본 포함 방법·exe 속성·"정보" 창(§15.2).

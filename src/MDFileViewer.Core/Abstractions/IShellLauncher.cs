@@ -8,4 +8,10 @@ public interface IShellLauncher
 
     /// <summary>탐색기를 열어 파일·폴더를 선택해 보여 준다.</summary>
     void RevealInExplorer(string path);
+
+    /// <summary>탐색기로 폴더 자체를 연다(트리 우클릭 "탐색기에서 열기", 01 F-02).</summary>
+    void OpenFolder(string folderPath);
+
+    /// <summary>글자를 클립보드에 넣는다("경로 복사").</summary>
+    void CopyToClipboard(string text);
 }

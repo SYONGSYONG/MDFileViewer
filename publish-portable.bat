@@ -59,6 +59,14 @@ if errorlevel 1 (
     goto :fail
 )
 
+rem The licenses of the bundled components require their notices to travel with the binary,
+rem so a portable package without them is treated as a failure (.claude/02-specs.md section 15.2)
+copy /y "%PUBLISH_DIR%\LICENSE.txt" "%RELEASE_DIR%\LICENSE.txt" >nul
+if errorlevel 1 goto :no_license
+copy /y "%PUBLISH_DIR%\THIRD-PARTY-NOTICES.txt" "%RELEASE_DIR%\THIRD-PARTY-NOTICES.txt" >nul
+if errorlevel 1 goto :no_license
+echo [정보] 라이선스·제3자 고지 함께 복사: LICENSE.txt, THIRD-PARTY-NOTICES.txt
+
 rem Ship the user manual next to the output so the package and its manual travel together
 copy /y "%ROOT%docs\manual.md" "%RELEASE_DIR%\manual_%APPVER%.md" >nul
 if errorlevel 1 (
@@ -73,6 +81,10 @@ echo        설치 없이 이 exe 하나만 복사해 실행합니다. 처음 실행할 때 %%TEMP%%\.
 pause
 endlocal
 exit /b 0
+
+:no_license
+echo [실패] 라이선스 파일을 복사하지 못했습니다. 발행 폴더의 LICENSE.txt, THIRD-PARTY-NOTICES.txt 를 확인하세요.
+goto :fail
 
 :bad_version
 echo [실패] 버전을 읽지 못했습니다. Directory.Build.props 의 ^<Version^> 을 확인하세요. 읽은 값: %APPVER%

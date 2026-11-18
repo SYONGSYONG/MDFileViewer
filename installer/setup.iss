@@ -23,7 +23,10 @@
 AppId={{F3FFCBCE-5B03-4F83-BAC5-8AEFB5353A22}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher={#MyAppName}
+AppPublisher=SYONG
+AppCopyright=Copyright (c) 2026 SYONG
+; MIT license page in the wizard; LICENSE.txt and THIRD-PARTY-NOTICES.txt are also installed from the publish folder (.claude/02-specs.md section 15.2)
+LicenseFile=..\LICENSE
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -40,6 +43,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile=..\src\MDFileViewer\Assets\app.ico
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
@@ -57,5 +61,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
-; User data under %LOCALAPPDATA%\MDFileViewer (logs, WebView2 data) is left on uninstall on purpose.
-; Removing the Explorer menu entry (--unregister) on uninstall is added in Phase 9.
+[UninstallRun]
+; Remove the Explorer context menu entry (HKCU) before the files go. --silent suppresses the result box.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--unregister --silent"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterShellMenu"
+
+; User data under %LOCALAPPDATA%\MDFileViewer and %APPDATA%\MDFileViewer (logs, WebView2 data, settings) is left on uninstall on purpose.

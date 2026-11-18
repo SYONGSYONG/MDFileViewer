@@ -58,6 +58,20 @@ public static class ViewerScriptBuilder
         return $"Element.prototype.setAttribute.call({DocumentElement},{Literal("data-theme")},{Literal(value)});";
     }
 
+    /// <summary>
+    /// 문서 세로 위치를 비율로 맞춘다(편집기 스크롤 동기화, 01 F-09). 0은 맨 위, 1은 맨 아래다. 범위 밖 값은 자른다.
+    /// </summary>
+    public static string ScrollToRatio(double ratio)
+    {
+        if (double.IsNaN(ratio))
+        {
+            throw new ArgumentOutOfRangeException(nameof(ratio), ratio, "비율이 숫자가 아닙니다.");
+        }
+
+        var value = Math.Clamp(ratio, 0, 1).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        return $"(function(){{var r={DocumentElement};window.scrollTo(0,{value}*Math.max(0,r.scrollHeight-window.innerHeight));}})();";
+    }
+
     // 템플릿의 <base>·<main>은 본문보다 앞에 있으므로, 본문에 같은 id가 있어도 문서 순서상 먼저인 템플릿 요소가 잡힌다
     private static string SetContent(string bodyHtml) =>
         $"{GetElementById(ContentElementId)}.innerHTML={Literal(bodyHtml)};";

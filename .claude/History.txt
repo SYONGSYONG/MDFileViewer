@@ -94,3 +94,55 @@ A: 4-6 ✅(웹→브라우저, mailto→메일 앱, .bat·.txt→실행 없이 �
    publish-portable.bat·publish-setup.bat가 산출물 폴더에 매뉴얼 복사 — 다시 실행해 두 폴더의 manual_0.1.0.md가 원본과 해시 같음 확인.
    매뉴얼 # 링크 19개가 GitHub 규칙·앱 MarkdownRenderer id와 모두 맞음(스크래치패드 임시 콘솔로 확인, 저장소 변경 없음).
    문서 00(현재 단계·원격)·02 §15.1·04 §1·§5(공개 저장소 개인정보 주의)·05(4-6·Phase 4·11-6) 갱신.
+
+[2026-11-18 07:35]
+Q: 처음 지침을 준 설계 문서 기준으로 덜 개발된 사항이 있는지 전면 재검토.
+A: 문서 00~05·docs/manual.md와 src·tests를 대조(코드·문서 변경 없음, 빌드·테스트는 다시 돌리지 않음). 결과: Phase 5~10(F-06~F-15)은 계획대로 미착수.
+   05-tasks에 행이 없어 빠질 수 있는 항목 — 트리 노드 우클릭 메뉴(F-02 P1), 앱 아이콘(03 §9, Assets·ico 없음), 더보기 메뉴 "정보"(03 §3),
+   인수 없는 실행의 마지막 폴더 복원(F-01, 10-2 검증에 없음), Windows 10 동작 확인(01 §7), 제거 시 --unregister(02 §15.1), 도움말 앱 버전(F-12).
+   완료 Phase 안의 빈틈 — 문서 안 script 미실행 자동 검증 없음(샘플에 script는 있으나 단언 없음), Ctrl+휠 줌 50~300% 보정 없음(Phase 5 전까지),
+   F5 이미지 캐시 미확인(02 §6.2). 미결 — F-10 CP949 → UTF-8 저장 제안(Phase 7 전 결정).
+
+[2026-11-18 10:30]
+Q: 남은 기능(Phase 5~10)·즐겨찾기·문서 탭·자동 새로고침 구현 진행
+A: Core — 트리 즐겨찾기 루트·폴더 감시 자동 새로고침(FolderTreeViewModel), MainViewModel 탭·편집·저장 확인·메뉴 명령·활성 파일 감시·세션 복원(MainViewModel.Tabs/Menus.cs), --silent, ShellIntegrationService·RegistryAccess, JsonSettingsStore·AppSettings, HelpDocument·Resources/help.md. App — MainWindow 툴바·탭 줄·편집기|미리보기·우클릭 메뉴, AvalonTextBuffer, ThemeService·SystemThemeSource·Dark.xaml·xshd, HelpWindow, MessageDialog 3버튼, App.Shell.cs(탐색기 메뉴·정보·도움말), Debug 전용 E2E 설정 경로. 단위 테스트 507개 통과, E2E 6개 중 4개 통과(창 닫기 버그 수정, 1개는 맨 앞 창 확보 실패) — E2E 재실행 대기.
+
+[2026-11-18 09:34]
+Q: csharp-reviewer 리뷰 결과 반영 (Phase 5~10 변경분)
+A: HIGH 3건 수정 — 저장 중 입력을 저장됨으로 표시하던 문제(ITextBuffer.Version, DocumentViewModel.Editing.cs), 창 닫기 확인 실패 시 창이 닫히던 문제·중복 닫기(MainWindow.xaml.cs), 접힌 폴더 재사용 시 하위 감시 누수(TreeNodeViewModel.PrepareForReuse, ReplaceChildren 참조 집합). 재현 테스트 2개 추가, Core 509개 통과, 빌드 경고 0. MEDIUM 12·LOW 8 보류(05 11-1). 문서 02 §17.9·05.
+
+[2026-11-18 09:44]
+Q: 넓은 표가 옆 공간이 남는데도 가로 스크롤됨 — 다 보여 달라
+A: 넓은 표는 본문 폭(860px)을 넘어 뷰어 폭(좌우 여백 제외)까지 넓히고 가운데 맞춤, 좁은 표는 그대로(viewer.css: body container-type, --page-gutter, table min/max-width·translate). 테스트 1개 추가, Core 510개 통과. 문서 03 §6. 실화면 확인 대기.
+
+[2026-11-18 09:52]
+Q: 표만 창 끝까지 확장되는 게 맞나 — 상한 두기로 결정
+A: 넓은 표 확장 폭 상한 1200px(viewer.css --table-max-width), 테스트 갱신, 문서 03 §6.
+
+[2026-11-18 11:25]
+Q: 글과 표 모두 제한 없이 커지게
+A: 본문 최대 폭 860px 제한과 표 확장 장치(1200px 상한·translate) 삭제 — 글·표 모두 뷰어 폭 전체(좌우 여백만), 넘치는 표만 가로 스크롤(viewer.css). 테스트 갱신, 문서 03 §2·§6, docs/manual.md(본문 폭·테마 문구).
+
+[2026-11-18 11:38]
+Q: 표 첫 열(0-1)이 왜 이렇게 좁나 → 짧은 하이픈 단어 안 끊기로 결정. 작업 순서·현황표 문서 업데이트
+A: MarkdownRenderer가 표 칸의 하이픈 단어(공백 없이 20자 이하)를 span.nobr로 감쌈, viewer.css .nobr. 테스트 3개 추가(2개 먼저 실패 확인), Core 513개 통과. 05-tasks 진행 요약·남은 작업 순서 절·Phase 5~10 행 상태(🔄)·4-13(✅)·4-14(🔄) 갱신, 02 §6.1·03 §6.
+
+[2026-11-18 12:03]
+Q: 하이픈 수정 화면 확인(응), 다음 작업 리스트화
+A: 05-tasks 4-14 ✅(사용자 화면 확인), 남은 작업 순서 번호 정리. 다음 작업 목록을 답변으로 제시.
+
+[2026-11-18 14:10]
+Q: 테마 안 바뀜("골라도 그대로"), 패널 접기 UI 버튼, 빈틈 보완, 남은 리뷰
+A: 테마 메뉴 DataContext를 PlacementTarget로 연결(E2E ThemeMenu_SelectingDark_TurnsToolbarDark 실패→통과). 툴바 맨 왼쪽 탐색 패널 버튼(E90C) 추가(E2E 작성, 미실행). 리뷰 3종 HIGH 4건 수정 — 저장 중 입력 유지(Version), 큰 파일 취소 탭, 빠른 탭 전환, 접힌 하위 감시 중지. 빈틈: 바깥 변경 파일 저장 전 덮어쓰기 확인, 다시 읽기 실패 시 문서 유지, 충돌 1회 알림, 저장 불가 이유 표시, 설정 항목별 읽기·GUID 임시 파일, 셸 등록 Incomplete·실패 롤백·"나중에" exe별 기억, 원격 그림 안내. Core 534개 통과. 문서 01·02 §17.9·03·05, docs/manual.md.
+[2026-11-18 14:45]
+Q: 드래그 앤 드롭으로 파일 열기 → md 파일 + 폴더로 결정
+A: DroppedPathsClassifier(md 파일 탭·폴더 트리 이동·섞으면 파일만·최대 20개·중복 제거), MainViewModel.Drop.cs(OpenDroppedAsync·OpenDroppedCommand), MainWindow.Drop.cs(Preview 드롭, FileDrop만), WebView2 AllowExternalDrop=false. 테스트 17개 먼저 실패 확인 후 통과, Core 551개. 문서 01 F-19, 02 §6.3·§11 PoC-7·§12·§17.10, 03 §8·§10.3, 05 10-6, docs/manual.md.
+[2026-11-18 15:10]
+Q: 창을 줄이면 표가 잘림 → 칸 안 줄 바꿈 늘리기로 결정
+A: viewer.css th·td를 overflow-wrap: anywhere + min-width: 3em(한글은 keep-all 유지, .nobr 유지). 테스트 Stylesheet_TableCellsWrapLongWordsToFitNarrowViewer 먼저 실패 확인 후 통과. headless Edge로 580·1400px 렌더 확인(4em은 긴 칸이 좁아 3em으로). 문서 03 §6, 05 4-15.
+[2026-11-18 15:40]
+Q: 라이선스 만들기(닉네임 SYONG) → MIT, LICENSE+README·제3자 고지·정보 창·설치 파일까지
+A: 루트 LICENSE(MIT, Copyright (c) 2026 SYONG)·THIRD-PARTY-NOTICES.txt(Markdig BSD-2, AvalonEdit MIT, WebView2 SDK 원문+NOTICE, .NET·WPF 런타임 MIT — NuGet 캐시 원문 기준). App csproj가 두 파일을 출력·발행 폴더로(ExcludeFromSingleFile), publish-portable.bat이 ReleasePortable로 복사(실패 시 멈춤), setup.iss LicenseFile·AppPublisher·AppCopyright, Directory.Build.props Authors·Copyright, 정보 창 저작권 줄. LicenseNoticesTests 4개, Core 555개 통과. 문서 00·02 §15.2·03·04·05 11-7, README, docs/manual.md.
+[2026-11-18 15:55]
+Q: 정보 창 확인 — THIRD-PARTY-NOTICES.txt가 하이픈에서 끊김
+A: UiText.AboutFormat에서 파일 이름을 따로 한 줄로. LicenseNoticesTests 먼저 실패 확인 후 통과. 03 §3.

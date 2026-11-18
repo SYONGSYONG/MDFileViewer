@@ -17,6 +17,9 @@ public sealed class AppSession : IDisposable
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>Debug 빌드 앱이 읽는 설정 파일 경로 변수(App.ResolveSettingsPath와 같은 글자).</summary>
+    public const string SettingsVariableName = "MDFILEVIEWER_E2E_SETTINGS";
+
     private static readonly TimeSpan MainWindowTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(200);
@@ -31,6 +34,7 @@ public sealed class AppSession : IDisposable
 
     private readonly Application _application;
     private readonly UIA3Automation _automation;
+    private string? _ownedSettingsFolder;
 
     // 테스트 프로세스를 모니터별 DPI(Per-Monitor V2)로 둔다. 앱도 Per-Monitor V2라(02 §4.2) UIA가 주는 요소 좌표는 물리 픽셀인데,
     // DPI를 모르는 프로세스(testhost.exe의 매니페스트에는 DPI 설정이 없다)가 마우스를 옮기거나 화면을 찍으면 Windows가 배율이 다른
@@ -73,6 +77,14 @@ public sealed class AppSession : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
+        // 세션마다 빈 설정 파일 자리를 준다 — 사용자의 실제 설정을 읽거나 덮어쓰지 않고, 테스트끼리 탭·즐겨찾기가 섞이지 않게 (App.ResolveSettingsPath).
+        // 호출자가 경로를 주면(재시작 복원 시험) 그 파일을 쓰고 지우지 않는다.
+        var ownedSettingsFolder = environment?.ContainsKey(SettingsVariableName) == true ? null : NewSettingsFolder();
+        if (ownedSettingsFolder is not null)
+        {
+            startInfo.Environment[SettingsVariableName] = Path.Combine(ownedSettingsFolder, "settings.json");
+        }
+
         foreach (var (name, value) in environment ?? new Dictionary<string, string>())
         {
             startInfo.Environment[name] = value;
@@ -84,7 +96,7 @@ public sealed class AppSession : IDisposable
         {
             var mainWindow = application.GetMainWindow(automation, MainWindowTimeout)
                 ?? throw new InvalidOperationException($"메인 창이 {MainWindowTimeout.TotalSeconds}초 안에 나타나지 않았습니다.");
-            return new AppSession(application, automation, mainWindow);
+            return new AppSession(application, automation, mainWindow) { _ownedSettingsFolder = ownedSettingsFolder };
         }
         catch
         {
@@ -230,6 +242,27 @@ public sealed class AppSession : IDisposable
         {
             _application.Dispose();
             _automation.Dispose();
+            DeleteOwnedSettings();
+        }
+    }
+
+    /// <summary>재시작 복원 시험처럼 두 세션이 같은 설정을 쓸 때 줄 새 설정 파일 경로. 지우는 일은 호출자가 한다.</summary>
+    public static string NewSettingsFolder() => Path.Combine(Path.GetTempPath(), "MDFileViewer.E2E", Guid.NewGuid().ToString("N"));
+
+    private void DeleteOwnedSettings()
+    {
+        if (_ownedSettingsFolder is null || !Directory.Exists(_ownedSettingsFolder))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(_ownedSettingsFolder, recursive: true);
+        }
+        catch (IOException)
+        {
+            // 앱이 아직 파일을 쥐고 있다 — 임시 폴더라 남아도 된다
         }
     }
 

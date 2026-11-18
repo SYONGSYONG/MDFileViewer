@@ -8,6 +8,10 @@ internal sealed class FakeShellLauncher : IShellLauncher
 
     public List<string> Revealed { get; } = [];
 
+    public List<string> OpenedFolders { get; } = [];
+
+    public List<string> Copied { get; } = [];
+
     public Exception? OpenFailure { get; set; }
 
     public void OpenExternal(Uri uri)
@@ -21,4 +25,8 @@ internal sealed class FakeShellLauncher : IShellLauncher
     }
 
     public void RevealInExplorer(string path) => Revealed.Add(path);
+
+    public void OpenFolder(string folderPath) => OpenedFolders.Add(folderPath);
+
+    public void CopyToClipboard(string text) => Copied.Add(text);
 }

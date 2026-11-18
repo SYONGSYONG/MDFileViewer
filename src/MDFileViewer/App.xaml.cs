@@ -13,7 +13,8 @@ using Microsoft.Web.WebView2.Core;
 namespace MDFileViewer;
 
 /// <summary>
-/// 구성 루트 (02 §4·§5): 로그, 전역 예외 처리, 인수 해석, WebView2 Runtime 확인, 서비스·ViewModel 생성(수동 주입), 메인 창 표시.
+/// 구성 루트 (02 §4·§5): 로그, 전역 예외 처리, 인수 해석, 탐색기 메뉴 등록·해제, WebView2 Runtime 확인, 설정 읽기, 서비스·ViewModel 생성
+/// (수동 주입), 메인 창 표시, 닫을 때 설정 저장. 탐색기 메뉴·도움말·정보는 App.Shell.cs에 있다.
 /// </summary>
 public partial class App : Application
 {
@@ -24,6 +25,9 @@ public partial class App : Application
 
     private IAppLogger _logger = NullLogger.Instance;
     private bool _isShowingErrorDialog;
+    private ISettingsStore? _settingsStore;
+    private AppSettings _settings = new();
+    private ThemeService? _themeService;
 
     // 시작 처리 전체가 이벤트 처리기 안에서 돌아야 하므로 async void를 쓴다(04 §3.2 예외). 예외는 모두 안에서 잡는다.
     protected override async void OnStartup(StartupEventArgs e)
@@ -59,9 +63,8 @@ public partial class App : Application
 
         if (parsed.Request is StartupRequest.Register or StartupRequest.Unregister)
         {
-            // 탐색기 메뉴 등록·해제는 Phase 9에서 만든다. 그때까지는 아무것도 바꾸지 않고 실패 코드로 끝낸다.
-            _logger.Warn("--register/--unregister는 아직 구현되지 않았습니다 (Phase 9).");
-            Shutdown(ExitCodeFailure);
+            var isRegister = parsed.Request is StartupRequest.Register;
+            Shutdown(ChangeShellMenu(isRegister, owner: null, parsed.IsSilent) ? ExitCodeSuccess : ExitCodeFailure);
             return;
         }
 
@@ -73,11 +76,10 @@ public partial class App : Application
             return;
         }
 
-        var window = new MainWindow();
-        var viewer = new WebViewHost(window.DocumentView, _logger, AppPaths.WebViewDataFolder, AppPaths.ResourcesFolder);
-        var viewModel = CreateMainViewModel(viewer, shell);
-        window.Bind(viewModel);
-        window.SourceInitialized += (_, _) => FitWindowToMonitor(window);
+        _settingsStore = new JsonSettingsStore(ResolveSettingsPath(), _logger);
+        _settings = _settingsStore.Load();
+        var (window, viewer, viewModel) = await CreateMainWindowAsync(shell);
+
         MainWindow = window;
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         window.Show();
@@ -86,11 +88,34 @@ public partial class App : Application
         // 뷰어 준비와 트리 펼치기를 함께 진행한다. 문서 표시는 뷰어 준비가 끝날 때까지 기다린다.
         // 둘 다 기다려 어느 쪽 실패도 관찰되지 않은 채 버려지지 않게 한다.
         var viewerReady = viewer.InitializeAsync();
-        var initialized = viewModel.InitializeAsync(parsed.Request, CancellationToken.None);
+        var previous = new SessionState(_settings.LastFolder, _settings.Tabs);
+        var initialized = viewModel.InitializeAsync(parsed.Request, previous, CancellationToken.None);
         await Task.WhenAll(viewerReady, initialized);
+        OfferShellReregistration(window);
+    }
+
+    // 메인 창·뷰어·ViewModel을 만들고 설정·테마·창 요청을 연결한다(창은 아직 보이지 않는다)
+    private async Task<(MainWindow Window, WebViewHost Viewer, MainViewModel ViewModel)> CreateMainWindowAsync(ShellLauncher shell)
+    {
+        var window = new MainWindow();
+        var viewer = new WebViewHost(window.DocumentView, _logger, AppPaths.WebViewDataFolder, AppPaths.ResourcesFolder);
+        var systemTheme = new SystemThemeSource();
+        var viewModel = CreateMainViewModel(viewer, shell, systemTheme);
+        window.Bind(viewModel);
+        ApplyWindowSettings(window);
+        window.SourceInitialized += (_, _) =>
+        {
+            FitWindowToMonitor(window);
+            systemTheme.Attach(window);
+        };
+        window.CloseConfirmed += (_, _) => SaveSettings(window, viewModel);
+        WireWindowRequests(window, viewModel, shell);
+        await StartThemeAsync(window, viewer, viewModel.Theme!);
+        return (window, viewer, viewModel);
     }
 
     // 배율이 큰 모니터에서는 WPF가 잡은 시작 창이 작업 영역을 넘는다(2026-11-17 측정, 02 §4.2). 창이 보이기 전에 맞춘다.
+    // 지난 위치가 지금 모니터 밖이면(모니터를 뺐을 때) 가장 가까운 모니터 안으로 옮긴다(01 F-14 복원 예외).
     // 맞추지 못해도 창은 쓸 수 있으므로 로그만 남긴다.
     private void FitWindowToMonitor(Window window)
     {
@@ -100,14 +125,103 @@ public partial class App : Application
         }
     }
 
-    private MainViewModel CreateMainViewModel(IViewerHost viewer, IShellLauncher shell)
+    private MainViewModel CreateMainViewModel(IViewerHost viewer, IShellLauncher shell, ISystemThemeSource systemTheme)
     {
         var dialogs = new DialogService();
         var timeProvider = TimeProvider.System;
-        var tree = new FolderTreeViewModel(new FolderTreeService(_logger), _logger);
+        var watcher = new FolderWatcher(_logger);
+        var favorites = new FavoritesList(_settings.Favorites);
+        favorites.Changed += (_, _) => SaveFavorites(favorites);
+        var tree = new FolderTreeViewModel(new FolderTreeService(_logger), _logger, favorites, watcher, timeProvider);
         var document = new DocumentViewModel(
-            new TextFileCodec(), viewer, dialogs, _logger, timeProvider, FileMetadataReader.Read);
-        return new MainViewModel(tree, document, viewer, dialogs, shell, _logger, timeProvider);
+            new TextFileCodec(), viewer, dialogs, _logger, timeProvider, FileMetadataReader.Read, new AvalonTextBufferFactory());
+        var services = new MainServices(dialogs, shell, _logger, timeProvider) { Watcher = watcher };
+        return new MainViewModel(tree, document, viewer, services) { Theme = new ThemeViewModel(systemTheme, _settings.Theme) };
+    }
+
+    private async Task StartThemeAsync(MainWindow window, IViewerHost viewer, ThemeViewModel theme)
+    {
+        _themeService = new ThemeService(_logger);
+        _themeService.Applied += (_, effective) => window.ApplyEditorTheme(effective);
+        await _themeService.ApplyAsync(theme.Effective);
+        _themeService.Register(window, viewer);
+        theme.EffectiveChanged += async (_, effective) =>
+        {
+            try
+            {
+                await _themeService.ApplyAsync(effective);
+            }
+            catch (Exception exception)
+            {
+                _logger.Error("테마를 바꾸지 못했습니다.", exception);
+            }
+        };
+    }
+
+    private void ApplyWindowSettings(MainWindow window)
+    {
+        if (_settings.Window is { } placement)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.Left = placement.Left;
+            window.Top = placement.Top;
+            window.Width = placement.Width;
+            window.Height = placement.Height;
+            if (placement.IsMaximized)
+            {
+                window.WindowState = WindowState.Maximized;
+            }
+        }
+
+        window.TreePanelWidth = _settings.Layout.TreePanelWidth;
+        window.EditorSplitRatio = _settings.Layout.EditorSplitRatio;
+        window.ShowLineNumbers = _settings.Editor.ShowLineNumbers;
+        window.WordWrap = _settings.Editor.WordWrap;
+    }
+
+    // 최대화한 창은 되돌렸을 때의 위치(RestoreBounds)를 저장한다
+    private void SaveSettings(MainWindow window, MainViewModel viewModel)
+    {
+        if (_settingsStore is null)
+        {
+            return;
+        }
+
+        var bounds = window.WindowState == WindowState.Normal
+            ? new Rect(window.Left, window.Top, window.ActualWidth, window.ActualHeight)
+            : window.RestoreBounds;
+        _settings = _settings with
+        {
+            Window = bounds.IsEmpty ? _settings.Window : new WindowSettings(bounds.Left, bounds.Top, bounds.Width, bounds.Height, window.WindowState == WindowState.Maximized),
+            Layout = new LayoutSettings { TreePanelWidth = window.TreePanelWidth, EditorSplitRatio = window.EditorSplitRatio },
+            Theme = viewModel.Theme?.Mode ?? _settings.Theme,
+            LastFolder = viewModel.CurrentFolderPath,
+            Editor = new EditorSettings { ShowLineNumbers = window.ShowLineNumbers, WordWrap = window.WordWrap },
+            Favorites = viewModel.Tree.FavoriteFolders.Paths,
+            Tabs = viewModel.Tabs.Snapshot(),
+        };
+        WarnIfNotSaved(_settingsStore.Save(_settings));
+    }
+
+    // 저장 실패의 원인은 저장소가 로그에 남긴다. 여기서는 무엇을 잃는지만 남긴다.
+    private void WarnIfNotSaved(bool isSaved)
+    {
+        if (!isSaved)
+        {
+            _logger.Warn("설정을 저장하지 못해 이번 변경은 다음 시작에 반영되지 않습니다.");
+        }
+    }
+
+    // 즐겨찾기는 바꿀 때마다 바로 저장한다 — 창을 닫지 못하고 끝나도 남게 (01 F-14)
+    private void SaveFavorites(FavoritesList favorites)
+    {
+        if (_settingsStore is null)
+        {
+            return;
+        }
+
+        _settings = _settings with { Favorites = favorites.Paths };
+        WarnIfNotSaved(_settingsStore.Save(_settings));
     }
 
     private static IAppLogger CreateLogger()
@@ -234,6 +348,23 @@ public partial class App : Application
     }
 
     private static void ThrowForTesting() => throw new InvalidOperationException("E2E 강제 예외 (작업)");
+
+    /// <summary>
+    /// 설정 파일 경로. Debug 빌드에서만 환경 변수로 바꿀 수 있다 — E2E가 사용자의 실제 설정(즐겨찾기·탭)을 덮어쓰거나 되살리지 않게
+    /// 세션마다 임시 파일을 준다. Release 빌드는 늘 기본 위치다.
+    /// </summary>
+    private static string ResolveSettingsPath()
+    {
+#if DEBUG
+        // E2E(AppSession)가 같은 이름을 쓴다. E2E는 앱 어셈블리를 참조하지 않으므로 거기서도 같은 글자로 적는다.
+        const string VariableName = "MDFILEVIEWER_E2E_SETTINGS";
+        if (Environment.GetEnvironmentVariable(VariableName) is { Length: > 0 } overridePath)
+        {
+            return overridePath;
+        }
+#endif
+        return JsonSettingsStore.DefaultPath;
+    }
 
     // 버려진 작업의 예외는 그 작업이 수집될 때 보고되므로, 작업이 끝날 시간을 준 뒤 수집을 일으킨다.
     // Debug 빌드의 E2E 전용이며 기다릴 호출자가 없는 디스패처 작업이라 async void를 쓴다(04 §3.2 예외) — 안에서 예외가 나면

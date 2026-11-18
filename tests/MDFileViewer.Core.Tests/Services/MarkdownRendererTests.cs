@@ -19,6 +19,62 @@ public sealed class MarkdownRendererTests
         Assert.Contains("<td>1</td>", html, StringComparison.Ordinal);
     }
 
+    // 브라우저는 하이픈 뒤에서 줄을 바꿀 수 있어, 표 폭이 모자라면 "0-1"·"2026-11-17"만 든 열이 "0-" 폭까지 줄었다(2026-11-18 사용자 지적).
+    [Fact]
+    public void RenderBody_TableCellShortHyphenatedWords_WrapsInNoBreakSpan()
+    {
+        // Arrange
+        const string markdown = "| # | 할 일 | 날짜 |\n|---|---|---|\n| 0-1 | F-10 결정 (2026-11-10): 끝 | 2026-11-17 |\n";
+
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.Contains("<td><span class=\"nobr\">0-1</span></td>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"nobr\">F-10</span> 결정 <span class=\"nobr\">(2026-11-10):</span> 끝", html, StringComparison.Ordinal);
+        Assert.Contains("<td><span class=\"nobr\">2026-11-17</span></td>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_LongHyphenatedWordOrOutsideTable_IsLeftBreakable()
+    {
+        // Arrange — 긴 단어(브랜치·파일 이름)까지 막으면 칸이 넓어져 표가 가로 스크롤된다. 표 밖 글은 본문 폭이 넉넉해 건드리지 않는다
+        const string markdown = "0-1 본문\n\n| a |\n|---|\n| feature-remaining-features-branch |\n";
+
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.DoesNotContain("nobr", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_TableCellWithHugeTokenWithoutSpaces_RendersWithoutWrapping()
+    {
+        // Arrange — 보안 리뷰(2026-11-18): 공백 없는 아주 긴 글자열(악성 문서)에서도 빨리 끝나야 한다
+        var huge = string.Concat(Enumerable.Repeat("a-", 200_000));
+        var markdown = $"| a |\n|---|\n| {huge} |\n";
+
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.DoesNotContain("nobr", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderBody_TableCellHyphenatedWordWithMarkup_IsEscaped()
+    {
+        // Arrange — 감싼 단어의 글자도 평소처럼 이스케이프한다(새 태그가 생기지 않게)
+        const string markdown = "| a |\n|---|\n| a-<b |\n";
+
+        // Act
+        var html = MarkdownRenderer.RenderBody(markdown);
+
+        // Assert
+        Assert.Contains("<span class=\"nobr\">a-&lt;b</span>", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RenderBody_TaskList_RendersDisabledCheckboxesWithListClasses()
     {

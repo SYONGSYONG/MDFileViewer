@@ -22,5 +22,20 @@ public static class IconGlyphs
     public static readonly string Refresh = Glyph(0xE72C);
     public static readonly string Document = Glyph(0xE8A5);
 
+    // 2026-11-18 SegoeIcons.ttf로 그려 모양을 확인했다(이름은 Fluent Icons 목록 이름)
+    public static readonly string Edit = Glyph(0xE70F);
+    public static readonly string Save = Glyph(0xE74E);
+    public static readonly string ZoomIn = Glyph(0xE8A3);
+    public static readonly string ZoomOut = Glyph(0xE71F);
+    public static readonly string Theme = Glyph(0xE790);
+    public static readonly string Help = Glyph(0xE897);
+    public static readonly string More = Glyph(0xE712);
+    public static readonly string FavoriteStar = Glyph(0xE734);
+    public static readonly string ChevronRight = Glyph(0xE76C);
+    public static readonly string Close = Glyph(0xE711);
+
+    // 2026-11-18 같은 방법으로 확인: 왼쪽 칸이 나뉜 창 모양(DockLeft) — 접기·펴기 어느 상태든 한 아이콘으로 토글한다
+    public static readonly string NavigationPanel = Glyph(0xE90C);
+
     private static string Glyph(int codePoint) => char.ConvertFromUtf32(codePoint);
 }

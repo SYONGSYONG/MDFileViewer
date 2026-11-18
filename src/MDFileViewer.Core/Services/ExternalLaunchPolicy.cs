@@ -37,4 +37,11 @@ public static class ExternalLaunchPolicy
         arguments = string.Format(System.Globalization.CultureInfo.InvariantCulture, ExplorerSelectFormat, path);
         return true;
     }
+
+    /// <summary>
+    /// 트리 우클릭 "탐색기에서 열기"로 셸에 넘겨도 되는 폴더 경로인가. 상대 경로(앱의 현재 폴더 기준으로 풀림)는 거부한다.
+    /// 인수 문자열을 만들지 않고 폴더 경로 자체를 셸 실행하므로 따옴표 이스케이프 문제가 없다.
+    /// </summary>
+    public static bool IsOpenableFolderPath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path) && !path.Contains(Quote, StringComparison.Ordinal);
 }

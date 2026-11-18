@@ -8,7 +8,22 @@
     <RootNamespace>MDFileViewer</RootNamespace>
     <!-- 모니터별 DPI·실행 수준 (02 §4.2) -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- exe 아이콘. 탐색기 우클릭 메뉴(Icon "<exe>,0")도 이 아이콘을 쓴다 (03 §9, 02 §8.1) -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- 창 제목 표시줄·작업 표시줄 아이콘 (pack URI로 참조) -->
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <!-- 편집기 구문 강조 정의 (03 §7) -->
+    <Resource Include="Highlighting\*.xshd" />
+  </ItemGroup>
+
+  <!-- 라이선스·제3자 고지를 앱 폴더에 둔다 (02 §15.2). 단일 exe 안에 묻히면 사용자가 볼 수 없어 밖에 남긴다 -->
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MDFileViewer.Core\MDFileViewer.Core.csproj" />

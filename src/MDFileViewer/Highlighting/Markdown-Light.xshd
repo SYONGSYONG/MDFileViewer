@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 편집기 Markdown 구문 강조 — 밝게 (.claude/03-design.md §7). Markdown-Dark.xshd와 규칙이 같고 색만 다르다. -->
+<SyntaxDefinition name="Markdown-Light" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Heading" foreground="#1F4FB0" fontWeight="bold" />
+  <Color name="Bold" fontWeight="bold" />
+  <Color name="Italic" fontStyle="italic" />
+  <Color name="Code" foreground="#A3420F" />
+  <Color name="LinkText" foreground="#2F6FDE" />
+  <Color name="LinkUrl" foreground="#5B6270" />
+  <Color name="Quote" foreground="#5B6270" fontStyle="italic" />
+  <Color name="ListMarker" foreground="#8A5300" />
+
+  <RuleSet>
+    <Span color="Code" multiline="true">
+      <Begin>^[ \t]*(```|~~~)</Begin>
+      <End>^[ \t]*(```|~~~)</End>
+    </Span>
+    <Span color="Code">
+      <Begin>`</Begin>
+      <End>`</End>
+    </Span>
+    <Rule color="Heading">^\#{1,6}[ \t].*</Rule>
+    <Rule color="Quote">^[ \t]*&gt;.*</Rule>
+    <Rule color="ListMarker">^[ \t]*([-*+]|\d+\.)[ \t]+(\[[ xX]\][ \t])?</Rule>
+    <Rule color="Bold">(\*\*|__)[^\s*_](.*?[^\s*_])?(\*\*|__)</Rule>
+    <Rule color="Italic">(?&lt;![*\w])[*_][^\s*_](.*?[^\s*_])?[*_](?![*\w])</Rule>
+    <Rule color="LinkText">!?\[[^\]\r\n]*\]</Rule>
+    <Rule color="LinkUrl">(?&lt;=\])\([^)\r\n]*\)</Rule>
+  </RuleSet>
+</SyntaxDefinition>

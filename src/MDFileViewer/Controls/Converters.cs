@@ -20,6 +20,7 @@ public sealed class TreeNodeGlyphConverter : IMultiValueConverter
         return kind switch
         {
             TreeNodeKind.ThisPc => IconGlyphs.ThisPc,
+            TreeNodeKind.Favorites => IconGlyphs.FavoriteStar,
             TreeNodeKind.LocalDrive => IconGlyphs.HardDrive,
             TreeNodeKind.RemovableDrive => IconGlyphs.RemovableDrive,
             TreeNodeKind.NetworkDrive => IconGlyphs.NetworkDrive,

@@ -7,6 +7,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>0.1.0</Version>
     <Product>MDFileViewer</Product>
+    <!-- exe 파일 속성의 저작권 (02 §15.2, MIT 라이선스 — 루트 LICENSE) -->
+    <Authors>SYONG</Authors>
+    <Company>SYONG</Company>
+    <Copyright>Copyright (c) 2026 SYONG</Copyright>
   </PropertyGroup>
 
 </Project>

@@ -8,6 +8,7 @@ public static class CommandLineParser
     private const string OptionPrefix = "--";
     private const string RegisterOption = "--register";
     private const string UnregisterOption = "--unregister";
+    private const string SilentOption = "--silent";
     private const char Quote = '"';
 
     /// <param name="arguments">프로그램 이름을 뺀 인수.</param>
@@ -18,9 +19,16 @@ public static class CommandLineParser
         StartupRequest? optionRequest = null;
         string? pathArgument = null;
         var ignored = new List<string>();
+        var isSilent = false;
 
         foreach (var argument in arguments)
         {
+            if (argument.Equals(SilentOption, StringComparison.OrdinalIgnoreCase))
+            {
+                isSilent = true;
+                continue;
+            }
+
             if (argument.StartsWith(OptionPrefix, StringComparison.Ordinal))
             {
                 var option = ParseOption(argument);
@@ -54,7 +62,7 @@ public static class CommandLineParser
         // 등록·해제 옵션은 창을 띄우지 않는 별도 동작이라 경로보다 우선한다
         var request = optionRequest
             ?? (pathArgument is null ? new StartupRequest.None() : ResolvePath(pathArgument, currentDirectory));
-        return new CommandLineParseResult(request, ignored);
+        return new CommandLineParseResult(request, ignored, isSilent);
     }
 
     private static StartupRequest? ParseOption(string argument)
