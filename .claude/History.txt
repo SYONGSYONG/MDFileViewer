@@ -146,3 +146,48 @@ A: 루트 LICENSE(MIT, Copyright (c) 2026 SYONG)·THIRD-PARTY-NOTICES.txt(Markdi
 [2026-11-18 15:55]
 Q: 정보 창 확인 — THIRD-PARTY-NOTICES.txt가 하이픈에서 끊김
 A: UiText.AboutFormat에서 파일 이름을 따로 한 줄로. LicenseNoticesTests 먼저 실패 확인 후 통과. 03 §3.
+[2026-11-21 21:05]
+Q: 남은 실행 확인을 UI 테스트로 확인하고, 코드보다 뒤처진 문서 갱신, 브랜치 이름 오타 해결
+A: E2E 25개 실행 → 2개 실패(둘 다 환경 가정: 설치본과 WebView2 브라우저 프로세스 공유, Windows 어둡게 모드). Debug 전용 MDFILEVIEWER_E2E_WEBVIEW_DATA(AppPaths.cs, AppSession.cs), 테마 E2E를 앱 모드와 무관하게 고침. E2E 8개 추가(ZoomAndThemeTests.cs 새 파일 — 줌 단축키·Ctrl+휠·시스템 따르기·테마 전환·clobber·테마 복원, EditingAndTabsTests.cs — 탭 고정·덮어쓰기 확인·큰 파일 취소), SafeInput.cs. E2E 33/33·Core 555 통과. 4-15는 앱 화면 캡처로 확인. 결함 발견: 어둡게 테마의 트리 스크롤바가 흰색(05 6-4, 미수정). 문서: README(개발 상태·기능·로드맵), docs/manual.md(낡은 "예정" 문구), 00(현재 단계·F-19), 02 §14.3·§17.9, 05(4-15·5-2·7-5·7-7·10-2 ✅, 6-4 추가, 남은 작업 순서, 시나리오 8). 로컬 브랜치 feature/remaing-features → feature/remaining-features.
+[2026-11-21 21:40]
+Q: 스크롤바 결함 수정, E2E는 이제 하기 전에 물어보고 할 것
+A: Themes/Controls.xaml에 키 없는 ScrollBar 스타일(트랙 투명, 막대 Text.Secondary 6px·올리면 Text.Primary, 화살표 버튼 없음, 세로·가로 템플릿) 추가 — 트리·편집기·도움말 목차에 적용. 회귀 E2E DarkTheme_TreeScrollBarTrackIsNotBright 작성(ZoomAndThemeTests.cs, 미실행). 빌드 경고 0, Core 555 통과. E2E·화면 확인은 사용자 승인 뒤. 문서 03 §8, 05 6-4.
+[2026-11-21 21:55]
+Q: 스크롤바 확인만 실행(승인)
+A: E2E DarkTheme_TreeScrollBarTrackIsNotBright를 수정 전·후로 실행 — 수정 전 통과·수정 후 실패로 거꾸로 나옴. 화면 캡처에 앱 대신 화면을 덮은 Windows 리콜 안내가 찍혀 두 결과 모두 무효로 판단. 코드 변경 없음(Controls.xaml 수정본 유지). 05 6-4에 기록, 재실행은 사용자 확인 뒤.
+[2026-11-21 22:20]
+Q: 스크롤바 다시 확인
+A: 화면이 빈 것을 캡처로 먼저 확인. 수정본 캡처에서 모서리 칸 흰 네모·막대가 점처럼 줄어드는 문제를 찾아 Controls.xaml에 키 없는 ScrollViewer 템플릿(모서리 칸 비움)과 막대 최소 길이 24(SystemParameters 스크롤바 버튼 크기 리소스 48)를 추가. 어둡게·밝게 캡처로 트리 스크롤바 확인. E2E DarkTheme_TreeScrollBarTrackIsNotBright 수정 전 실패 → 수정 후 통과. 빌드 경고 0. 편집기·도움말 목차 화면 확인과 E2E 전체 회귀는 남음. 문서 03 §8, 05 6-4.
+[2026-11-22 00:10]
+Q: E2E 말고 할 일 찾기 → 추천 순서 1(코드 리뷰)·2(토큰 일치 단위 테스트)·3(Border.Strong 대비) 진행. 3은 "3:1 넘게 진하게"로 결정
+A: 1) code-reviewer 리뷰 — CRITICAL·HIGH 0, MEDIUM 2, LOW 6. Ctrl+휠 E2E 입력 안전(칸마다 마우스 위치 재설정·확인), 큰 파일 취소 E2E 기다림, 안내 문구 상수 중복 정리. 나머지는 05에 이유 기록. 2) ThemeDictionaryTests 18개 + RepositoryPaths(LicenseNoticesTests의 루트 찾기를 옮김) — 색을 일부러 틀리게 해 실패 확인. 3) Border.Strong #B9B4AA→#8C877D, #454B56→#6E7581 (Light/Dark.xaml, viewer.css, ViewerTemplateTests 기대값 먼저 실패 확인). 대비 계산 결과 03 §4. Core 573 통과, 빌드 경고 0. 고친 E2E와 바뀐 색의 화면 확인은 하지 않음(E2E는 사용자 확인 뒤). 문서 02 §14.1, 03 §4, 05(6-1 ✅, 11-5 🔄, 리뷰 기록).
+[2026-11-22 03:05]
+Q: E2E 전체 회귀 진행
+A: 34개 중 31 통과·3 실패(6분 8초). 실패 3건은 트리 항목 찾기 15초 시간 초과(OpeningLargeFile, ClickingTwoFilesInTree, Launch_WithFolderArgument). 실행 직후 CPU 100%, 앱 시작도 11-21보다 2~7배 느림 — PC 부하로 보이나 미확정. 코드 변경 없음. 05에 기록, 재실행은 사용자 확인 뒤.
+[2026-11-22 03:20]
+Q: 실패한 3개 지금 다시 실행
+A: CPU 94~96% 상태에서 2개 통과, Launch_WithFolderArgument만 재실패. 이 테스트를 수정 전 Controls.xaml 2번·수정본 2번 단독 실행 → 4번 모두 통과. 스크롤 영역 템플릿이 원인이라는 근거 없음, 부하 때 불안정한 테스트로 판단(원인 미규명). 코드 변경 없음, Controls.xaml 수정본 복원 확인. 05 기록.
+[2026-11-22 03:40]
+Q: E2E 전체 지금 다시 실행
+A: CPU 56~63%에서 34개 중 30 통과·4 실패(4분 22초). 실패는 앞 실행과 다른 MainWindowTests 4개, 모두 트리 항목 찾기 시간 초과 — 실행마다 실패 테스트가 바뀜. 원인 미규명(회귀 가능성 배제 못 함, %TEMP% 자동 새로고침 가설은 미확인). AppSession에 실패 시 창 화면을 남기는 진단(WaitForOrCapture) 추가, 빌드만 확인하고 실행하지 않음. 05 기록.
+[2026-11-22 07:05]
+Q: (선택 A) 진단을 켜고 E2E 전체 1회 실행
+A: 34개 중 32 통과·2 실패(5분 7초, CPU 100%). 실패 화면 1장에서 트리가 %TEMP% 형제 폴더 위치에 멈춰 있고 고른 파일 행이 화면 밖임을 확인 — 읽는 중·가려짐은 아님. 그 위치에 멈춘 이유는 미확인. 실패 이름·메시지는 출력 옵션 탓에 남기지 못함. 코드 변경 없음, 05 기록(깨진 경로 표기 복구 포함).
+[2026-11-22 07:15]
+Q: 1번(E2E 샘플을 %TEMP% 밖으로) 진행, 샘플은 tests 아래 git 무시 폴더로
+A: SampleDocuments 기본 위치를 tests\.e2e-samples(.gitignore 추가)로, 루트 전환 테스트의 두 번째 샘플은 임시 폴더로 변경. E2E 전체 34개 중 33 통과, 트리 항목 찾기 실패 0. 남은 실패 1개는 CtrlWheel(배율 100% 그대로, 원인 미확인). 큰 폴더에서 고른 행이 화면 밖에 남는 앱 동작은 미확인으로 남김. 02 §14.3·05 기록.
+[2026-11-22 07:40]
+Q: 큰 폴더 재현 테스트와 Ctrl+휠 단독 재실행 둘 다 진행
+A: E2E CrowdedFolderTests 추가(형제 1,400개) — 형제 폴더가 생기면 고른 파일 대신 폴더가 선택되고 트리가 튀는 것을 재현. 원인은 FolderTreeViewModel.AutoRefreshAsync의 선택 복원 조건(F5와 달리 폴더로 옮겨진 선택을 건너뜀). F5와 같은 기준으로 수정, 단위 테스트 추가(RED→GREEN), Core 574 통과. CtrlWheel 단독 통과. 수정 뒤 E2E 재실행은 아직 안 함. 02 §17.6·05 기록.
+[2026-11-22 07:50]
+Q: CrowdedFolderTests 2개만 먼저 실행
+A: 수정 뒤 2개 모두 통과(33초). E2E 전체 재실행은 남음. 05 기록.
+[2026-11-22 08:00]
+Q: 더 넣을 만한 기능 검토
+A: 01 §8 후속 후보를 기준으로 추천 순서 제시(뷰어 안 찾기, 목차 패널, 코드 구문 색상, 파일 이름 필터·전체 검색, 단일 인스턴스 등). 코드·문서 변경 없음, 사용자 선택 대기.
+[2026-11-22 08:50]
+Q: E2E 전체 실행
+A: 자동 새로고침 수정 뒤 36개 모두 통과(2분 30초, CPU 35%). 05 기록. 커밋 안 함.
+[2026-11-22 09:05]
+Q: 커밋 메시지 초안 확인 후 커밋·푸시
+A: 27개 파일을 한 커밋(fix: 자동 새로고침 뒤 선택 풀림·스크롤바 테마 수정, E2E 환경 격리와 테스트 보강)으로 만들어 origin/feature/remaining-features에 푸시. ViewerTemplateTests.cs 줄 끝을 CRLF로 맞춤.

@@ -812,6 +812,29 @@ public sealed class FolderTreeViewModelTests
     }
 
     [Fact]
+    public async Task AutoRefresh_WhenViewMovesSelectionToReloadedFolder_RequestsReselectingFile()
+    {
+        // Arrange — 실제 화면 트리(WPF TreeView)는 자식 목록이 통째로 바뀌면 그 안의 선택을 다시 읽은 폴더로 옮긴다. 형제가 많은 폴더에서
+        // 형제 하나가 생기자 고른 파일 대신 그 폴더가 선택되고 트리가 폴더 행으로 튀었다(E2E CrowdedFolderTests, 2026-11-22)
+        var tree = CreateWatchedTree(new FavoritesList([]));
+        var docs = (await tree.RevealAsync(@"C:\Docs", CancellationToken.None))!;
+        var readme = Child(docs, "readme.md");
+        readme.IsSelected = true;
+        ((System.Collections.Specialized.INotifyCollectionChanged)docs.Children).CollectionChanged += (_, _) => docs.IsSelected = true;
+        var requested = new List<TreeNodeViewModel>();
+        tree.SelectionRestoreRequested += (_, node) => requested.Add(node);
+        _service.SetFiles(@"C:\Docs", "new.md", "readme.md", "todo.md");
+
+        // Act
+        _watcher.RaiseChanged(@"C:\Docs");
+        _time.Advance(AppConstants.AutoRefreshDelay);
+        await docs.ChildrenLoaded;
+
+        // Assert
+        Assert.Equal([readme], requested);
+    }
+
+    [Fact]
     public async Task AutoRefresh_UnsupportedLocation_KeepsWorkingWithoutWatch()
     {
         // Arrange — 감시를 시작하지 못하는 위치는 F5로 다시 읽는다

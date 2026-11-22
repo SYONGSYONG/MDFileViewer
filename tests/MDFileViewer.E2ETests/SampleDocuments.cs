@@ -4,7 +4,7 @@ using System.Text;
 namespace MDFileViewer.E2ETests;
 
 /// <summary>
-/// E2E용 샘플 폴더(`%TEMP%\MDFileViewer.E2E\&lt;guid&gt;\문서 폴더`). 한글·공백이 든 경로로 만들어 경로 인코딩도 함께 확인한다.
+/// E2E용 샘플 폴더(`tests\.e2e-samples\MDFileViewer.E2E\&lt;guid&gt;\문서 폴더`, git 무시). 한글·공백이 든 경로로 만들어 경로 인코딩도 함께 확인한다.
 /// </summary>
 public sealed class SampleDocuments : IDisposable
 {
@@ -49,10 +49,13 @@ public sealed class SampleDocuments : IDisposable
 
     private static readonly UTF8Encoding Utf8WithoutBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    private const string SolutionFileName = "MDFileViewer.slnx";
+    private const string SamplesFolderName = ".e2e-samples";
+
     private readonly string _root;
 
     public SampleDocuments()
-        : this(Path.GetTempPath())
+        : this(DefaultBaseDirectory())
     {
     }
 
@@ -95,6 +98,22 @@ public sealed class SampleDocuments : IDisposable
         {
             Directory.Delete(_root, recursive: true);
         }
+    }
+
+    // 레포의 `tests\.e2e-samples`(git 무시). `%TEMP%` 아래에 두면 트리가 샘플의 조상인 `%TEMP%`(바로 아래 항목 1,000개 이상, 다른 프로그램이
+    // 계속 바꿈)를 통째로 펼쳐, 고른 행이 화면 밖에 남는 실패가 실행마다 다른 테스트에서 났다(2026-11-22). 테스트는 bin 아래에서 돌므로
+    // 솔루션 파일이 있는 폴더까지 올라간다.
+    internal static string DefaultBaseDirectory()
+    {
+        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
+        {
+            if (File.Exists(Path.Combine(folder.FullName, SolutionFileName)))
+            {
+                return Path.Combine(folder.FullName, "tests", SamplesFolderName);
+            }
+        }
+
+        throw new InvalidOperationException($"레포 루트({SolutionFileName})를 찾지 못했습니다.");
     }
 
     private void Write(string relativePath, string content) =>

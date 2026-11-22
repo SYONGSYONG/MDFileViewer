@@ -10,7 +10,7 @@ namespace MDFileViewer.E2ETests;
 /// <summary>메인 창 보기 모드 E2E (05 Phase 4: 4-4·4-6·4-7·4-8·4-9·4-10).</summary>
 public sealed class MainWindowTests : IDisposable
 {
-    private const string NotForegroundMessage = "앱 창을 맨 앞으로 올리지 못했습니다 — 다른 창에 입력이 가지 않도록 입력을 보내지 않습니다.";
+    private const string NotForegroundMessage = SafeInput.NotForegroundMessage;
     private static readonly TimeSpan MetaRefreshGrace = TimeSpan.FromSeconds(2);
 
     // 선택이 바뀐 뒤 화면 트리가 스크롤을 마칠 시간(앱은 레이아웃이 끝난 뒤 Loaded 우선순위로 스크롤한다). "움직이지 않음"을 확인하므로 기다린 뒤 본다.
@@ -21,7 +21,7 @@ public sealed class MainWindowTests : IDisposable
 
     // 트리 행 왼쪽 끝에서 아이콘 가운데까지(DIP): 펼침 화살표 칸 18 + 왼쪽 여백 4 + 아이콘 절반 (Themes/Controls.xaml FolderTreeItem).
     // UIA 좌표는 물리 픽셀이라 창 배율을 곱한다 — 200% 모니터에서 그대로 쓰면 md 파일 행의 빈 화살표 칸을 눌러 선택되지 않았다(2026-11-17).
-    private const double RowIconOffsetDips = 28;
+    internal const double RowIconOffsetDips = 28;
 
     private readonly SampleDocuments _samples = new();
 
@@ -336,14 +336,9 @@ public sealed class MainWindowTests : IDisposable
     }
 
     // 클릭 직전에도 앱 창이 맨 앞인지, 누를 점이 앱 창 안인지 확인한다 — 아니면 다른 창을 누르게 된다.
-    // 스크롤로 화면 밖에 나간 요소도 좌표는 돌려주므로(창 위·아래) 점 검사가 필요하다.
     private static void ClickAt(AppSession session, Point point)
     {
-        Assert.True(session.IsForeground, NotForegroundMessage);
-        Assert.True(session.MainWindow.BoundingRectangle.Contains(point), $"누를 점 {point}이 앱 창 밖입니다 — 누르지 않습니다.");
-        Assert.True(
-            session.IsPointOnApp(point),
-            $"누를 점 {point}을 다른 창({AppSession.DescribeWindowAt(point)})이 덮고 있습니다 — 누르지 않습니다.");
+        SafeInput.EnsureCanSendAt(session, point);
         Mouse.Click(point);
     }
 }

@@ -20,6 +20,15 @@ public sealed class AppSession : IDisposable
     /// <summary>Debug 빌드 앱이 읽는 설정 파일 경로 변수(App.ResolveSettingsPath와 같은 글자).</summary>
     public const string SettingsVariableName = "MDFILEVIEWER_E2E_SETTINGS";
 
+    /// <summary>Debug 빌드 앱이 읽는 WebView2 데이터 폴더 변수(AppPaths.ResolveWebViewDataFolder와 같은 글자).</summary>
+    public const string WebViewDataVariableName = "MDFILEVIEWER_E2E_WEBVIEW_DATA";
+
+    // E2E 전용 WebView2 데이터 폴더. 사용자가 켜 둔 설치본과 브라우저 프로세스를 나눠 쓰지 않게 한다 — 나눠 쓰면 테스트 앱에는
+    // 자식 브라우저 프로세스가 없어 복구 E2E가 대상을 찾지 못했다(2026-11-21). 프로필을 매번 새로 만들지 않도록 실행마다 같은 폴더를 쓴다.
+    private static readonly string WebViewDataFolder = Path.Combine(Path.GetTempPath(), "MDFileViewer.E2E", "WebView2");
+
+    private static readonly string FailureScreenFolder = Path.Combine(Path.GetTempPath(), "MDFileViewer.E2E", "failures");
+
     private static readonly TimeSpan MainWindowTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(200);
@@ -85,6 +94,7 @@ public sealed class AppSession : IDisposable
             startInfo.Environment[SettingsVariableName] = Path.Combine(ownedSettingsFolder, "settings.json");
         }
 
+        startInfo.Environment[WebViewDataVariableName] = WebViewDataFolder;
         foreach (var (name, value) in environment ?? new Dictionary<string, string>())
         {
             startInfo.Environment[name] = value;
@@ -108,11 +118,11 @@ public sealed class AppSession : IDisposable
 
     /// <summary>AutomationId로 요소를 찾는다. 시간 안에 나타나지 않으면 실패한다.</summary>
     public AutomationElement FindById(string automationId, TimeSpan? timeout = null) =>
-        WaitFor(() => MainWindow.FindFirstDescendant(cf => cf.ByAutomationId(automationId)), timeout, $"요소 없음: {automationId}");
+        WaitForOrCapture(() => MainWindow.FindFirstDescendant(cf => cf.ByAutomationId(automationId)), timeout, $"요소 없음: {automationId}");
 
     /// <summary>이름으로 요소를 찾는다(문서 영역의 제목·링크처럼 AutomationId가 없는 요소).</summary>
     public AutomationElement FindByName(string name, TimeSpan? timeout = null) =>
-        WaitFor(() => MainWindow.FindFirstDescendant(cf => cf.ByName(name)), timeout, $"요소 없음: {name}");
+        WaitForOrCapture(() => MainWindow.FindFirstDescendant(cf => cf.ByName(name)), timeout, $"요소 없음: {name}");
 
     /// <summary><paramref name="scope"/>(예: 대화상자) 안에서 AutomationId로 요소를 찾는다.</summary>
     public static AutomationElement FindIn(AutomationElement scope, string automationId, TimeSpan? timeout = null) =>
@@ -144,7 +154,7 @@ public sealed class AppSession : IDisposable
     /// 같은 이름의 글자 요소(행 안의 TextBlock)와 구분하려고 선택 가능 여부를 함께 본다.
     /// </summary>
     public AutomationElement FindSelectable(AutomationElement scope, string name, TimeSpan? timeout = null) =>
-        WaitFor(
+        WaitForOrCapture(
             () => scope.FindAllDescendants(cf => cf.ByName(name)).FirstOrDefault(element => element.Patterns.SelectionItem.IsSupported),
             timeout,
             $"선택할 수 있는 항목 없음: {name}");
@@ -263,6 +273,39 @@ public sealed class AppSession : IDisposable
         catch (IOException)
         {
             // 앱이 아직 파일을 쥐고 있다 — 임시 폴더라 남아도 된다
+        }
+    }
+
+    // 요소를 찾지 못하면 그때의 창 화면을 남긴다. 트리 항목을 찾지 못하는 실패가 PC 부하가 클 때만 드물게 나와(2026-11-22), 다시 돌려서는
+    // 원인(화면 밖으로 스크롤됨·아직 읽는 중·다른 창에 가려짐)을 가를 수 없었다.
+    private T WaitForOrCapture<T>(Func<T?> find, TimeSpan? timeout, string timeoutMessage)
+        where T : class
+    {
+        try
+        {
+            return WaitFor(find, timeout, timeoutMessage);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException($"{timeoutMessage} — {CaptureFailureScreen()}", exception);
+        }
+    }
+
+    // 실패 화면은 지우지 않는다(원인을 볼 때까지 남아야 한다). 찍지 못해도 원래 실패를 가리지 않도록 이유만 돌려준다.
+    private string CaptureFailureScreen()
+    {
+        try
+        {
+            Directory.CreateDirectory(FailureScreenFolder);
+            var path = Path.Combine(FailureScreenFolder, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}.png");
+            using var image = FlaUI.Core.Capturing.Capture.Element(MainWindow);
+            image.ToFile(path);
+            return $"맨 앞 창 {DescribeForegroundWindow()}, 실패 화면 {path}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException
+            or System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception)
+        {
+            return $"실패 화면을 남기지 못했습니다: {exception.Message}";
         }
     }
 

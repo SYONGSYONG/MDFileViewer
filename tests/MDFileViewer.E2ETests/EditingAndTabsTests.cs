@@ -6,10 +6,10 @@ using MDFileViewer.Core;
 
 namespace MDFileViewer.E2ETests;
 
-/// <summary>문서 탭·편집·저장·창 닫기 확인·줌·도움말 E2E (05 Phase 5~10: 7-5·7-1~7-4·5·8·10).</summary>
+/// <summary>문서 탭·편집·저장·창 닫기 확인·도움말 E2E (05 Phase 7·8·10). 줌·테마는 ZoomAndThemeTests.</summary>
 public sealed class EditingAndTabsTests : IDisposable
 {
-    private const string NotForegroundMessage = "앱 창을 맨 앞으로 올리지 못했습니다 — 다른 창에 입력이 가지 않도록 입력을 보내지 않습니다.";
+    private const string NotForegroundMessage = SafeInput.NotForegroundMessage;
     private const string TypedText = "E2E ";
     private const int HelpSectionCount = 17;
 
@@ -92,39 +92,6 @@ public sealed class EditingAndTabsTests : IDisposable
     }
 
     [Fact]
-    public void ZoomButtons_ChangePercentAndResetReturnsTo100()
-    {
-        // Arrange — 01 F-06
-        using var session = AppSession.Launch(_samples.PathOf(SampleDocuments.GuideFileName));
-        session.FindByName(SampleDocuments.GuideHeading);
-        var percent = session.FindById("ZoomPercentText");
-
-        // Act & Assert
-        session.FindById("ZoomInButton").AsButton().Invoke();
-        AppSession.WaitUntil(() => percent.Name == "110%", "확대 버튼이 배율을 바꾸지 않았습니다.");
-        session.FindById("ZoomResetButton").AsButton().Invoke();
-        AppSession.WaitUntil(() => percent.Name == "100%", "100% 버튼이 배율을 되돌리지 않았습니다.");
-    }
-
-    // 버튼 클릭으로 코드에서 연(IsOpen) 메뉴는 DataContext를 받지 못해 항목 명령이 비어, 골라도 아무 일이 없었다(2026-11-18 사용자 지적).
-    [Fact]
-    public void ThemeMenu_SelectingDark_TurnsToolbarDark()
-    {
-        // Arrange — 01 F-11
-        using var session = AppSession.Launch(_samples.PathOf(SampleDocuments.GuideFileName));
-        session.FindByName(SampleDocuments.GuideHeading);
-        var themeButton = session.FindById("ThemeButton");
-        Assert.True(IsBright(ToolbarBackground(themeButton)), "처음 테마가 밝게가 아닙니다.");
-
-        // Act
-        themeButton.AsButton().Invoke();
-        FindMenuItem(session, UiText.ThemeDark).AsMenuItem().Invoke();
-
-        // Assert
-        AppSession.WaitUntil(() => !IsBright(ToolbarBackground(themeButton)), "어둡게를 골라도 툴바가 어두워지지 않았습니다.");
-    }
-
-    [Fact]
     public void NavigationPanelButton_CollapsesAndRestoresTree()
     {
         // Arrange — 2026-11-18 사용자 요청: Ctrl+B와 같은 일을 하는 툴바 버튼
@@ -192,6 +159,89 @@ public sealed class EditingAndTabsTests : IDisposable
         }
     }
 
+    [Fact]
+    public void DoubleClickingFileInTree_PinsTabSoNextFileOpensInNewTab()
+    {
+        // Arrange — 01 F-17 수용 기준 1의 뒷부분(더블클릭하면 고정되고, 이어서 다른 파일을 고르면 새 미리보기 탭이 생긴다)
+        using var session = AppSession.Launch(_samples.FolderPath);
+        var tree = session.FindById("FolderTree");
+        var guide = session.FindSelectable(tree, SampleDocuments.GuideFileName);
+        Assert.True(session.BringToForeground(), NotForegroundMessage);
+
+        // Act — 행 아이콘을 더블클릭(행 가운데는 이름 길이에 따라 빈 곳일 수 있다), 이어서 다른 파일은 입력 없이 고른다
+        guide.Patterns.ScrollItem.Pattern.ScrollIntoView();
+        var bounds = guide.BoundingRectangle;
+        var point = new System.Drawing.Point(
+            (int)(bounds.X + (MainWindowTests.RowIconOffsetDips * session.DpiScale)), bounds.Y + (bounds.Height / 2));
+        SafeInput.EnsureCanSendAt(session, point);
+        Mouse.DoubleClick(point);
+        WaitForTitle(session, SampleDocuments.GuideFileName);
+        session.FindSelectable(tree, SampleDocuments.OtherFileName).Patterns.SelectionItem.Pattern.Select();
+        WaitForTitle(session, SampleDocuments.OtherFileName);
+
+        // Assert — 고정된 탭은 남고 새 탭이 생긴다 (고정되지 않았다면 ClickingTwoFilesInTree처럼 탭 하나가 바뀐다)
+        Assert.Equal([SampleDocuments.GuideFileName, SampleDocuments.OtherFileName], TabNames(session));
+    }
+
+    [Fact]
+    public void SavingFileChangedOutside_AsksBeforeOverwritingAndCancelKeepsOutsideChange()
+    {
+        // Arrange — 편집 중에 다른 프로그램이 파일을 바꾼다 (01 F-10 바깥에서 바뀐 파일 덮어쓰기)
+        const string OutsideContent = "# 바깥에서 바꾼 내용\n\n다른 프로그램이 저장했습니다.\n";
+        var path = _samples.PathOf(SampleDocuments.OtherFileName);
+        using var session = AppSession.Launch(path);
+        session.FindByName(SampleDocuments.OtherHeading);
+        Assert.True(session.BringToForeground(), NotForegroundMessage);
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_E);
+        var editor = session.FindById("Editor");
+        AppSession.WaitUntil(() => IsFocusWithin(session, editor), "편집기가 포커스를 받지 않았습니다.");
+        Assert.True(session.IsForeground, NotForegroundMessage);
+        Keyboard.Type(TypedText);
+        AppSession.WaitUntil(() => session.MainWindow.Title.StartsWith('*'), "변경 표시(*)가 제목에 나오지 않았습니다.");
+        File.WriteAllText(path, OutsideContent);
+
+        // Act — Ctrl+S → [취소]
+        Assert.True(session.IsForeground, NotForegroundMessage);
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_S);
+        var dialog = session.WaitForModalWindow(UiText.ExternalOverwriteTitle);
+        Assert.Equal(string.Format(UiText.ExternalOverwriteFormat, SampleDocuments.OtherFileName), AppSession.FindIn(dialog, "DialogMessage").Name);
+        AppSession.FindIn(dialog, "DialogSecondaryButton").AsButton().Invoke();
+
+        // Assert — 바깥 변경이 파일에 남고 편집 내용도 남는다. 정리: 닫고 [저장 안 함]
+        AppSession.WaitUntil(() => session.OwnedWindows().Count == 0, "덮어쓰기 확인 대화상자가 닫히지 않았습니다.");
+        Assert.Equal(OutsideContent, File.ReadAllText(path));
+        Assert.StartsWith("*", session.MainWindow.Title, StringComparison.Ordinal);
+        session.MainWindow.Patterns.Window.Pattern.Close();
+        AppSession.FindIn(session.WaitForModalWindow(UiText.UnsavedChangesTitle), "DialogSecondaryButton").AsButton().Invoke();
+        AppSession.WaitUntil(() => session.Application.HasExited, "[저장 안 함] 뒤에 창이 닫히지 않았습니다.");
+    }
+
+    [Fact]
+    public void OpeningLargeFile_CancelShowsNotOpenedMessageInsteadOfPreviousDocument()
+    {
+        // Arrange — 경고 기준(5MB)을 1바이트 넘는 파일 (01 F-04 큰 파일)
+        const string LargeFileName = "large.md";
+        File.WriteAllBytes(_samples.PathOf(LargeFileName), new byte[AppConstants.LargeFileWarningBytes + 1]);
+        using var session = AppSession.Launch(_samples.PathOf(SampleDocuments.GuideFileName));
+        session.FindByName(SampleDocuments.GuideHeading);
+        var tree = session.FindById("FolderTree");
+
+        // Act — 큰 파일을 고르고 확인에서 [취소]
+        session.FindSelectable(tree, LargeFileName).Patterns.SelectionItem.Pattern.Select();
+        var dialog = session.WaitForModalWindow(UiText.LargeFileTitle);
+        AppSession.FindIn(dialog, "DialogSecondaryButton").AsButton().Invoke();
+
+        // Assert — 이전 문서(guide.md)를 남기지 않고 안내를 보여 준다
+        AppSession.WaitUntil(
+            () => session.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("DocumentMessage")) is { IsOffscreen: false } message
+                && message.Name == UiText.LargeFileNotOpened,
+            "큰 파일을 취소한 탭에 안내가 보이지 않습니다.");
+        // 뷰어를 숨긴 뒤에도 문서의 접근성 트리가 잠깐 남을 수 있어 기다리며 본다(리뷰 2026-11-22)
+        AppSession.WaitUntil(
+            () => session.MainWindow.FindFirstDescendant(cf => cf.ByName(SampleDocuments.GuideHeading)) is null,
+            "큰 파일을 취소한 탭에 이전 문서가 남아 있습니다.");
+    }
+
     // 키보드 포커스는 편집기 안쪽(TextArea)에 있다 — 포커스 요소에서 위로 올라가며 편집기를 찾는다
     private static bool IsFocusWithin(AppSession session, AutomationElement container)
     {
@@ -217,27 +267,4 @@ public sealed class EditingAndTabsTests : IDisposable
 
     private static bool IsTreeShown(AppSession session) =>
         session.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("FolderTree")) is { IsOffscreen: false };
-
-    // 메뉴는 메인 창 밖의 팝업 창에 뜨므로 바탕 화면에서 이 앱 프로세스의 항목을 찾는다
-    private static AutomationElement FindMenuItem(AppSession session, string name)
-    {
-        AutomationElement? item = null;
-        AppSession.WaitUntil(
-            () => (item = session.Automation.GetDesktop().FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem)
-                .And(cf.ByName(name)).And(cf.ByProcessId(session.Application.ProcessId)))) is not null,
-            $"메뉴 항목이 없습니다: {name}");
-        return item!;
-    }
-
-    // 버튼 가장자리 한 점은 버튼 뒤 툴바 바탕색이다(가운데는 글리프)
-    private static System.Drawing.Color ToolbarBackground(AutomationElement element)
-    {
-        using var image = FlaUI.Core.Capturing.Capture.Element(element);
-        return image.Bitmap.GetPixel(1, 1);
-    }
-
-    // 밝게 Surface.Chrome #F4F2EE, 어둡게 #17191D (03 §4) — 밝기 가운데 값으로 가른다
-    private static bool IsBright(System.Drawing.Color color) => color.GetBrightness() > BrightnessMidpoint;
-
-    private const float BrightnessMidpoint = 0.5f;
 }

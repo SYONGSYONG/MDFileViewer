@@ -585,6 +585,9 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 | `ShellIntegrationService` | 키 경로와 명령 문자열 생성, 상태 판별(가짜 `IRegistryAccess`) |
 | `JsonSettingsStore` | 왕복 저장, 누락 필드 기본값, 손상 파일 → `.bak` + 기본값 |
 
+- **테마 사전 (2026-11-22):** `ThemeDictionaryTests`가 앱 프로젝트의 `Themes/Light.xaml`·`Dark.xaml`을 레포에서 직접 읽어(`RepositoryPaths.Root`) 03 §4 토큰과 비교한다 —
+  기대값은 `ViewerTemplateTests.ColorTokens` 한 표를 viewer.css 테스트와 함께 쓴다. 앱 프로젝트를 참조하지 않고 파일만 읽는다.
+
 ### 14.2 통합 테스트 (Core, 실제 자원)
 
 - 파일 시스템: 임시 폴더에 폴더·md·md 아닌 파일·숨김·시스템 폴더와 파일을 만들어 `FolderTreeService`를 확인한다.
@@ -628,10 +631,19 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
   선택한 행을 보이게 스크롤하므로, 그 문서가 열리고 선택된 뒤 잠깐 기다렸다가 가로 스크롤을 0으로 놓고 시작한다.
 - 전역 예외 처리는 Debug 빌드에서만 환경 변수 `MDFILEVIEWER_E2E_FAULT`(`dispatcher`·`task`)로 강제로 일으켜 확인한다. Release 빌드에는 이 코드가 없다.
 - 그림 표시는 화면을 찍어 그림 가운데 색을 본다(`Capture.Element`, FlaUI가 이미 쓰는 `System.Drawing.Common`). 디스플레이 색 관리로 `#2F6FDE`가
-  (67,111,214)로 찍혀(2026-11-17) 채널마다 ±40을 허용한다 — 흰 배경·깨진 그림 아이콘과는 확실히 구분된다. 루트 전환은 두 번째 샘플을 테스트 출력 폴더
-  (임시 폴더와 다른 드라이브)에 만들어 확인하고, 같은 드라이브면 실패로 알린다. 이전 화면의 그림을 잘못 보지 않도록 그림 없는 문서를 거친다.
+  (67,111,214)로 찍혀(2026-11-17) 채널마다 ±40을 허용한다 — 흰 배경·깨진 그림 아이콘과는 확실히 구분된다. 루트 전환은 두 번째 샘플을 임시 폴더
+  (레포와 다른 드라이브)에 만들어 주소 표시줄로 열어 확인하고, 같은 드라이브면 실패로 알린다. 이전 화면의 그림을 잘못 보지 않도록 그림 없는 문서를 거친다.
+- E2E 샘플 폴더는 레포의 `tests\.e2e-samples\MDFileViewer.E2E\<guid>\문서 폴더`(git 무시)에 만든다(2026-11-22). 트리 뿌리가 "내 PC"라
+  샘플의 조상 폴더가 모두 펼쳐지는데, `%TEMP%` 아래에 두었을 때는 `%TEMP%`(바로 아래 항목 1,000개 이상)가 통째로 펼쳐져 고른 행이 화면 밖에
+  남는 실패가 실행마다 다른 테스트에서 났다. 조상 폴더의 항목이 적은 위치에 둔다. 요소를 찾지 못하면 그 순간의 창 화면을
+  `%TEMP%\MDFileViewer.E2E\failures\`에 남긴다(`AppSession.WaitForOrCapture`).
 - WebView2 복구 E2E는 앱 프로세스가 직접 띄운 `msedgewebview2` 프로세스(부모 번호가 앱이고 앱보다 늦게 시작한 것, `ProcessTree`)만 끝낸다.
   사용자가 쓰는 다른 프로그램의 WebView2는 건드리지 않는다.
+- 환경에 기대지 않기(2026-11-21): E2E는 Windows 앱 모드(밝게/어둡게)와 사용자가 켜 둔 다른 MDFileViewer 창에 기대지 않는다. 테마 E2E는
+  밝게를 먼저 고른 뒤 어둡게를 고르거나, 레지스트리 `AppsUseLightTheme`를 읽어 기대값으로 쓴다(복원 확인은 앱 모드와 반대 테마를 고른다 — 같은 쪽이면
+  "시스템 설정 따르기"로도 같은 색이다). WebView2 데이터 폴더는 E2E 전용으로 준다(§17.9).
+- 문서 영역의 위치(2026-11-21): 뷰어 컨트롤(`MarkdownView`)은 UIA에서 AutomationId `DocumentViewer`로 찾을 수 없었다. 문서 배경색·`Ctrl+휠` 위치는
+  문서 안 요소(첫 제목)의 사각형을 기준으로 잡는다 — 제목 왼쪽 20 DIP는 본문 여백이라 배경색이다. 마우스 입력 전 확인은 `SafeInput.EnsureCanSendAt`으로 모았다.
 - 탐색기 우클릭 메뉴 3종은 탐색기 자체를 조작해야 하므로 실제 탐색기에서 수동으로 확인한다. 메뉴가 넘기는 인수 형태(`"%1"`, `"%V"`)로 exe를 실행하는 경우는 E2E로 자동화한다.
 
 ### 14.4 테스트로 다루지 않는 부분
@@ -778,6 +790,7 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - 트리: 노드를 펼치고 자식을 읽으면 그 폴더를 감시하고, 접거나 부모가 다시 만들면 멈춘다. 변경 알림은 감시 스레드에서 오므로 `FolderTreeViewModel`이 만들어질 때의
   `SynchronizationContext`(WPF 디스패처)로 넘기고, `AutoRefreshDelay`(0.5초) 디바운스 뒤 `ReloadChildrenAsync`를 한다. md 아닌 파일만 바뀐 경우에도 다시 읽지만,
   목록이 같으면 컬렉션을 바꾸지 않으므로(§7.1) 화면은 그대로다. 앱이 선택을 옮긴 노드가 다시 읽기로 Reset 되면 `MainViewModel`이 다시 고른다(`F5`와 같은 이유).
+  다시 고를지는 `F5`와 같은 기준으로 정한다(2026-11-22 수정): 다시 읽은 뒤 선택이 원래 노드에 있거나 **다시 읽은 폴더에 가 있으면** 다시 고른다. 원래 노드일 때만 고르던 때는 실제 화면에서 WPF가 선택을 그 폴더로 옮긴 뒤라 늘 건너뛰었고, 고른 파일 대신 폴더가 선택되며 트리가 그 폴더 행으로 튀었다 — 형제 1,400개인 폴더 안쪽 파일에서 형제 폴더 하나가 생기자 재현됐다(E2E `CrowdedFolderTests`). 단위 테스트는 화면 트리의 선택 이동을 흉내 내 확인한다(`AutoRefresh_WhenViewMovesSelectionToReloadedFolder_RequestsReselectingFile`).
 - 열린 문서: 활성 탭 파일만 감시한다(다른 탭은 전환할 때 다시 읽는다). 알림이 오면 메타데이터(크기·수정 시각)를 읽어 마지막으로 읽거나 저장한 값과 같으면
   무시한다 — 앱이 직접 저장한 변경과 같은 내용의 중복 알림을 거른다.
 
@@ -836,6 +849,11 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - **테마:** 뷰어 준비 전에 받은 테마는 기억만 하고 템플릿을 불러올 때 넣는다(준비 전 잠금 진입 예외를 없앰).
 - **E2E 설정 격리:** Debug 빌드에서만 `MDFILEVIEWER_E2E_SETTINGS` 환경 변수가 설정 파일 경로를 바꾼다. E2E는 세션마다 임시 경로를 준다 — 사용자의 실제
   `settings.json`을 읽거나 덮지 않는다. Release 빌드는 늘 기본 위치다.
+- **E2E WebView2 데이터 격리 (2026-11-21):** Debug 빌드에서만 `MDFILEVIEWER_E2E_WEBVIEW_DATA` 환경 변수가 WebView2 사용자 데이터 폴더(§6.3)를 바꾼다
+  (`AppPaths.ResolveWebViewDataFolder`). 같은 데이터 폴더를 쓰는 앱들은 WebView2 브라우저 프로세스 하나를 나눠 쓴다 — 사용자가 설치본을 켜 둔 채 E2E를
+  돌리면 테스트 앱이 그 브라우저 프로세스에 붙어 자기 자식 프로세스가 없었다(시험 실행: 테스트 앱 아래 `msedgewebview2` 0개, 설치본의 브라우저 프로세스
+  자식이 5 → 6개). E2E는 `%TEMP%\MDFileViewer.E2E\WebView2`를 준다(프로필을 매번 새로 만들지 않도록 실행마다 같은 폴더). Release 빌드는 늘 기본 위치다.
+  창을 여러 개 띄운 사용자의 창들은 지금도 브라우저 프로세스를 나눠 쓴다(단일 인스턴스가 아니므로).
 - **단위 테스트의 동기화 컨텍스트:** 타이머를 쓰는 ViewModel은 만들 때의 컨텍스트로 실행을 넘기므로, 테스트는 `NoSyncContext.Create`로 컨텍스트 없이 만들어
   `FakeTimeProvider.Advance`가 같은 스레드에서 바로 실행하게 한다(xUnit 컨텍스트는 다른 스레드에서 나중에 돌려 확인과 경쟁했다).
 
@@ -879,3 +897,7 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - 2026-11-18: 리뷰 3종 반영(§17.9) — 큰 파일 취소 탭, 덮어쓰기 확인, 바깥 변경 경합·실패·충돌 1회, 탭 활성화 번호, 접힌 하위 감시, 즐겨찾기 재사용 키, 설정 항목별 읽기·GUID 임시 파일·flush·재등록 거절 항목, 셸 등록 상태·되돌림, 정규식 시간 제한, 테마 적용 번호·메뉴 DataContext. 반영하지 않은 지적과 이유.
 - 2026-11-18: 사용자 요청 — 끌어다 놓아 열기 설계(§17.10), `AllowExternalDrop`(§6.3), PoC-7(§11), `MaxDroppedFiles`(§12).
 - 2026-11-18: 사용자 결정 — MIT 라이선스(저작권자 SYONG), 제3자 구성 요소 표·고지 파일·배포본 포함 방법·exe 속성·"정보" 창(§15.2).
+- 2026-11-21: E2E 환경 격리 — Debug 전용 `MDFILEVIEWER_E2E_WEBVIEW_DATA`(§17.9), Windows 앱 모드에 기대지 않는 테마 확인·문서 영역 위치 잡기·`SafeInput`(§14.3).
+- 2026-11-22: `ThemeDictionaryTests`·`RepositoryPaths`(§14.1).
+- 2026-11-22: E2E 샘플 폴더를 `%TEMP%`에서 레포 `tests\.e2e-samples`로 옮김, 실패 화면 남기기(§14.3).
+- 2026-11-22: 자동 새로고침 뒤 선택 복원 기준을 `F5`와 같게 수정(§17.6), E2E `CrowdedFolderTests` 추가.

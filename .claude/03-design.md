@@ -164,7 +164,7 @@ CSS 변수 이름은 점을 하이픈으로 바꾸고 소문자로 쓴다(`Surfa
 | `Surface.Hover` | 행·버튼에 마우스를 올렸을 때 | `#E4E0D8` | `#272B33` |
 | `Surface.Selected` | 선택한 행 배경 | `#DCE6F8` | `#233552` |
 | `Border.Subtle` | 패널 경계, 구분선, 표 테두리 | `#DAD6CE` | `#2C3038` |
-| `Border.Strong` | 입력란 테두리 | `#B9B4AA` | `#454B56` |
+| `Border.Strong` | 입력란·대화상자 버튼·메뉴 테두리 | `#8C877D` | `#6E7581` |
 | `Text.Primary` | 본문, 레이블 | `#1E2228` | `#E4E6EA` |
 | `Text.Secondary` | 날짜·크기·보조 문구 | `#5B6270` | `#9AA3AF` |
 | `Text.Disabled` | 비활성 요소, 줄 번호 | `#9A9FA8` | `#5E6570` |
@@ -183,6 +183,12 @@ CSS 변수 이름은 점을 하이픈으로 바꾸고 소문자로 쓴다(`Surfa
 | `Accent`(링크) / `Surface.Document` | 약 4.7:1 | 약 6.6:1 |
 | `Status.Danger` / `Surface.Chrome` | 약 4.8:1 | 약 7.0:1 |
 | `Mode.Edit`(막대) / `Surface.Chrome` | 약 3.1:1 | 약 8.4:1 |
+| `Border.Strong`(테두리) / `Surface.Document`·`Surface.Chrome`·`Surface.Panel` | 3.6 · 3.2 · 3.0:1 | 3.4 · 3.8 · 3.6:1 |
+
+**2026-11-22 계산 결과(WCAG 상대 휘도 식, 스크립트로 계산):** 글자 조합은 모두 4.5:1 이상이다 — `Text.Primary`는 다섯 면 위에서 9.9~16.0:1,
+`Text.Secondary`는 `Surface.Document`·`Chrome`·`Panel`·`Selected` 위에서 4.8~6.9:1, `Accent`/`Surface.Document` 4.7·6.6:1, `Status.Danger`/`Surface.Chrome` 4.8·7.0:1,
+`Status.Success`/`Surface.Chrome` 4.8·9.1:1. 편집기 구문 강조 12색(§7)은 `Surface.Document` 위에서 4.7~8.2:1. `Text.Disabled`는 2.7:1로 기준 아래지만 비활성 요소·줄 번호에만 쓴다(WCAG는 비활성 요소를 기준에서 뺀다).
+`Border.Strong`은 처음 값(`#B9B4AA`·`#454B56`)이 2.1·1.8:1로 비텍스트 3:1에 못 미쳐, 같은 회색 계열에서 명도만 낮춰(어둡게 테마는 높여) 바꿨다(사용자 결정).
 
 - `Accent`는 밝게 테마의 `Surface.Chrome` 위에서 글자색으로 쓰면 4.5:1에 못 미치므로, 크롬 위에서는 포커스 링·선택 막대(비텍스트)로만 쓴다.
 
@@ -258,8 +264,14 @@ CSS 변수 이름은 점을 하이픈으로 바꾸고 소문자로 쓴다(`Surfa
 | 트리 행 | 투명 | `Surface.Hover` | — | 2px `Accent` 링 | — |
 | 선택한 행 | `Surface.Selected` + 왼쪽 3px `Accent` 막대 | 같음 | — | 같음 + 링 | — |
 | 구분선(GridSplitter) | `Border.Subtle` 1px (잡는 영역 6px) | `Accent` 1px | `Accent` 2px | — | — |
+| 스크롤바 막대 | `Text.Secondary` 6px, 모서리 3px (스크롤바 폭 12px) | `Text.Primary` | `Text.Primary` (끄는 동안) | — | — |
 
 - 포커스 링은 키보드로 이동했을 때만 보인다(WPF `FocusVisualStyle`).
+- **스크롤바 (2026-11-21):** 트리·편집기·도움말 목차의 WPF 스크롤바는 트랙이 투명해 뒤 패널 색이 보이고, 화살표 버튼은 두지 않는다(트랙을 누르면 한 쪽씩 넘어간다).
+  막대는 `Text.Secondary` — `Surface.Panel`·`Surface.Document` 위에서 5.2~6.6:1로 비텍스트 대비 3:1을 넘는다(`Text.Disabled`는 2.2~2.8:1, `Border.Strong`은 1.7~2.1:1이라 쓰지 않는다).
+  막대는 아무리 줄어도 길이 24px 아래로 내려가지 않는다(항목이 수천 개인 폴더에서 점처럼 줄어 잡을 수 없었다). 가로·세로 스크롤바가 만나는 모서리 칸은
+  비워 뒤 배경이 보이게 한다(기본 템플릿은 시스템 색이라 흰 네모로 남았다).
+  WPF 기본 스크롤바는 시스템 색을 써서 어둡게 테마에서 흰색으로 남았다. 문서 영역 스크롤바는 WebView2가 `color-scheme`으로 그린다(§6).
 - **편집 모드 표시:** 툴바 아래 2px `Mode.Edit` 막대 + 상태 표시줄 왼쪽 "편집 중" 배지(`Mode.Edit` 테두리, 글자는 `Text.Primary`) + 모드 토글 활성 상태. 세 가지를 함께 써서 색만으로 상태를 알리지 않는다.
 - **미저장 표시:** 제목 표시줄 앞 `*` + 저장 버튼 옆 `Status.Danger` 점.
 - **끌어다 놓기 (01 F-19, 2026-11-18):** 따로 겹쳐 그리는 표시는 두지 않는다 — 뷰어는 WebView2(HwndHost)라 WPF 요소를 그 위에 겹칠 수 없어
@@ -332,3 +344,5 @@ CSS 변수 이름은 점을 하이픈으로 바꾸고 소문자로 쓴다(`Surfa
 - 2026-11-18: 사용자 요청 — 끌어다 놓기 커서 표시(§8), 상태 문구(§10.3).
 - 2026-11-18: 사용자 결정 — "정보" 대화상자에 저작권·라이선스 줄(§3).
 - 2026-11-18: 사용자 결정 — 창을 줄이면 표가 잘림. 칸 안 긴 단어는 글자 사이에서 끊고(`anywhere`) 칸 최소 폭 3em(§6).
+- 2026-11-21: 어둡게 테마에서 트리 스크롤바가 흰색으로 남는 결함 — 스크롤바 상태(§8 표)와 색·대비 근거 추가.
+- 2026-11-22: 사용자 결정 — `Border.Strong`을 3:1 넘게(`#8C877D`·`#6E7581`), 대비 계산 결과 기록(§4).

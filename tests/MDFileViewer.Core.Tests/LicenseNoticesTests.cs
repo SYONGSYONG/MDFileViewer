@@ -23,7 +23,7 @@ public sealed class LicenseNoticesTests
     public void License_IsMitWithOwnerCopyright()
     {
         // Act
-        var license = File.ReadAllText(Path.Combine(RepositoryRoot(), "LICENSE"));
+        var license = File.ReadAllText(Path.Combine(RepositoryPaths.Root(), "LICENSE"));
 
         // Assert
         Assert.StartsWith("MIT License", license, StringComparison.Ordinal);
@@ -34,7 +34,7 @@ public sealed class LicenseNoticesTests
     public void Notices_ListEveryShippedPackageWithItsVersion()
     {
         // Arrange
-        var root = RepositoryRoot();
+        var root = RepositoryPaths.Root();
         var notices = File.ReadAllText(Path.Combine(root, "THIRD-PARTY-NOTICES.txt"));
         var packages = ShippedProjects
             .SelectMany(project => PackageReference.Matches(File.ReadAllText(Path.Combine(root, project))))
@@ -50,7 +50,7 @@ public sealed class LicenseNoticesTests
     public void Notices_IncludeBundledDotNetRuntimes()
     {
         // Act — self-contained 배포라 .NET·WPF 런타임도 배포본에 들어간다
-        var notices = File.ReadAllText(Path.Combine(RepositoryRoot(), "THIRD-PARTY-NOTICES.txt"));
+        var notices = File.ReadAllText(Path.Combine(RepositoryPaths.Root(), "THIRD-PARTY-NOTICES.txt"));
 
         // Assert
         Assert.Contains("Microsoft.NETCore.App", notices, StringComparison.Ordinal);
@@ -71,19 +71,5 @@ public sealed class LicenseNoticesTests
 
         // 420px 대화상자에서 설명과 한 줄에 두면 "THIRD-PARTY-" 뒤에서 끊겼다(2026-11-18 사용자 화면) — 파일 이름만 따로 한 줄에 둔다
         Assert.Contains("\nLICENSE.txt, THIRD-PARTY-NOTICES.txt", about, StringComparison.Ordinal);
-    }
-
-    // 테스트는 bin 아래에서 돈다. 솔루션 파일이 있는 폴더까지 올라간다
-    private static string RepositoryRoot()
-    {
-        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
-        {
-            if (File.Exists(Path.Combine(folder.FullName, "MDFileViewer.slnx")))
-            {
-                return folder.FullName;
-            }
-        }
-
-        throw new InvalidOperationException("레포 루트(MDFileViewer.slnx)를 찾지 못했습니다.");
     }
 }

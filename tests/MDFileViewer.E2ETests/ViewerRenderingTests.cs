@@ -26,13 +26,14 @@ public sealed class ViewerRenderingTests : IDisposable
     [Fact]
     public void RelativeImage_IsDrawnBeforeAndAfterSwitchingDocumentRoot()
     {
-        // Arrange — 두 번째 샘플을 다른 드라이브(테스트 출력 폴더)에 만든다. 문서 루트가 바뀐다 (02 §6.2).
+        // Arrange — 두 번째 샘플을 다른 드라이브(임시 폴더)에 만든다. 문서 루트가 바뀐다 (02 §6.2). 이 샘플은 주소 표시줄로만 열고
+        // 트리에서 찾지 않으므로 항목이 많은 임시 폴더 아래여도 된다(기본 샘플은 레포 아래, SampleDocuments 참고).
         // 같은 드라이브의 관리 공유(\\localhost\C$)는 루트 아래 경로가 C:\와 같아, 루트를 바꾸지 않아도 그림이 보여 확인이 되지 않았다(2026-11-17).
-        using var secondSamples = new SampleDocuments(AppContext.BaseDirectory);
+        using var secondSamples = new SampleDocuments(Path.GetTempPath());
         var secondFolder = secondSamples.FolderPath;
         Assert.True(
             !string.Equals(Path.GetPathRoot(secondFolder), Path.GetPathRoot(_samples.FolderPath), StringComparison.OrdinalIgnoreCase),
-            $"임시 폴더와 테스트 출력 폴더가 같은 드라이브라 루트 전환을 확인할 수 없습니다: {secondFolder}");
+            $"레포와 임시 폴더가 같은 드라이브라 루트 전환을 확인할 수 없습니다: {secondFolder}");
         using var session = AppSession.Launch(_samples.PathOf(SampleDocuments.GuideFileName));
         session.FindByName(SampleDocuments.GuideHeading);
         Assert.True(session.BringToForeground(), NotForegroundMessage);

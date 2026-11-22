@@ -23,7 +23,7 @@ public sealed partial class ViewerTemplateTests
         { "--surface-hover", "#E4E0D8", "#272B33" },
         { "--surface-selected", "#DCE6F8", "#233552" },
         { "--border-subtle", "#DAD6CE", "#2C3038" },
-        { "--border-strong", "#B9B4AA", "#454B56" },
+        { "--border-strong", "#8C877D", "#6E7581" },
         { "--text-primary", "#1E2228", "#E4E6EA" },
         { "--text-secondary", "#5B6270", "#9AA3AF" },
         { "--text-disabled", "#9A9FA8", "#5E6570" },

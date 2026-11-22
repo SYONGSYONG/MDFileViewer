@@ -260,7 +260,15 @@ public sealed class FolderTreeViewModel : ObservableObject
         var before = folder.Children.ToList();
         await folder.ReloadChildrenAsync();
         var changed = before.Count != folder.Children.Count || before.Where((child, index) => !ReferenceEquals(child, folder.Children[index])).Any();
-        if (!changed || selected is null || !ReferenceEquals(SelectedNode, selected) || !IsDescendantOf(selected, folder))
+        if (!changed || selected is null || !IsDescendantOf(selected, folder))
+        {
+            return;
+        }
+
+        // 자식 컬렉션이 통째로 바뀌면 화면 트리가 선택을 다시 읽은 폴더로 옮긴다(F5의 RefreshSelectedAsync와 같다). 선택이 그 폴더에 가 있어도
+        // 다시 고른다 — 원래 노드일 때만 고르면 실제 화면에서는 늘 건너뛰어, 고른 파일 대신 폴더가 선택되고 트리가 그 폴더 행으로 튀었다
+        // (형제가 많은 폴더에서 드러남, 2026-11-22). 다시 읽는 사이 사용자가 바로 그 폴더를 고른 경우와는 구별하지 못한다.
+        if (SelectedNode is { } current && !ReferenceEquals(current, selected) && !ReferenceEquals(current, folder))
         {
             return;
         }

@@ -489,3 +489,6 @@ ReleasePortable/
 ReleaseSetup/
 # The app publish profiles are committed (the template rules above ignore *.pubxml)
 !src/MDFileViewer/Properties/PublishProfiles/*.pubxml
+
+# E2E sample documents (tests/MDFileViewer.E2ETests/SampleDocuments.cs)
+tests/.e2e-samples/
