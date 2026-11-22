@@ -40,7 +40,7 @@ public sealed class JsonSettingsStoreTests : IDisposable
         var saved = new AppSettings
         {
             Window = new WindowSettings(120, 80, 1440, 900, IsMaximized: true),
-            Layout = new LayoutSettings { TreePanelWidth = 400, EditorSplitRatio = 0.6 },
+            Layout = new LayoutSettings { TreePanelWidth = 400, EditorSplitRatio = 0.6, IsOutlineVisible = true },
             Theme = ThemeMode.Dark,
             LastFolder = @"D:\Docs",
             Editor = new EditorSettings { ShowLineNumbers = false, WordWrap = false },
@@ -163,5 +163,89 @@ public sealed class JsonSettingsStoreTests : IDisposable
 
         // Assert
         Assert.Equal(saved.DeclinedShellReregistrationExe, _store.Load().DeclinedShellReregistrationExe);
+    }
+
+    [Fact]
+    public void Load_MissingFileOrMissingField_OpensInSingleWindowByDefault()
+    {
+        // Arrange — 01 F-23 기본값은 "창 하나로 열기". 이 항목이 없던 판의 설정 파일도 같다
+        var missingFile = _store.Load();
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        File.WriteAllText(_path, "{ \"version\": 1, \"theme\": \"Dark\" }");
+
+        // Act
+        var missingField = _store.Load();
+
+        // Assert
+        Assert.True(missingFile.OpenInSingleWindow);
+        Assert.True(missingField.OpenInSingleWindow);
+        Assert.Equal(ThemeMode.Dark, missingField.Theme);
+    }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsOpenInSingleWindowTurnedOff()
+    {
+        // Act
+        _store.Save(new AppSettings { OpenInSingleWindow = false });
+        var loaded = _store.Load();
+
+        // Assert
+        Assert.False(loaded.OpenInSingleWindow);
+        Assert.Contains("\"openInSingleWindow\": false", File.ReadAllText(_path), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_OpenInSingleWindowWithWrongType_FallsBackToDefaultAndKeepsOtherItems()
+    {
+        // Arrange
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        File.WriteAllText(_path, "{ \"openInSingleWindow\": \"아니오\", \"theme\": \"Light\" }");
+
+        // Act
+        var loaded = _store.Load();
+
+        // Assert
+        Assert.True(loaded.OpenInSingleWindow);
+        Assert.Equal(ThemeMode.Light, loaded.Theme);
+    }
+
+    [Fact]
+    public void TryLoad_ReadsWhatAnotherWindowSaved()
+    {
+        // Arrange — 다른 창이 그사이 저장했다
+        _store.Save(new AppSettings { OpenInSingleWindow = false, Theme = ThemeMode.Dark });
+
+        // Act
+        var current = new JsonSettingsStore(_path, _logger).TryLoad();
+
+        // Assert
+        Assert.False(current!.OpenInSingleWindow);
+        Assert.Equal(ThemeMode.Dark, current.Theme);
+    }
+
+    [Fact]
+    public void TryLoad_MissingFile_ReturnsDefaults()
+    {
+        // Act
+        var current = _store.TryLoad();
+
+        // Assert
+        Assert.True(current!.OpenInSingleWindow);
+    }
+
+    [Fact]
+    public void TryLoad_CorruptFile_ReturnsNullAndLeavesFileInPlace()
+    {
+        // Arrange — 읽지 못한 것을 기본값으로 돌려주면 호출자가 사용자가 고른 값을 기본값으로 덮어쓴다
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        File.WriteAllText(_path, "{ 깨진 파일");
+
+        // Act
+        var current = _store.TryLoad();
+
+        // Assert — 창을 닫는 도중의 읽기가 파일을 옮기지 않는다(옮기는 것은 시작할 때의 Load뿐)
+        Assert.Null(current);
+        Assert.True(File.Exists(_path));
+        Assert.False(File.Exists(_path + ".bak"));
     }
 }

@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Markdig" Version="1.6.0" />
+    <PackageReference Include="TextMateSharp" Version="2.0.5" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.5" />
   </ItemGroup>
 
   <!-- 지연 로딩이 끝나기를 테스트가 기다릴 수 있게 내부 Task를 보여 준다(앱 코드는 쓰지 않는다) -->

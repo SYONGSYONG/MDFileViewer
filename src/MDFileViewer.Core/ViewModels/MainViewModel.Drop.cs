@@ -40,14 +40,14 @@ public sealed partial class MainViewModel
         }
     }
 
-    // 새 탭은 활성 탭 바로 오른쪽에 끼므로, 둘째 파일부터 거꾸로 넣어야 놓은 순서대로 선다. 첫 파일은 트리까지 펼쳐 보여 준다.
+    // 첫 파일을 먼저 열어 활성 탭으로 만들고(트리까지 펼쳐 보여 준다), 나머지를 그 오른쪽에 넣는다. 새 탭은 활성 탭 바로 오른쪽에
+    // 끼므로 거꾸로 넣어야 놓은 순서대로 선다. 나머지를 먼저 넣으면 탭이 하나도 없을 때 첫 파일이 맨 뒤로 갔다(2026-11-22 테스트로 발견).
     private async Task OpenDroppedFilesAsync(IReadOnlyList<string> files)
     {
+        await NavigateToFileAsync(files[0]);
         for (var index = files.Count - 1; index > 0; index--)
         {
             Tabs.OpenOrGet(files[index], isPreview: false);
         }
-
-        await NavigateToFileAsync(files[0]);
     }
 }

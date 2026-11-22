@@ -48,12 +48,15 @@ public sealed partial class MainViewModel : ObservableObject
         InitializeMenuCommands();
         InitializeDropCommand();
         Zoom = CreateZoom(viewer);
+        Outline = new OutlineViewModel(document, services.Logger);
+        Find = new FindViewModel(viewer, services.Time, services.Logger, () => Document.IsDocumentVisible && !Document.IsEditing);
 
         tree.SelectionChanged += (_, node) => OnTreeSelectionChanged(node);
         tree.SelectionRestoreRequested += (_, node) => SelectWithoutOpening(node);
         document.PropertyChanged += OnDocumentPropertyChanged;
         document.Saved += (_, _) => ShowStatus(UiText.Saved);
         viewer.LinkActivated += (_, e) => Track(HandleLinkAsync(e.Url));
+        viewer.PathsDropped += (_, e) => Track(OpenDroppedAsync(e.Paths));
     }
 
     public FolderTreeViewModel Tree { get; }
@@ -62,6 +65,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>문서 줌 (01 F-06). 모든 탭이 같은 배율을 쓴다.</summary>
     public ZoomViewModel Zoom { get; }
+
+    /// <summary>문서 오른쪽의 목차 패널 (01 F-21). 보기 모드에서 문서가 보일 때만 나타난다.</summary>
+    public OutlineViewModel Outline { get; }
+
+    /// <summary>보기 모드의 문서 안 찾기 줄 (01 F-20). 문서가 보이지 않거나 편집 모드가 되면 닫힌다.</summary>
+    public FindViewModel Find { get; }
 
     /// <summary>툴바 테마 메뉴 (01 F-11). 실제 적용은 App의 ThemeService가 한다. 테마 없이 만든 경우(테스트) <c>null</c>.</summary>
     public ThemeViewModel? Theme { get; init; }
@@ -122,6 +131,21 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task InitializeAsync(StartupRequest request, SessionState previous, CancellationToken cancellationToken)
     {
         await Tree.InitializeAsync(cancellationToken);
+        if (request is StartupRequest.None)
+        {
+            await RestoreSessionAsync(previous, cancellationToken);
+            return;
+        }
+
+        await OpenRequestAsync(request);
+    }
+
+    /// <summary>
+    /// 다른 실행이 넘긴 요청을 이 창에서 연다 (01 F-23) — md 파일은 고정 탭으로, 폴더는 트리 이동으로. 인수 없는 실행은 창을 앞으로 올리는
+    /// 것(App)으로 끝나므로 여기서는 아무것도 하지 않는다. 지난 탭은 되살리지 않는다 — 이미 쓰고 있는 창이다.
+    /// </summary>
+    public async Task OpenRequestAsync(StartupRequest request)
+    {
         switch (request)
         {
             case StartupRequest.OpenFolder folder:
@@ -132,9 +156,6 @@ public sealed partial class MainViewModel : ObservableObject
                 break;
             case StartupRequest.InvalidPath invalid:
                 _dialogs.ShowError(UiText.PathNotFoundTitle, string.Format(UiText.PathNotFoundFormat, invalid.RawArgument));
-                break;
-            default:
-                await RestoreSessionAsync(previous, cancellationToken);
                 break;
         }
     }
@@ -282,6 +303,10 @@ public sealed partial class MainViewModel : ObservableObject
                 break;
             case nameof(DocumentViewModel.IsEditing) or nameof(DocumentViewModel.CanSave):
                 OnEditStateChanged();
+                Find.NotifyCanOpenChanged();
+                break;
+            case nameof(DocumentViewModel.IsDocumentVisible):
+                Find.NotifyCanOpenChanged();
                 break;
         }
     }

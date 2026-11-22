@@ -13,7 +13,9 @@ using Microsoft.Web.WebView2.Core;
 
 namespace MDFileViewer;
 
-/// <summary>탐색기 메뉴 등록·해제(01 F-13), 도움말 창(01 F-12), 정보(03 §3) — 메인 창 `⋯`·`?`·`F1`과 명령줄에서 쓴다.</summary>
+/// <summary>
+/// 탐색기 메뉴 등록·해제(01 F-13), 도움말 창(01 F-12), 릴리즈 노트 창(01 F-24), 정보(03 §3) — 메인 창 툴바·`⋯`·`F1`과 명령줄에서 쓴다.
+/// </summary>
 public partial class App
 {
     // 정보·도움말에 보이는 버전은 major.minor.patch(배포 배치 파일의 버전 형식, 02 §15.1)
@@ -21,7 +23,14 @@ public partial class App
     private const string UnknownVersion = "0.0.0";
     private const string UnknownRuntimeVersion = "-";
 
-    private HelpWindow? _helpWindow;
+    private static readonly BundledDocument HelpBundle =
+        new(HelpDocument.DefaultPath, UiText.HelpWindowTitle, "HelpWindow", UiText.HelpContentsName, "도움말");
+
+    private static readonly BundledDocument ReleaseNotesBundle =
+        new(ReleaseNotes.DefaultPath, UiText.ReleaseNotesWindowTitle, "ReleaseNotesWindow", UiText.ReleaseNotesContentsName, "릴리즈 노트");
+
+    // 문서마다 창은 하나만 둔다
+    private readonly Dictionary<BundledDocument, HelpWindow> _documentWindows = [];
 
     /// <summary>앱 버전(정보·도움말). 어셈블리 버전의 앞 세 자리.</summary>
     private static string AppVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString(DisplayedVersionFieldCount) ?? UnknownVersion;
@@ -34,18 +43,22 @@ public partial class App
         window.RegisterShellRequested += (_, _) => ChangeShellMenu(isRegister: true, window, isSilent: false);
         window.UnregisterShellRequested += (_, _) => ChangeShellMenu(isRegister: false, window, isSilent: false);
         window.AboutRequested += (_, _) => ShowAbout(window);
-        window.HelpRequested += async (_, _) =>
+        window.HelpRequested += (_, _) => ShowBundledDocument(HelpBundle, window, viewModel, shell);
+        window.ReleaseNotesRequested += (_, _) => ShowBundledDocument(ReleaseNotesBundle, window, viewModel, shell);
+    }
+
+    // 버튼·단축키 처리기에서 시작하므로 기다릴 호출자가 없다(04 §3.2 예외) — 예외는 모두 여기서 잡는다
+    private async void ShowBundledDocument(BundledDocument document, Window owner, MainViewModel viewModel, IShellLauncher shell)
+    {
+        try
         {
-            try
-            {
-                await ShowHelpAsync(window, viewModel, shell);
-            }
-            catch (Exception exception)
-            {
-                _logger.Error("도움말 창을 열지 못했습니다.", exception);
-                ShowUnexpectedError();
-            }
-        };
+            await ShowBundledDocumentAsync(document, owner, viewModel, shell);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error($"{document.LogName} 창을 열지 못했습니다.", exception);
+            ShowUnexpectedError();
+        }
     }
 
     /// <returns>바꿨으면 <c>true</c>. 결과는 <paramref name="isSilent"/>가 아니면 대화상자로 알린다 (03 §10.2).</returns>
@@ -132,10 +145,10 @@ public partial class App
         }
     }
 
-    // 도움말 창은 하나만 둔다. 이미 있으면 앞으로 가져온다 (01 F-12). 테마·줌은 메인 창과 같다.
-    private async Task ShowHelpAsync(Window owner, MainViewModel viewModel, IShellLauncher shell)
+    // 문서마다 창은 하나만 둔다. 이미 있으면 앞으로 가져온다 (01 F-12·F-24). 테마·줌은 메인 창과 같다.
+    private async Task ShowBundledDocumentAsync(BundledDocument document, Window owner, MainViewModel viewModel, IShellLauncher shell)
     {
-        if (_helpWindow is { } existing)
+        if (_documentWindows.TryGetValue(document, out var existing))
         {
             if (existing.WindowState == WindowState.Minimized)
             {
@@ -147,17 +160,24 @@ public partial class App
         }
 
         WebViewHost? helpViewer = null;
-        var window = new HelpWindow(view => helpViewer = new WebViewHost(view, _logger, AppPaths.WebViewDataFolder, AppPaths.ResourcesFolder), shell, _logger, HelpDocument.DefaultPath)
+        var window = new HelpWindow(
+            view => helpViewer = new WebViewHost(view, _logger, AppPaths.WebViewDataFolder, AppPaths.ResourcesFolder),
+            shell,
+            _logger,
+            document.Path,
+            document.Title,
+            document.AutomationId,
+            document.ContentsName)
         {
             Owner = owner,
         };
-        _helpWindow = window;
+        _documentWindows[document] = window;
         EventHandler<double> followZoom = (_, factor) => window.Viewer.SetZoomFactor(factor);
         viewModel.Zoom.FactorChanged += followZoom;
         window.Closed += (_, _) =>
         {
             viewModel.Zoom.FactorChanged -= followZoom;
-            _helpWindow = null;
+            _documentWindows.Remove(document);
         };
         window.Viewer.SetZoomFactor(viewModel.Zoom.Factor);
         _themeService?.Register(window, window.Viewer);
@@ -165,6 +185,9 @@ public partial class App
         await helpViewer!.InitializeAsync();
         await window.ShowHelpAsync(AppVersion);
     }
+
+    /// <summary>앱에 내장한 문서와 그 창의 겉모습. <paramref name="LogName"/>은 실패 로그에 쓰는 이름이다.</summary>
+    private sealed record BundledDocument(string Path, string Title, string AutomationId, string ContentsName, string LogName);
 
     private void ShowAbout(Window owner)
     {

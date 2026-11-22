@@ -431,7 +431,13 @@ public sealed partial class DocumentViewModel
             var format = tab.Format ?? new TextFileFormat(TextEncodingKind.Utf8, LineEnding.CrLf);
             var metadata = tab.KnownMetadata ?? new FileMetadata(0, _timeProvider.GetUtcNow());
             ShowLoaded(tab.FilePath, new TextFileContent(text, format, tab.HasDecodingErrors), metadata, token.IsCancellationRequested);
-            return !token.IsCancellationRequested;
+            if (token.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            StartHighlight(text, bodyHtml);
+            return true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -490,9 +496,17 @@ public sealed partial class DocumentViewModel
 
         try
         {
+            // 앞 미리보기의 색 입히기가 이 미리보기보다 늦게 끝나 옛 글로 되돌리지 않게 먼저 그만둔다 (02 §17.13)
+            CancelHighlight();
             var text = buffer.GetText();
             var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(text));
             await _viewer.UpdateBodyAsync(bodyHtml, CancellationToken.None);
+
+            // 그리는 사이 탭을 바꿨으면 화면은 다른 문서다 — 이 글의 색을 그 위에 입히지 않는다
+            if (ActiveTab is { IsEditing: true } active && ReferenceEquals(active.Buffer, buffer) && State == DocumentState.Shown)
+            {
+                StartHighlight(text, bodyHtml);
+            }
         }
         catch (Exception exception)
         {

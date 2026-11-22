@@ -5,13 +5,14 @@ using MDFileViewer.Core.Models;
 using MDFileViewer.Core.Services;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using System.Windows.Threading;
 
 namespace MDFileViewer.Services;
 
 /// <summary>
 /// WebView2로 문서를 보여 준다 (02 §6.2 안 A, §6.3 설정, §6.4 탐색 가로채기, §13 프로세스 실패 복구). UI 스레드에서만 쓴다.
 /// </summary>
-public sealed class WebViewHost : IViewerHost
+public sealed partial class WebViewHost : IViewerHost
 {
     // 컨텍스트 메뉴에서 남길 항목. 이름은 영어 레이블의 lower camel case다(WebView2 SDK 문서 `CoreWebView2ContextMenuItem.Name`).
     private static readonly HashSet<string> AllowedContextMenuItems = new(StringComparer.Ordinal) { "copy", "selectAll" };
@@ -26,6 +27,9 @@ public sealed class WebViewHost : IViewerHost
     // 같은 문서를 다시 보여 줄 때마다 프로세스가 끝나면(렌더러를 죽이는 문서 등) 끝없이 되살리게 된다.
     // 사용자가 새 문서를 열기 전까지 연달아 되살리는 횟수를 제한한다.
     private const int MaxRecoveriesWithoutNewDocument = 3;
+
+    // 여러 항목을 한 번에 놓으면 새 창 요청이 항목마다 따로(약 1ms 간격, PoC-7) 온다. 이 시간 동안 온 것을 한 번의 드롭으로 묶는다.
+    private static readonly TimeSpan DropBatchDelay = TimeSpan.FromMilliseconds(100);
 
     private readonly MarkdownView _view;
     private readonly IAppLogger _logger;
@@ -51,6 +55,8 @@ public sealed class WebViewHost : IViewerHost
     // 컨트롤을 새로 만들 때마다 올린다. 죽은 컨트롤에서 늦게 끝난 템플릿 로드가 새 컨트롤의 상태를 바꾸지 않게 한다.
     private int _webViewGeneration;
     private TaskCompletionSource? _templateCompletion;
+    private readonly List<string> _droppedPaths = [];
+    private DispatcherTimer? _dropTimer;
     private ulong _templateNavigationId;
 
     public WebViewHost(MarkdownView view, IAppLogger logger, string userDataFolder, string resourcesFolder)
@@ -64,6 +70,8 @@ public sealed class WebViewHost : IViewerHost
     public event EventHandler<LinkActivatedEventArgs>? LinkActivated;
 
     public event EventHandler<double>? ZoomFactorChanged;
+
+    public event EventHandler<PathsDroppedEventArgs>? PathsDropped;
 
     /// <summary>WebView2를 준비한다. 문서 표시 요청은 준비가 끝날 때까지 기다린다.</summary>
     public Task InitializeAsync()
@@ -89,6 +97,8 @@ public sealed class WebViewHost : IViewerHost
                 {
                     _displayed = _displayed with { BodyHtml = bodyHtml };
                 }
+
+                await RestartFindInGateAsync(core);
             },
             cancellationToken);
 
@@ -179,6 +189,7 @@ public sealed class WebViewHost : IViewerHost
         await EnsureTemplateForRootAsync(core, DocumentUrlMapper.GetRootFolder(documentPath));
         await ExecuteScriptAsync(core, ViewerScriptBuilder.ShowDocument(bodyHtml, DocumentUrlMapper.ToDocumentUrl(documentPath)));
         _displayed = new DisplayedDocument(bodyHtml, documentPath);
+        await RestartFindInGateAsync(core);
     }
 
     private static Task<string> ExecuteScriptAsync(CoreWebView2 core, string script) =>
@@ -201,6 +212,7 @@ public sealed class WebViewHost : IViewerHost
         core.NewWindowRequested += OnNewWindowRequested;
         core.ContextMenuRequested += OnContextMenuRequested;
         core.ProcessFailed += OnProcessFailed;
+        SubscribeFindEvents(core);
         webView.ZoomFactorChanged += OnZoomFactorChanged;
         _view.SetBackground(_theme);
         ApplyZoom(webView);
@@ -209,7 +221,9 @@ public sealed class WebViewHost : IViewerHost
 
     private static void ApplySettings(CoreWebView2Settings settings)
     {
-        settings.IsScriptEnabled = false;
+        // 앱 스크립트(viewer.js)와 Mermaid가 돌아야 한다 — 꺼 두면 앱이 넣은 스크립트의 타이머·프레임 콜백이 돌지 않아 그림을 그리지 못한다
+        // (PoC-9). 문서 안 스크립트는 템플릿의 CSP(script-src는 앱 폴더뿐)가 막는다 (02 §6.5).
+        settings.IsScriptEnabled = true;
         settings.AreDefaultScriptDialogsEnabled = false;
         settings.IsWebMessageEnabled = false;
         settings.AreBrowserAcceleratorKeysEnabled = false;
@@ -319,10 +333,42 @@ public sealed class WebViewHost : IViewerHost
     }
 
     // `target="_blank"` 링크는 NavigationStarting 없이 이 이벤트만 온다 (PoC-6). 새 창은 만들지 않는다.
+    // 문서 영역 위에 놓은 파일·폴더도 이 이벤트로 온다 — 항목마다 `file:` 주소 하나씩 (PoC-7).
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
+        if (e.IsUserInitiated && DroppedFileUrl.TryGetLocalPath(e.Uri, out var path))
+        {
+            QueueDroppedPath(path);
+            return;
+        }
+
         RaiseLinkActivated(e.Uri, e.IsUserInitiated);
+    }
+
+    private void QueueDroppedPath(string path)
+    {
+        _droppedPaths.Add(path);
+        if (_dropTimer is null)
+        {
+            _dropTimer = new DispatcherTimer(DispatcherPriority.Normal, _view.Dispatcher) { Interval = DropBatchDelay };
+            _dropTimer.Tick += OnDropBatchElapsed;
+        }
+
+        // 항목이 올 때마다 다시 기다려, 마지막 항목 뒤에 한 번만 알린다
+        _dropTimer.Stop();
+        _dropTimer.Start();
+    }
+
+    private void OnDropBatchElapsed(object? sender, EventArgs e)
+    {
+        _dropTimer?.Stop();
+        var paths = _droppedPaths.ToArray();
+        _droppedPaths.Clear();
+        if (paths.Length > 0)
+        {
+            PathsDropped?.Invoke(this, new PathsDroppedEventArgs(paths));
+        }
     }
 
     private void RaiseLinkActivated(string url, bool isUserInitiated)

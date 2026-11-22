@@ -52,8 +52,9 @@ public sealed class MarkdownView : ContentControl
             DefaultBackgroundColor = background,
             Focusable = true,
 
-            // 놓은 파일을 WebView2가 직접 받아 그 파일로 이동하려 하지 않게 한다 — 끌어다 놓기는 창이 처리한다(02 §6.3·§17.10, PoC-7)
-            AllowExternalDrop = false,
+            // 꺼 두면 문서 영역 위의 드롭이 창으로도 오지 않고 그냥 사라진다(PoC-7). 켜 두면 WebView2가 놓은 항목마다
+            // `file:` 주소의 새 창 요청을 보내고, WebViewHost가 그 요청을 막아 드롭으로 넘긴다 — 그 파일로 이동하지는 않는다 (02 §6.3·§17.10)
+            AllowExternalDrop = true,
         };
         AutomationProperties.SetAutomationId(webView, WebViewAutomationId);
         return webView;

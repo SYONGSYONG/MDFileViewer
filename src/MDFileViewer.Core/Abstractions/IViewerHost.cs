@@ -27,6 +27,44 @@ public interface IViewerHost
 
     /// <summary>사용자가 `Ctrl+휠`로 배율을 바꿨다. <see cref="SetZoomFactor"/>로 넣은 값은 알리지 않는다.</summary>
     event EventHandler<double>? ZoomFactorChanged;
+
+    /// <summary>
+    /// 문서에서 <paramref name="term"/>을 처음부터 찾는다 (01 F-20, 02 §17.11). 비어 있으면 안 된다 — 빈 글자는 <see cref="StopFind"/>를 쓴다.
+    /// 찾는 동안 문서가 바뀌면(다른 문서 표시·본문 교체) 뷰어가 새 내용에서 같은 글자로 다시 찾는다.
+    /// </summary>
+    Task StartFindAsync(string term, CancellationToken cancellationToken);
+
+    /// <summary>다음 찾은 곳으로 간다. 끝에서는 처음으로 돈다. 찾는 중이 아니면 아무것도 하지 않는다.</summary>
+    void FindNext();
+
+    /// <summary>이전 찾은 곳으로 간다. 처음에서는 끝으로 돈다.</summary>
+    void FindPrevious();
+
+    /// <summary>찾기를 끝내고 강조를 지운다.</summary>
+    void StopFind();
+
+    /// <summary>찾은 개수나 지금 위치가 바뀌었다. <see cref="StopFind"/> 뒤에는 알리지 않는다.</summary>
+    event EventHandler<FindMatchesChangedEventArgs>? FindMatchesChanged;
+
+    /// <summary>
+    /// 사용자가 문서 영역 위에 파일·폴더를 놓았다 (01 F-19). 한 번에 놓은 항목을 놓은 순서대로 모아 알린다 —
+    /// 문서 영역은 창의 드롭 이벤트로 오지 않아 뷰어가 따로 알린다 (02 §17.10).
+    /// </summary>
+    event EventHandler<PathsDroppedEventArgs>? PathsDropped;
+}
+
+/// <summary>문서 영역 위에 놓은 항목의 로컬 경로(놓은 순서).</summary>
+public sealed class PathsDroppedEventArgs(IReadOnlyList<string> paths) : EventArgs
+{
+    public IReadOnlyList<string> Paths { get; } = paths;
+}
+
+/// <summary>찾은 개수와 지금 위치(1부터, 찾은 곳이 없으면 0).</summary>
+public sealed class FindMatchesChangedEventArgs(int matchCount, int activeMatchIndex) : EventArgs
+{
+    public int MatchCount { get; } = matchCount;
+
+    public int ActiveMatchIndex { get; } = activeMatchIndex;
 }
 
 /// <summary>눌린 링크의 절대 URL(&lt;base href&gt; 기준으로 풀린 값).</summary>

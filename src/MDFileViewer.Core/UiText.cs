@@ -86,7 +86,13 @@ public static class UiText
     public const string ThemeLight = "밝게";
     public const string ThemeDark = "어둡게";
     public const string HelpToolTip = "도움말 (F1)";
+    public const string ReleaseNotesToolTip = "릴리즈 노트";
     public const string MoreToolTip = "더보기";
+    public const string SingleWindowMenu = "창 하나로 열기";
+    public const string SingleWindowToolTip = "켜 두면 이미 열린 창에서 열고, 끄면 실행할 때마다 새 창을 엽니다. 다음 실행부터 적용됩니다.";
+    public const string SingleWindowTurnedOn = "다음 실행부터 이미 열린 창에서 엽니다";
+    public const string SingleWindowTurnedOff = "다음 실행부터 실행할 때마다 새 창을 엽니다";
+    public const string SettingNotSaved = "설정을 저장하지 못했습니다";
     public const string RegisterShellMenu = "탐색기 메뉴 등록";
     public const string UnregisterShellMenu = "탐색기 메뉴 해제";
     public const string AboutMenu = "정보";
@@ -95,6 +101,21 @@ public static class UiText
     public const string TabStripName = "문서 탭";
     public const string EditorName = "편집기";
     public const string CloseTabToolTip = "닫기 (Ctrl+W)";
+
+    // 목차 패널 (01 F-21, 03 §2.6·§10.3)
+    public const string OutlineTitle = "목차";
+    public const string OutlineListName = "문서 목차";
+    public const string OutlineEmpty = "제목이 없습니다";
+    public const string OutlineToolTip = "목차 (Ctrl+Shift+B)";
+
+    // 찾기 줄 (01 F-20, 03 §2.5·§10.3)
+    public const string FindBoxName = "찾기";
+    public const string FindBoxToolTip = "문서 안 찾기 (Ctrl+F)";
+    public const string FindNoMatches = "결과 없음";
+    public const string FindStatusFormat = "{0}/{1}";
+    public const string FindPreviousToolTip = "이전 (Shift+Enter)";
+    public const string FindNextToolTip = "다음 (Enter)";
+    public const string FindCloseToolTip = "닫기 (Esc)";
 
     // 트리·탭 우클릭 메뉴 (01 F-02·F-16·F-17)
     public const string OpenInExplorer = "탐색기에서 열기";
@@ -112,6 +133,8 @@ public static class UiText
     // 도움말·정보·탐색기 메뉴 (01 F-12·F-13, 03 §2.4·§3·§10.2)
     public const string HelpWindowTitle = "Markdown 문법 도움말";
     public const string HelpContentsName = "목차";
+    public const string ReleaseNotesWindowTitle = "릴리즈 노트";
+    public const string ReleaseNotesContentsName = "버전";
     public const string AboutTitle = "MDFileViewer 정보";
     public const string AboutFormat =
         "MDFileViewer {0}\nWebView2 Runtime {1}\n로그 폴더: {2}\n\n© 2026 SYONG · MIT 라이선스\n라이선스·제3자 고지(앱 폴더):\nLICENSE.txt, THIRD-PARTY-NOTICES.txt";

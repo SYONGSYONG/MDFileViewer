@@ -22,6 +22,14 @@
   --status-success: #1F7A44;
   --code-background: #F4F1EA;
   --quote-bar: #D3CDC1;
+  --code-comment: #5B6270;
+  --code-string: #1B6B3A;
+  --code-number: #A3420F;
+  --code-keyword: #B02A37;
+  --code-function: #6F3FC0;
+  --code-type: #8A5300;
+  --code-tag: #1F4FB0;
+  --code-attribute: #0B6A70;
 }
 
 :root[data-theme="dark"] {
@@ -42,6 +50,14 @@
   --status-success: #56D364;
   --code-background: #262A31;
   --quote-bar: #3A404B;
+  --code-comment: #9AA3AF;
+  --code-string: #7EE787;
+  --code-number: #FFA657;
+  --code-keyword: #FF7B72;
+  --code-function: #D2A8FF;
+  --code-type: #F0A23B;
+  --code-tag: #79B8FF;
+  --code-attribute: #56D4DD;
 }
 
 /* ── 바탕과 본문 글자 (03 §5) ─────────────────────────────── */
@@ -193,6 +209,19 @@ body {
   white-space: pre;
 }
 
+/* 코드 블록 구문 색상 (03 §6.1). 렌더러가 토큰을 이 클래스의 span으로 감싼다(02 §17.13). 색은 테마 변수라 테마를 바꾸면 바로 따라 바뀐다.
+   굵기·기울임은 바꾸지 않는다 — 고정폭 정렬을 지킨다. */
+.markdown-body pre .tk-comment { color: var(--code-comment); }
+.markdown-body pre .tk-string { color: var(--code-string); }
+.markdown-body pre .tk-number { color: var(--code-number); }
+.markdown-body pre .tk-keyword { color: var(--code-keyword); }
+.markdown-body pre .tk-function { color: var(--code-function); }
+.markdown-body pre .tk-type { color: var(--code-type); }
+.markdown-body pre .tk-tag { color: var(--code-tag); }
+.markdown-body pre .tk-attribute { color: var(--code-attribute); }
+.markdown-body pre .tk-inserted { color: var(--status-success); }
+.markdown-body pre .tk-deleted { color: var(--status-danger); }
+
 /* ── 표: 본문 폭까지 넓어지고, 좁으면 칸 안에서 줄 바꿈, 그래도 넘치면 표만 가로 스크롤 ───── */
 
 .markdown-body table {
@@ -259,4 +288,15 @@ body {
 
 .markdown-body summary {
   cursor: pointer;
+}
+
+/* Mermaid 그림 (01 F-25, 02 §17.16). viewer.js가 코드 블록을 이 상자로 바꾼다. 넓은 그림은 문서 전체를 밀지 않고 이 상자 안에서 가로로 스크롤한다 */
+.markdown-body .diagram {
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.markdown-body .diagram svg {
+  display: block;
+  height: auto;
 }

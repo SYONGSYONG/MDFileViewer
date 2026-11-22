@@ -77,6 +77,39 @@ internal sealed class FakeViewerHost : IViewerHost
 
     public void SetZoomFactor(double factor) => ZoomFactor = factor;
 
+    public event EventHandler<FindMatchesChangedEventArgs>? FindMatchesChanged;
+
+    /// <summary>찾기를 시작한 글자들(순서대로).</summary>
+    public List<string> FindStarts { get; } = [];
+
+    public int FindNextCount { get; private set; }
+
+    public int FindPreviousCount { get; private set; }
+
+    public int StopFindCount { get; private set; }
+
+    public Exception? FindFailure { get; set; }
+
+    public Task StartFindAsync(string term, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(term);
+        FindStarts.Add(term);
+        return FindFailure is null ? Task.CompletedTask : Task.FromException(FindFailure);
+    }
+
+    public void FindNext() => FindNextCount++;
+
+    public void FindPrevious() => FindPreviousCount++;
+
+    public void StopFind() => StopFindCount++;
+
+    public void RaiseFindMatches(int matchCount, int activeMatchIndex) =>
+        FindMatchesChanged?.Invoke(this, new FindMatchesChangedEventArgs(matchCount, activeMatchIndex));
+
+    public event EventHandler<PathsDroppedEventArgs>? PathsDropped;
+
+    public void RaisePathsDropped(params string[] paths) => PathsDropped?.Invoke(this, new PathsDroppedEventArgs(paths));
+
     public void RaiseZoom(double factor) => ZoomFactorChanged?.Invoke(this, factor);
 
     public void RaiseLink(string url) => LinkActivated?.Invoke(this, new LinkActivatedEventArgs(url));

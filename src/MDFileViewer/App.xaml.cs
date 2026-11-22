@@ -14,7 +14,7 @@ namespace MDFileViewer;
 
 /// <summary>
 /// 구성 루트 (02 §4·§5): 로그, 전역 예외 처리, 인수 해석, 탐색기 메뉴 등록·해제, WebView2 Runtime 확인, 설정 읽기, 서비스·ViewModel 생성
-/// (수동 주입), 메인 창 표시, 닫을 때 설정 저장. 탐색기 메뉴·도움말·정보는 App.Shell.cs에 있다.
+/// (수동 주입), 메인 창 표시, 닫을 때 설정 저장. 탐색기 메뉴·도움말·릴리즈 노트·정보는 App.Shell.cs, 창 하나로 열기는 App.SingleInstance.cs에 있다.
 /// </summary>
 public partial class App : Application
 {
@@ -28,6 +28,9 @@ public partial class App : Application
     private ISettingsStore? _settingsStore;
     private AppSettings _settings = new();
     private ThemeService? _themeService;
+
+    // 프로세스가 끝날 때까지 쥐고 있어야 하므로 필드로 둔다(지역 변수면 수거되며 닫힌다). 끝날 때 Windows가 닫는다.
+    private Mutex? _instanceMutex;
 
     // 시작 처리 전체가 이벤트 처리기 안에서 돌아야 하므로 async void를 쓴다(04 §3.2 예외). 예외는 모두 안에서 잡는다.
     protected override async void OnStartup(StartupEventArgs e)
@@ -43,6 +46,9 @@ public partial class App : Application
         catch (Exception exception)
         {
             _logger.Error("시작하지 못했습니다.", exception);
+
+            // 시작하지 못한 창이 받는 창으로 남으면, 뒤에 실행된 앱이 넘긴 요청을 받아들이기만 하고 열지 않는다
+            StopReceivingOpenRequests();
             ShowUnexpectedError();
             if (MainWindow is null)
             {
@@ -68,16 +74,28 @@ public partial class App : Application
             return;
         }
 
+        // 설치·제거 프로그램이 "앱이 켜져 있다"를 알 수 있게 한다(02 §15.1). 등록·해제만 하고 끝나는 실행(위)은 만들지 않는다 —
+        // 제거 프로그램이 스스로 부르는 `--unregister`가 자기 확인에 걸리지 않게.
+        _instanceMutex = new Mutex(initiallyOwned: false, AppConstants.InstanceMutexName);
+
+        _settingsStore = new JsonSettingsStore(ResolveSettingsPath(), _logger);
+        _settings = _settingsStore.Load();
+        if (await TryHandOverAsync(arguments))
+        {
+            Shutdown(ExitCodeSuccess);
+            return;
+        }
+
         var shell = new ShellLauncher();
         if (!IsWebViewRuntimeAvailable())
         {
+            // 창을 띄우지 못하므로 받는 창 노릇을 그만둔다 — 안내 창이 떠 있는 동안 넘어온 요청이 사라지지 않게
+            StopReceivingOpenRequests();
             ShowWebViewRuntimeMissing(shell);
             Shutdown(ExitCodeFailure);
             return;
         }
 
-        _settingsStore = new JsonSettingsStore(ResolveSettingsPath(), _logger);
-        _settings = _settingsStore.Load();
         var (window, viewer, viewModel) = await CreateMainWindowAsync(shell);
 
         MainWindow = window;
@@ -91,7 +109,32 @@ public partial class App : Application
         var previous = new SessionState(_settings.LastFolder, _settings.Tabs);
         var initialized = viewModel.InitializeAsync(parsed.Request, previous, CancellationToken.None);
         await Task.WhenAll(viewerReady, initialized);
+
+        // 시작 인수를 다 연 뒤에 넘겨받은 요청을 연다 — 순서가 바뀌면 지난 탭 복원이나 시작 파일이 넘겨받은 파일을 덮는다
+        _mainWindowReady.TrySetResult((window, viewModel));
         OfferShellReregistration(window);
+    }
+
+    /// <summary>
+    /// 창 하나로 열기 (01 F-23): 이미 받는 창이 있고 설정이 "창 하나로 열기"면 인수를 넘긴다. 넘겼으면 <c>true</c> — 이 앱은 끝난다.
+    /// 넘기지 못했으면(받는 창이 닫히는 중 등) 요청을 잃지 않게 자기 창을 연다.
+    /// </summary>
+    private async Task<bool> TryHandOverAsync(IReadOnlyList<string> arguments)
+    {
+        if (TryBecomePrimary() || !_settings.OpenInSingleWindow)
+        {
+            return false;
+        }
+
+        if (await TryForwardAsync(arguments))
+        {
+            _logger.Info("이미 열린 창에 요청을 넘기고 끝냅니다.");
+            return true;
+        }
+
+        // 받는 창이 그사이 닫혔으면 이 앱이 받는 창이 된다
+        TryBecomePrimary();
+        return false;
     }
 
     // 메인 창·뷰어·ViewModel을 만들고 설정·테마·창 요청을 연결한다(창은 아직 보이지 않는다)
@@ -102,6 +145,7 @@ public partial class App : Application
         var systemTheme = new SystemThemeSource();
         var viewModel = CreateMainViewModel(viewer, shell, systemTheme);
         window.Bind(viewModel);
+        viewModel.Outline.IsPanelOpen = _settings.Layout.IsOutlineVisible;
         ApplyWindowSettings(window);
         window.SourceInitialized += (_, _) =>
         {
@@ -109,6 +153,9 @@ public partial class App : Application
             systemTheme.Attach(window);
         };
         window.CloseConfirmed += (_, _) => SaveSettings(window, viewModel);
+        window.Closed += (_, _) => StopReceivingOpenRequests();
+        window.OpenInSingleWindow = _settings.OpenInSingleWindow;
+        window.OpenInSingleWindowChanged += (_, isSingleWindow) => SaveOpenInSingleWindow(isSingleWindow, viewModel);
         WireWindowRequests(window, viewModel, shell);
         await StartThemeAsync(window, viewer, viewModel.Theme!);
         return (window, viewer, viewModel);
@@ -192,8 +239,16 @@ public partial class App : Application
             : window.RestoreBounds;
         _settings = _settings with
         {
+            // 다른 창이 그사이 바꿔 저장했을 수 있다. 이 창이 시작할 때 읽은 값으로 되돌리지 않게 파일의 값을 따른다 — 이 창에서 바꾼 값은
+            // 바꿀 때 바로 저장했으므로 파일에 있다. 파일을 읽지 못하면 이 창이 가진 값을 그대로 쓴다
+            OpenInSingleWindow = _settingsStore.TryLoad()?.OpenInSingleWindow ?? _settings.OpenInSingleWindow,
             Window = bounds.IsEmpty ? _settings.Window : new WindowSettings(bounds.Left, bounds.Top, bounds.Width, bounds.Height, window.WindowState == WindowState.Maximized),
-            Layout = new LayoutSettings { TreePanelWidth = window.TreePanelWidth, EditorSplitRatio = window.EditorSplitRatio },
+            Layout = new LayoutSettings
+            {
+                TreePanelWidth = window.TreePanelWidth,
+                EditorSplitRatio = window.EditorSplitRatio,
+                IsOutlineVisible = viewModel.Outline.IsPanelOpen,
+            },
             Theme = viewModel.Theme?.Mode ?? _settings.Theme,
             LastFolder = viewModel.CurrentFolderPath,
             Editor = new EditorSettings { ShowLineNumbers = window.ShowLineNumbers, WordWrap = window.WordWrap },
@@ -222,6 +277,20 @@ public partial class App : Application
 
         _settings = _settings with { Favorites = favorites.Paths };
         WarnIfNotSaved(_settingsStore.Save(_settings));
+    }
+
+    // 다음 실행이 읽어야 하므로 바꿀 때 바로 저장한다 (01 F-23). 저장하지 못했으면 다음 실행에 적용되지 않으므로 그렇게 알린다
+    private void SaveOpenInSingleWindow(bool isSingleWindow, MainViewModel viewModel)
+    {
+        if (_settingsStore is null)
+        {
+            return;
+        }
+
+        _settings = _settings with { OpenInSingleWindow = isSingleWindow };
+        var isSaved = _settingsStore.Save(_settings);
+        WarnIfNotSaved(isSaved);
+        viewModel.ShowStatus(!isSaved ? UiText.SettingNotSaved : isSingleWindow ? UiText.SingleWindowTurnedOn : UiText.SingleWindowTurnedOff);
     }
 
     private static IAppLogger CreateLogger()

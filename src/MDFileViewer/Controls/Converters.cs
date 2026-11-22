@@ -52,6 +52,17 @@ public static class VisibilityParameters
 }
 
 /// <summary>값이 있으면 보이고 <c>null</c>·빈 문자열이면 접는다. 매개변수 <see cref="VisibilityParameters.Invert"/>면 반대.</summary>
+/// <summary>목차 항목의 제목 단계를 왼쪽 들여쓰기로 바꾼다 (03 §2.6: 1단계 0, 단계마다 12).</summary>
+public sealed class OutlineIndentConverter : IValueConverter
+{
+    private const double IndentPerLevel = 12;
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        new Thickness(value is int level ? Math.Max(level - 1, 0) * IndentPerLevel : 0, 0, 0, 0);
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 public sealed class NullToVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

@@ -23,6 +23,12 @@ public sealed class AppSession : IDisposable
     /// <summary>Debug 빌드 앱이 읽는 WebView2 데이터 폴더 변수(AppPaths.ResolveWebViewDataFolder와 같은 글자).</summary>
     public const string WebViewDataVariableName = "MDFILEVIEWER_E2E_WEBVIEW_DATA";
 
+    /// <summary>
+    /// Debug 빌드 앱이 "받는 창"을 가르는 이름에 붙이는 변수(App.InstanceSuffix와 같은 글자, 02 §17.14). 세션마다 다른 값을 주어 테스트 앱이
+    /// 다른 테스트의 앱이나 사용자가 켜 둔 앱에 열기 요청을 넘기지 않게 한다. 같은 값을 준 실행끼리만 창 하나를 나눠 쓴다.
+    /// </summary>
+    public const string InstanceVariableName = "MDFILEVIEWER_E2E_INSTANCE";
+
     // E2E 전용 WebView2 데이터 폴더. 사용자가 켜 둔 설치본과 브라우저 프로세스를 나눠 쓰지 않게 한다 — 나눠 쓰면 테스트 앱에는
     // 자식 브라우저 프로세스가 없어 복구 E2E가 대상을 찾지 못했다(2026-11-21). 프로필을 매번 새로 만들지 않도록 실행마다 같은 폴더를 쓴다.
     private static readonly string WebViewDataFolder = Path.Combine(Path.GetTempPath(), "MDFileViewer.E2E", "WebView2");
@@ -76,28 +82,13 @@ public sealed class AppSession : IDisposable
     /// <param name="environment">앱 프로세스에만 넣을 환경 변수(예: Debug 빌드의 강제 예외 `MDFILEVIEWER_E2E_FAULT`).</param>
     public static AppSession Launch(IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment)
     {
-        var exePath = ResolveAppExePath();
-        var startInfo = new ProcessStartInfo(exePath)
-        {
-            UseShellExecute = false,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
         // 세션마다 빈 설정 파일 자리를 준다 — 사용자의 실제 설정을 읽거나 덮어쓰지 않고, 테스트끼리 탭·즐겨찾기가 섞이지 않게 (App.ResolveSettingsPath).
         // 호출자가 경로를 주면(재시작 복원 시험) 그 파일을 쓰고 지우지 않는다.
         var ownedSettingsFolder = environment?.ContainsKey(SettingsVariableName) == true ? null : NewSettingsFolder();
+        var startInfo = CreateStartInfo(arguments, environment);
         if (ownedSettingsFolder is not null)
         {
             startInfo.Environment[SettingsVariableName] = Path.Combine(ownedSettingsFolder, "settings.json");
-        }
-
-        startInfo.Environment[WebViewDataVariableName] = WebViewDataFolder;
-        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
-        {
-            startInfo.Environment[name] = value;
         }
 
         var application = Application.Launch(startInfo);
@@ -114,6 +105,36 @@ public sealed class AppSession : IDisposable
             automation.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// 창을 기다리지 않고 앱을 실행한다 — 이미 열린 창에 요청을 넘기고 끝나는 실행(01 F-23)을 볼 때 쓴다. 설정 파일과 받는 창 이름은
+    /// <paramref name="environment"/>로 먼저 띄운 세션과 같게 준다. 프로세스 정리는 호출자가 한다.
+    /// </summary>
+    public static Process StartWithoutWindow(IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment) =>
+        Process.Start(CreateStartInfo(arguments, environment)) ?? throw new InvalidOperationException("앱 프로세스를 시작하지 못했습니다.");
+
+    private static ProcessStartInfo CreateStartInfo(IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment)
+    {
+        var startInfo = new ProcessStartInfo(ResolveAppExePath())
+        {
+            UseShellExecute = false,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        startInfo.Environment[WebViewDataVariableName] = WebViewDataFolder;
+
+        // 호출자가 주지 않으면 실행마다 다른 이름 — 이 앱이 스스로 받는 창이 되어 창을 띄운다
+        startInfo.Environment[InstanceVariableName] = Guid.NewGuid().ToString("N");
+        foreach (var (name, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
+
+        return startInfo;
     }
 
     /// <summary>AutomationId로 요소를 찾는다. 시간 안에 나타나지 않으면 실패한다.</summary>

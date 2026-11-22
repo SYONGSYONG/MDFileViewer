@@ -192,6 +192,7 @@ public sealed partial class DocumentViewModel : ObservableObject
                 return false;
             }
 
+            StartHighlight(content.Text, bodyHtml);
             if (!string.IsNullOrEmpty(anchorId))
             {
                 await _viewer.ScrollToAnchorAsync(anchorId, token);
@@ -240,6 +241,11 @@ public sealed partial class DocumentViewModel : ObservableObject
             isDisplaying = true;
             await _viewer.UpdateBodyAsync(bodyHtml, token);
             ShowLoaded(path, content, metadata, isSuperseded: token.IsCancellationRequested);
+            if (!token.IsCancellationRequested)
+            {
+                StartHighlight(content.Text, bodyHtml);
+            }
+
             return true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -284,6 +290,8 @@ public sealed partial class DocumentViewModel : ObservableObject
 
     private CancellationTokenSource StartNewRequest()
     {
+        // 화면 내용이 바뀔 참이다 — 앞 내용의 색 입히기가 늦게 끝나 새 내용을 덮지 않게 그만둔다 (02 §17.13)
+        CancelHighlight();
         _openCancellation?.Cancel();
         _openCancellation?.Dispose();
         _openCancellation = new CancellationTokenSource();

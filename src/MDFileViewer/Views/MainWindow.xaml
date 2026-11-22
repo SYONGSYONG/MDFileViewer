@@ -27,6 +27,7 @@
         <controls:TreeNodeGlyphConverter x:Key="TreeNodeGlyph" />
         <controls:NullToVisibilityConverter x:Key="NullToVisibility" />
         <controls:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <controls:OutlineIndentConverter x:Key="OutlineIndent" />
 
         <!-- 상태 표시줄 한 칸: 왼쪽 1px 구분선. 값이 없으면 칸째로 접는다 -->
         <Style x:Key="StatusSegment" TargetType="Border">
@@ -112,6 +113,7 @@
         <KeyBinding Key="E" Modifiers="Control" Command="{Binding ToggleEditCommand}" />
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
         <KeyBinding Key="B" Modifiers="Control" Command="{Binding ToggleNavigationPanelCommand}" />
+        <KeyBinding Key="B" Modifiers="Control+Shift" Command="{Binding Outline.ToggleCommand}" />
         <KeyBinding Key="W" Modifiers="Control" Command="{Binding CloseActiveTabCommand}" />
         <KeyBinding Key="Tab" Modifiers="Control" Command="{Binding NextTabCommand}" />
         <KeyBinding Key="Tab" Modifiers="Control+Shift" Command="{Binding PreviousTabCommand}" />
@@ -119,6 +121,9 @@
         <KeyBinding Key="Add" Modifiers="Control" Command="{Binding Zoom.ZoomInCommand}" />
         <KeyBinding Key="OemMinus" Modifiers="Control" Command="{Binding Zoom.ZoomOutCommand}" />
         <KeyBinding Key="Subtract" Modifiers="Control" Command="{Binding Zoom.ZoomOutCommand}" />
+        <KeyBinding Key="F" Modifiers="Control" Command="{Binding Find.OpenCommand}" />
+        <KeyBinding Key="F3" Command="{Binding Find.NextCommand}" />
+        <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding Find.PreviousCommand}" />
         <KeyBinding Key="D0" Modifiers="Control" Command="{Binding Zoom.ResetCommand}" />
         <KeyBinding Key="NumPad0" Modifiers="Control" Command="{Binding Zoom.ResetCommand}" />
     </Window.InputBindings>
@@ -131,7 +136,7 @@
             <RowDefinition Height="26" />
         </Grid.RowDefinitions>
 
-        <!-- 툴바 (03 §3): 폴더 열기 · 주소 · [편집][저장●] │ [-] 100% [+] │ [테마][?][…]. 오른쪽에 붙는 요소는 먼저 쓴 것이 가장 오른쪽이다 -->
+        <!-- 툴바 (03 §3): 폴더 열기 · 주소 · [편집][저장●] │ [-] 100% [+] │ [테마][?][릴리즈 노트][…]. 오른쪽에 붙는 요소는 먼저 쓴 것이 가장 오른쪽이다 -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource Border.Subtle}" BorderThickness="0,0,0,1">
             <DockPanel Margin="8,0" LastChildFill="True">
                 <Button x:Name="MoreButton" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Click="OnMoreClick"
@@ -140,12 +145,23 @@
                     <TextBlock Style="{StaticResource IconText}" Text="{x:Static themes:IconGlyphs.More}" />
                     <Button.ContextMenu>
                         <ContextMenu>
+                            <!-- 창 하나로 열기 (01 F-23). 누르면 체크가 바뀌고 바로 저장한다 — 다음 실행부터 적용 -->
+                            <MenuItem x:Name="SingleWindowMenuItem" Header="{x:Static core:UiText.SingleWindowMenu}" IsCheckable="True"
+                                      Click="OnSingleWindowClick" ToolTip="{x:Static core:UiText.SingleWindowToolTip}"
+                                      AutomationProperties.AutomationId="SingleWindowMenuItem" />
+                            <Separator />
                             <MenuItem Header="{x:Static core:UiText.RegisterShellMenu}" Click="OnRegisterShellClick" AutomationProperties.AutomationId="RegisterShellMenuItem" />
                             <MenuItem Header="{x:Static core:UiText.UnregisterShellMenu}" Click="OnUnregisterShellClick" AutomationProperties.AutomationId="UnregisterShellMenuItem" />
                             <Separator />
                             <MenuItem Header="{x:Static core:UiText.AboutMenu}" Click="OnAboutClick" AutomationProperties.AutomationId="AboutMenuItem" />
                         </ContextMenu>
                     </Button.ContextMenu>
+                </Button>
+                <!-- 릴리즈 노트 (01 F-24) — 도움말 버튼 바로 오른쪽 -->
+                <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Click="OnReleaseNotesClick"
+                        ToolTip="{x:Static core:UiText.ReleaseNotesToolTip}" AutomationProperties.Name="{x:Static core:UiText.ReleaseNotesToolTip}"
+                        AutomationProperties.AutomationId="ReleaseNotesButton">
+                    <TextBlock Style="{StaticResource IconText}" Text="{x:Static themes:IconGlyphs.ReleaseNotes}" />
                 </Button>
                 <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Click="OnHelpClick"
                         ToolTip="{x:Static core:UiText.HelpToolTip}" AutomationProperties.Name="{x:Static core:UiText.HelpToolTip}"
@@ -168,6 +184,21 @@
                                       Command="{Binding SelectModeCommand}" CommandParameter="{x:Static models:ThemeMode.Dark}" />
                         </ContextMenu>
                     </Button.ContextMenu>
+                </Button>
+                <!-- 목차 패널 여닫기 (01 F-21, 03 §2.6). 열어 둔 상태는 눌린 모양으로 보인다 -->
+                <Button DockPanel.Dock="Right" Command="{Binding Outline.ToggleCommand}"
+                        ToolTip="{x:Static core:UiText.OutlineToolTip}" AutomationProperties.Name="{x:Static core:UiText.OutlineToolTip}"
+                        AutomationProperties.AutomationId="OutlineButton">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Outline.IsPanelOpen}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource Surface.Hover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Style="{StaticResource IconText}" Text="{x:Static themes:IconGlyphs.Outline}" />
                 </Button>
                 <Border DockPanel.Dock="Right" Style="{StaticResource ToolbarSeparator}" />
                 <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Command="{Binding Zoom.ZoomInCommand}"
@@ -259,6 +290,8 @@
                 <ColumnDefinition x:Name="TreeColumn" Width="320" MinWidth="160" />
                 <ColumnDefinition x:Name="TreeSplitterColumn" Width="6" />
                 <ColumnDefinition Width="*" MinWidth="320" />
+                <ColumnDefinition x:Name="OutlineSplitterColumn" Width="0" />
+                <ColumnDefinition x:Name="OutlineColumn" Width="0" />
             </Grid.ColumnDefinitions>
 
             <!-- 접힌 탐색 패널 (03 §2.2): 누르거나 Ctrl+B로 트리를 편다 -->
@@ -313,8 +346,59 @@
             <Grid Grid.Column="3">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
+
+                <!-- 찾기 줄 (01 F-20, 03 §2.5). WebView2(HwndHost) 위에는 겹쳐 띄울 수 없어 탭 줄과 문서 사이에 한 줄로 끼운다 -->
+                <Border Grid.Row="1" Height="36" BorderBrush="{DynamicResource Border.Subtle}" BorderThickness="0,0,0,1"
+                        Visibility="{Binding Find.IsOpen, Converter={StaticResource BoolToVisibility}}"
+                        AutomationProperties.AutomationId="FindBar">
+                    <DockPanel Margin="12,0,8,0" LastChildFill="False">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Width="28" Height="28"
+                                Command="{Binding Find.CloseCommand}"
+                                ToolTip="{x:Static core:UiText.FindCloseToolTip}" AutomationProperties.Name="{x:Static core:UiText.FindCloseToolTip}"
+                                AutomationProperties.AutomationId="FindCloseButton">
+                            <TextBlock Style="{StaticResource IconText}" FontSize="10" Text="{x:Static themes:IconGlyphs.Close}" />
+                        </Button>
+                        <TextBox x:Name="FindBox" DockPanel.Dock="Left" Style="{StaticResource AddressBox}" Width="280"
+                                 Text="{Binding Find.Term, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="{x:Static core:UiText.FindBoxToolTip}"
+                                 AutomationProperties.Name="{x:Static core:UiText.FindBoxName}"
+                                 AutomationProperties.AutomationId="FindBox">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Return" Command="{Binding Find.NextCommand}" />
+                                <KeyBinding Key="Return" Modifiers="Shift" Command="{Binding Find.PreviousCommand}" />
+                                <KeyBinding Key="Escape" Command="{Binding Find.CloseCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <TextBlock DockPanel.Dock="Left" Margin="10,0" MinWidth="56" FontSize="12" VerticalAlignment="Center"
+                                   Text="{Binding Find.StatusText}" AutomationProperties.AutomationId="FindStatusText">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Find.HasNoMatches}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Status.Danger}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Button DockPanel.Dock="Left" Style="{StaticResource ToolbarButton}" Width="28" Height="28"
+                                Command="{Binding Find.PreviousCommand}"
+                                ToolTip="{x:Static core:UiText.FindPreviousToolTip}" AutomationProperties.Name="{x:Static core:UiText.FindPreviousToolTip}"
+                                AutomationProperties.AutomationId="FindPreviousButton">
+                            <TextBlock Style="{StaticResource IconText}" FontSize="12" Text="{x:Static themes:IconGlyphs.ChevronUp}" />
+                        </Button>
+                        <Button DockPanel.Dock="Left" Style="{StaticResource ToolbarButton}" Width="28" Height="28"
+                                Command="{Binding Find.NextCommand}"
+                                ToolTip="{x:Static core:UiText.FindNextToolTip}" AutomationProperties.Name="{x:Static core:UiText.FindNextToolTip}"
+                                AutomationProperties.AutomationId="FindNextButton">
+                            <TextBlock Style="{StaticResource IconText}" FontSize="12" Text="{x:Static themes:IconGlyphs.ChevronDown}" />
+                        </Button>
+                    </DockPanel>
+                </Border>
 
                 <!-- 탭 줄 (01 F-17, 03 §2.1). 탭이 없으면 접는다. 넘치면 휠로 가로 스크롤 -->
                 <Border Grid.Row="0" BorderBrush="{DynamicResource Border.Subtle}" BorderThickness="0,0,0,1"
@@ -333,7 +417,7 @@
                 </Border>
 
                 <!-- 문서 영역: [편집기][구분선][뷰어]. 보기 모드는 편집기 열과 구분선을 접는다 (02 §17.1 뷰어는 하나) -->
-                <Grid x:Name="DocumentGrid" Grid.Row="1" Background="{DynamicResource Surface.Document}">
+                <Grid x:Name="DocumentGrid" Grid.Row="2" Background="{DynamicResource Surface.Document}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition x:Name="EditorColumn" Width="0" />
                         <ColumnDefinition x:Name="EditorSplitterColumn" Width="0" />
@@ -366,6 +450,44 @@
                     </Grid>
                 </Grid>
             </Grid>
+            <GridSplitter x:Name="OutlineSplitter" Grid.Column="4" Style="{StaticResource PaneSplitter}" Visibility="Collapsed" />
+
+            <!-- 목차 패널 (01 F-21, 03 §2.6). 보기 모드에서 문서가 보일 때만 편다(열 너비는 코드 숨김이 바꾼다) -->
+            <Border x:Name="OutlinePanel" Grid.Column="5" Background="{DynamicResource Surface.Panel}" Visibility="Collapsed">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Margin="12,10,12,6" FontSize="12" Foreground="{DynamicResource Text.Secondary}"
+                               Text="{x:Static core:UiText.OutlineTitle}" />
+                    <TextBlock DockPanel.Dock="Top" Margin="12,6" Foreground="{DynamicResource Text.Secondary}"
+                               Text="{x:Static core:UiText.OutlineEmpty}"
+                               Visibility="{Binding Outline.IsEmpty, Converter={StaticResource BoolToVisibility}}"
+                               AutomationProperties.AutomationId="OutlineEmptyText" />
+                    <ListBox x:Name="OutlineList" ItemsSource="{Binding Outline.Headings}"
+                             Background="Transparent" Foreground="{DynamicResource Text.Primary}" BorderThickness="0" Padding="0,0,0,8"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             SelectionChanged="OnOutlineSelectionChanged"
+                             AutomationProperties.Name="{x:Static core:UiText.OutlineListName}" AutomationProperties.AutomationId="OutlineList">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="MinHeight" Value="26" />
+                                <Setter Property="Padding" Value="12,2,8,2" />
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                                <EventSetter Event="MouseLeftButtonUp" Handler="OnOutlineItemMouseUp" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:OutlineHeading}">
+                                <TextBlock x:Name="HeadingTitle" Text="{Binding Title}" ToolTip="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" Margin="{Binding Level, Converter={StaticResource OutlineIndent}}" />
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Level}" Value="1">
+                                        <Setter TargetName="HeadingTitle" Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
         </Grid>
 
         <!-- 상태 표시줄 (03 §2.1·§2.2): [편집 중] │ 경로 │ 인코딩 │ 줄 끝 │ 크기 │ 수정 시각 │ 안내 │ 커서 위치 -->

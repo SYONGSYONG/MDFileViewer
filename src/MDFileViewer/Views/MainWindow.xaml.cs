@@ -10,7 +10,7 @@ namespace MDFileViewer.Views;
 
 /// <summary>
 /// 메인 창. 화면 동작만 둔다 — 트리 스크롤, 탭·트리 우클릭 메뉴(MainWindow.Menus.cs), 편집 레이아웃·편집기(MainWindow.Editing.cs),
-/// 창 닫기 확인. 앱 단위 동작(도움말 창, 탐색기 메뉴, 정보, 설정 저장)은 이벤트로 구성 루트에 맡긴다.
+/// 창 닫기 확인. 앱 단위 동작(도움말·릴리즈 노트 창, 탐색기 메뉴, 정보, 설정 저장)은 이벤트로 구성 루트에 맡긴다.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -28,6 +28,12 @@ public partial class MainWindow : Window
     /// <summary>`F1`·`?` 버튼 (01 F-12).</summary>
     public event EventHandler? HelpRequested;
 
+    /// <summary>릴리즈 노트 버튼 (01 F-24).</summary>
+    public event EventHandler? ReleaseNotesRequested;
+
+    /// <summary>`⋯` → 창 하나로 열기를 켜거나 껐다 (01 F-23). 값은 바뀐 뒤의 상태다.</summary>
+    public event EventHandler<bool>? OpenInSingleWindowChanged;
+
     /// <summary>`⋯` → 탐색기 메뉴 등록 (01 F-13).</summary>
     public event EventHandler? RegisterShellRequested;
 
@@ -39,6 +45,13 @@ public partial class MainWindow : Window
 
     /// <summary>저장하지 않은 변경 확인을 마쳤고 창이 곧 닫힌다 — 설정을 저장할 때 (01 F-14).</summary>
     public event EventHandler? CloseConfirmed;
+
+    /// <summary>`⋯` 메뉴의 "창 하나로 열기" 체크 (01 F-23). 구성 루트가 설정에서 읽은 값을 넣는다.</summary>
+    public bool OpenInSingleWindow
+    {
+        get => SingleWindowMenuItem.IsChecked;
+        set => SingleWindowMenuItem.IsChecked = value;
+    }
 
     /// <summary>문서 표시 영역. 구성 루트가 WebViewHost를 만들 때 쓴다.</summary>
     public MarkdownView DocumentView => DocumentViewer;
@@ -53,6 +66,8 @@ public partial class MainWindow : Window
         viewModel.Document.PropertyChanged += OnDocumentPropertyChanged;
         viewModel.Tabs.PropertyChanged += OnTabsPropertyChanged;
         ApplyNavigationPanel(viewModel.IsNavigationPanelVisible);
+        BindFind(viewModel.Find);
+        BindOutline(viewModel.Outline);
     }
 
     // F1은 WebView2에 포커스가 있어도 WPF로 온다(PoC-3). 도움말 창은 앱이 하나만 띄운다.
@@ -62,6 +77,12 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             HelpRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (TryCloseFindWithEscape(e))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -125,6 +146,11 @@ public partial class MainWindow : Window
     }
 
     private void OnHelpClick(object sender, RoutedEventArgs e) => HelpRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnReleaseNotesClick(object sender, RoutedEventArgs e) => ReleaseNotesRequested?.Invoke(this, EventArgs.Empty);
+
+    // 체크할 수 있는 항목이라 누르면 WPF가 먼저 체크를 바꾼다 — 바뀐 값을 알린다
+    private void OnSingleWindowClick(object sender, RoutedEventArgs e) => OpenInSingleWindowChanged?.Invoke(this, SingleWindowMenuItem.IsChecked);
 
     private void OnRegisterShellClick(object sender, RoutedEventArgs e) => RegisterShellRequested?.Invoke(this, EventArgs.Empty);
 

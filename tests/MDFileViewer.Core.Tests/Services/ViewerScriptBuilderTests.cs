@@ -86,6 +86,29 @@ public sealed partial class ViewerScriptBuilderTests
     }
 
     [Fact]
+    public void BodyAndThemeScripts_AskViewerToRenderDiagramsLast()
+    {
+        // Act — 본문이 바뀌면 새 Mermaid 블록을 그리고, 테마가 바뀌면 그린 그림을 그 테마로 다시 그린다 (01 F-25)
+        string[] scripts =
+        [
+            ViewerScriptBuilder.ShowDocument("<p>a</p>", "https://docroot.example/a.md"),
+            ViewerScriptBuilder.UpdateBody("<p>a</p>"),
+            ViewerScriptBuilder.SetTheme(EffectiveTheme.Dark),
+        ];
+
+        // Assert — 본문·테마를 바꾼 뒤여야 하므로 맨 끝이다
+        Assert.All(scripts, script => Assert.EndsWith(ViewerScriptBuilder.RenderDiagrams, script, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ScrollScripts_DoNotRenderDiagrams()
+    {
+        // Assert — 스크롤만 하는 스크립트(편집기 스크롤 동기화는 자주 불린다)는 그림을 건드리지 않는다
+        Assert.DoesNotContain("mdfv", ViewerScriptBuilder.ScrollToAnchor("a"), StringComparison.Ordinal);
+        Assert.DoesNotContain("mdfv", ViewerScriptBuilder.ScrollToRatio(0.5), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SetTheme_UndefinedValue_Throws()
     {
         // Act & Assert

@@ -37,5 +37,15 @@ public static class IconGlyphs
     // 2026-11-18 같은 방법으로 확인: 왼쪽 칸이 나뉜 창 모양(DockLeft) — 접기·펴기 어느 상태든 한 아이콘으로 토글한다
     public static readonly string NavigationPanel = Glyph(0xE90C);
 
+    // 찾기 줄 (03 §2.5). Fluent Icons 목록 이름 ChevronUp·ChevronDown — 화면 확인은 05 12-1
+    public static readonly string ChevronUp = Glyph(0xE70E);
+    public static readonly string ChevronDown = Glyph(0xE70D);
+
+    // 목차 버튼 (03 §2.6). Fluent Icons 목록 이름 BulletedList — 화면 확인은 05 12-2
+    public static readonly string Outline = Glyph(0xE8FD);
+
+    // 릴리즈 노트 버튼 (03 §3). Fluent Icons 목록 이름 History(시계와 되감는 화살표) — 2026-11-22 SegoeIcons.ttf로 그려 모양을 확인했다
+    public static readonly string ReleaseNotes = Glyph(0xE81C);
+
     private static string Glyph(int codePoint) => char.ConvertFromUtf32(codePoint);
 }

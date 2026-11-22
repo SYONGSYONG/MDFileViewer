@@ -1,0 +1,2 @@
+# Vendored minified libraries must stay byte-for-byte as published (no line-ending conversion)
+*.min.js -text

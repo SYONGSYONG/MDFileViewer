@@ -2,8 +2,11 @@ using System.Text.RegularExpressions;
 using Markdig;
 using Markdig.Extensions.AutoIdentifiers;
 using Markdig.Extensions.Tables;
+using Markdig.Renderers;
+using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using MDFileViewer.Core.Models;
 
 namespace MDFileViewer.Core.Services;
 
@@ -50,13 +53,130 @@ public static class MarkdownRenderer
     /// 사용자 탐색(IsUserInitiated=true)으로 알려 표시 단계에서 막을 수 없기 때문이다(2026-11-17 확인, 02 §6.4).
     /// 지우지 않고 `&lt;`만 바꾸므로 조각이 다시 이어져 새 태그가 생기지 않는다.
     /// </summary>
+    /// <remarks>
+    /// 코드 블록은 이미 색을 입혀 기억해 둔 것만 색을 입혀 낸다(사전 조회뿐이라 표시를 늦추지 않는다, 02 §17.13).
+    /// 나머지는 문서를 보여 준 뒤 <see cref="RenderHighlightedBody"/>가 입힌다.
+    /// </remarks>
     public static string RenderBody(string markdown)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         var document = Markdown.Parse(markdown, Pipeline);
+        return ToBodyHtml(document, CodeHighlighter.TryGetCached);
+    }
+
+    /// <summary>
+    /// 코드 블록에 구문 색상을 입힌 본문 HTML을 만든다 (01 F-22, 02 §17.13). 토큰화가 느리므로 문서를 보여 준 뒤 UI 스레드 밖에서 부른다.
+    /// </summary>
+    /// <param name="onBlockFailure">블록 하나에 색을 입히다 실패했다. 그 블록만 색 없이 두고 나머지는 계속 입힌다.</param>
+    /// <returns>
+    /// 색을 입힌 블록이 하나도 없으면 <c>null</c>. 있으면 본문 전체 — 화면의 본문(<see cref="RenderBody"/> 결과)과 같을 수 있으니
+    /// 부르는 쪽이 비교해 같으면 바꾸지 않는다. 그사이 다른 문서가 같은 블록을 기억에 넣었을 수 있어 "새로 입혔는가"로는 판단할 수 없다.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">코드 줄 사이에서 취소를 알아챘다.</exception>
+    public static string? RenderHighlightedBody(string markdown, CancellationToken cancellationToken, Action<Exception>? onBlockFailure = null) =>
+        RenderHighlightedBody(markdown, cancellationToken, onBlockFailure, CodeHighlighter.Highlight);
+
+    /// <param name="highlightBlock">블록 하나에 색을 입힌다. 테스트가 실패하는 것으로 바꾼다.</param>
+    internal static string? RenderHighlightedBody(
+        string markdown,
+        CancellationToken cancellationToken,
+        Action<Exception>? onBlockFailure,
+        Func<string, string, CancellationToken, string?> highlightBlock)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+        cancellationToken.ThrowIfCancellationRequested();
+        var document = Markdown.Parse(markdown, Pipeline);
+
+        // 언어를 적은 블록이 없는 문서(대부분의 글)는 다시 렌더링하지 않는다
+        if (!document.Descendants<FencedCodeBlock>().Any(block => !string.IsNullOrEmpty(block.Info)))
+        {
+            return null;
+        }
+
+        var hasHighlighted = false;
+        var html = ToBodyHtml(document, (language, code) =>
+        {
+            string? highlighted;
+            try
+            {
+                highlighted = highlightBlock(language, code, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // 문법 하나가 깨졌다고 문서의 다른 블록까지 색을 잃지 않게 한다
+                onBlockFailure?.Invoke(exception);
+                highlighted = null;
+            }
+
+            hasHighlighted |= highlighted is not null;
+            return highlighted;
+        });
+        return hasHighlighted ? html : null;
+    }
+
+    private static string ToBodyHtml(MarkdownDocument document, Func<string, string, string?> highlightCode)
+    {
         KeepShortHyphenatedWordsInTableCells(document);
-        var html = document.ToHtml(Pipeline);
-        return RawMetaTagStart.Replace(html, EscapedTagStart);
+
+        // Markdig의 `ToHtml`과 같은 일을 하되 코드 블록 렌더러만 바꿔 끼운다. 줄 끝은 `ToHtml`처럼 `\n`으로 맞춘다(기본값은 OS 줄 끝).
+        using var writer = new StringWriter { NewLine = "\n" };
+        var renderer = new HtmlRenderer(writer);
+        Pipeline.Setup(renderer);
+        if (!renderer.ObjectRenderers.Replace<CodeBlockRenderer>(new HighlightingCodeBlockRenderer(highlightCode)))
+        {
+            throw new InvalidOperationException("Markdig 코드 블록 렌더러를 찾지 못했습니다.");
+        }
+
+        renderer.Render(document);
+        writer.Flush();
+        return RawMetaTagStart.Replace(writer.ToString(), EscapedTagStart);
+    }
+
+    /// <summary>목차용 제목 목록 (01 F-21, 02 §17.12).</summary>
+    public static IReadOnlyList<OutlineHeading> ExtractHeadings(string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+
+        // 렌더링과 같은 파이프라인으로 파싱해야 자동 id(GitHub 방식, 같은 제목의 -1 접미사)가 렌더 결과와 같다
+        var document = Markdown.Parse(markdown, Pipeline);
+        var headings = new List<OutlineHeading>();
+        foreach (var heading in document.Descendants<HeadingBlock>())
+        {
+            if (heading.TryGetAttributes()?.Id is { Length: > 0 } id)
+            {
+                headings.Add(new OutlineHeading(heading.Level, PlainText(heading.Inline), id));
+            }
+        }
+
+        return headings;
+    }
+
+    // 강조 기호·링크 주소를 빼고 화면에 보이는 글자만 잇는다
+    private static string PlainText(ContainerInline? inline)
+    {
+        if (inline is null)
+        {
+            return string.Empty;
+        }
+
+        var text = new System.Text.StringBuilder();
+        foreach (var item in inline.Descendants())
+        {
+            switch (item)
+            {
+                case LiteralInline literal:
+                    text.Append(literal.Content.ToString());
+                    break;
+                case CodeInline code:
+                    text.Append(code.Content);
+                    break;
+                case LineBreakInline:
+                    text.Append(' ');
+                    break;
+            }
+        }
+
+        return text.ToString().Trim();
     }
 
     // 브라우저는 하이픈 뒤에서 줄을 바꿀 수 있어, 표 폭이 모자라면 "0-1"·"2026-11-17"만 든 열이 "0-" 폭까지 줄었다(2026-11-18 사용자 지적).

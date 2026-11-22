@@ -20,6 +20,8 @@
 | 패키지 | 버전 | 사용 프로젝트 | 용도 | 상태 |
 |--------|------|---------------|------|------|
 | `Markdig` | 1.6.0 | Core | Markdown → HTML | ✅ 승인 (2026-11-17) |
+| `TextMateSharp` | 2.0.5 | Core | 코드 블록 구문 색상 — TextMate 문법 토큰화 (§17.13) | ✅ 승인 (2026-11-22) |
+| `TextMateSharp.Grammars` | 2.0.5 | Core | 위 토큰화에 쓰는 문법 64개 (VS Code와 같은 문법) | ✅ 승인 (2026-11-22) |
 | `Microsoft.Web.WebView2` | 1.0.4314.35 | App | 문서 표시 | ✅ 승인 (2026-11-17) |
 | `AvalonEdit` | 6.3.1.120 | App | 편집기, 구문 강조, 찾기 패널 | ✅ 승인 (2026-11-17) |
 | `xunit` | 2.9.3 | Core.Tests, E2ETests | 단위·통합·E2E 테스트 | ✅ 승인 (2026-11-17) |
@@ -27,6 +29,18 @@
 | `Microsoft.NET.Test.Sdk` | 18.12.0 | Core.Tests, E2ETests | `dotnet test` 실행 | ✅ 승인 (2026-11-17) |
 | `coverlet.collector` | 10.1.1 | Core.Tests | 커버리지 수집 (80% 확인) | ✅ 승인 (2026-11-17) |
 | `FlaUI.UIA3` | 5.0.0 | E2ETests | UI 자동화 E2E | ✅ 승인 (2026-11-17) |
+
+**내장 스크립트 라이브러리 (NuGet이 아니라 파일로 넣는다)**
+
+| 라이브러리 | 버전 | 넣는 곳 | 용도 | 상태 |
+|------------|------|---------|------|------|
+| `mermaid` | 11.17.2 | Core `Resources/mermaid.min.js` (npm 패키지의 `dist/mermaid.min.js` 그대로, 3,572,661바이트) | 문서의 Mermaid 다이어그램 그리기 (§17.16) | ✅ 승인 (2026-11-22) |
+
+- 12.x를 쓰지 않는 이유: 12.3.0의 단일 파일에는 `elkjs`(EPL-2.0 OR GPL-3.0)가 묶여 있다. 11.17.2의 단일 파일에는 ELK가 없고,
+  묶인 구성 요소는 MIT·ISC·BSD-3-Clause·Apache-2.0(DOMPurify, MPL-2.0과 택일)뿐이다(§11 PoC-9, §15.2).
+- 버전을 올릴 때는 `AppConstants.DiagramLibraryVersion`, 이 표, §15.2 표, `THIRD-PARTY-NOTICES.txt`를 함께 고치고, 묶인 구성 요소의
+  라이선스를 다시 확인한다. 파일이 선언한 버전과 고지 파일의 표기는 `ViewerTemplateTests`가 맞춰 본다.
+- 줄 끝: `.gitattributes`의 `*.min.js -text`로 받은 그대로(LF) 둔다 — 줄 끝 변환이 3.6MB 파일을 통째로 바꾸지 않게 한다.
 
 - `xunit` 2.9.3은 `xunit` 패키지(v2 계열)의 최신판이다. xUnit v3는 별도 패키지(`xunit.v3`)라 승인 범위 밖이므로 쓰지 않는다.
 - E2E의 화면 캡처(`FlaUI.Core.Capturing.Capture`)는 FlaUI가 의존하는 `System.Drawing.Common`의 `Bitmap`을 돌려준다. 패키지를 새로 추가하지
@@ -44,7 +58,8 @@
   바뀌었으므로, 나중에 쓰려면 라이선스를 먼저 확인한다.
 - 모킹 라이브러리(Moq, NSubstitute): 인터페이스가 작아서 테스트용 가짜 구현을 직접 만든다.
 - MVVM 라이브러리(CommunityToolkit.Mvvm), DI 컨테이너: 규모가 작아서 직접 구현과 수동 생성자 주입으로 충분하다.
-- 구문 색상(highlight.js), Mermaid, KaTeX: P2. 도입할 때 따로 승인을 받는다.
+- KaTeX(수식): P2. 도입할 때 따로 승인을 받는다. Mermaid는 2026-11-22에 도입했다(위 표). (구문 색상은 2026-11-22 `TextMateSharp`로 도입 — §17.13. highlight.js는 뷰어 스크립트가 필요해 쓰지 않는다.)
+- `TextMateSharp`가 끌어오는 `Onigwrap` 1.0.11(네이티브 정규식 엔진 Oniguruma 포함)은 직접 참조하지 않고 전이 의존성으로 받는다(2026-11-22 함께 승인).
 
 ## 3. 솔루션 구성
 
@@ -77,7 +92,8 @@ UI에 묶인 기능(대화상자, 셸 실행, WebView2)은 Core의 인터페이�
                                 │ 참조
 ┌─ MDFileViewer.Core ───────────┴─────────────────────────────────────────┐
 │ ViewModels   MainViewModel, FolderTreeViewModel(TreeNodeViewModel),       │
-│              DocumentViewModel, ZoomViewModel                             │
+│              DocumentViewModel, ZoomViewModel, FindViewModel,             │
+│              OutlineViewModel                                             │
 │ Services     FolderTreeService, TextFileCodec, MarkdownPath,              │
 │              MarkdownRenderer, DocumentUrlMapper, ViewerScriptBuilder,    │
 │              LinkClassifier, FileMetadataReader,                          │
@@ -235,15 +251,20 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
    - 미확인: 같은 URL의 이미지 파일을 바꾼 뒤 `F5`로 다시 읽을 때 WebView2가 캐시한 옛 이미지를 쓰는지는 확인하지 않았다.
 3. 본문은 `ExecuteScriptAsync`로 `#content` 요소의 내용을 바꿔 넣는다(HTML 문자열은 JSON으로 인코딩).
    편집 미리보기도 같은 방식이라 스크롤 위치가 유지된다.
-4. 문서 안 스크립트는 `IsScriptEnabled = false`와 CSP `script-src 'none'`으로 막는다. 이 상태에서도 `ExecuteScriptAsync`는
-   동작한다(본문 교체, 값 읽기, `scrollIntoView`, `scrollTo`). 템플릿의 인라인 `<script>`, 본문에 넣은 `<script>`,
-   `onerror` 속성은 모두 실행되지 않았고, 앱 호스트의 CSS는 CSP 아래에서도 적용되었다 (PoC-1).
+4. 문서 안 스크립트는 CSP `script-src https://appassets.example`로 막는다 — 앱 폴더의 스크립트 파일만 실행되고, 인라인 `<script>`·
+   이벤트 속성(`onerror` 등)·`javascript:` 주소·다른 호스트(문서 폴더 `docroot.example` 포함)의 스크립트는 실행되지 않는다(PoC-9, §6.5).
+   `innerHTML`로 넣은 `<script>`는 CSP와 무관하게 실행되지 않는다(HTML 명세). `ExecuteScriptAsync`는 CSP의 영향을 받지 않는다.
+   - **2026-11-22 변경 (Mermaid, §17.16):** 그전에는 `IsScriptEnabled = false`와 `script-src 'none'`이었다(PoC-1). 스크립트를 끈 페이지에서는
+     타이머·프레임·`MutationObserver` 콜백이 돌지 않아 Mermaid를 쓸 수 없어서(PoC-9), 아래 "안 B"의 스크립트 허용 부분만 받아들였다.
+     호스트와의 통로(웹 메시지·호스트 개체)는 여전히 닫아 둔다.
 
 **Core 구성 (Phase 3):**
 
 | 구성 요소 | 역할 |
 |-----------|------|
-| `Resources/viewer.html` | 템플릿. CSP 메타, `<base id="docbase" href="https://docroot.example/">`, `<main id="content">`, 절대 URL로 `viewer.css` 참조. 스크립트 없음 |
+| `Resources/viewer.html` | 템플릿. CSP 메타, `<base id="docbase" href="https://docroot.example/">`, `<main id="content">`, 절대 URL로 `viewer.css`·`viewer.js` 참조. 인라인 스크립트 없음 |
+| `Resources/viewer.js` | 뷰어의 앱 스크립트 — Mermaid 블록을 그림으로 바꾼다(§17.16). `window.mdfv.renderDiagrams()` 하나만 내놓는다 |
+| `Resources/mermaid.min.js` | 내장 Mermaid 11.17.2 (§2). `viewer.js`가 그림이 있을 때만 읽는다 |
 | `Resources/viewer.css` | 문서 스타일, `data-theme`별 색 토큰(03 §4·§6) |
 | `DocumentUrlMapper` | 매핑할 루트(`C:\` 또는 `\\server\share\`), 문서 경로 → 문서 URL(경로 조각마다 퍼센트 인코딩), 문서 URL → 로컬 경로(루트 밖·인코딩된 구분자·드라이브 문자 거부) |
 | `ViewerScriptBuilder` | `ExecuteScriptAsync`용 스크립트: 문서 표시(`<base>` → 본문 → 맨 위로), 본문만 교체, 앵커 스크롤, 테마. 값은 JSON 문자열로 넣는다. `document.x` 대신 프로토타입 메서드를 `call`로 부른다(아래 DOM clobbering) |
@@ -258,7 +279,7 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 - `Resources/` 파일은 Core 출력 폴더로 복사되고(`CopyToOutputDirectory`), 참조하는 앱·테스트 출력 폴더의 `Resources\`에도 같이 복사된다(2026-11-17 확인).
 - 처음 설계의 `HtmlPageBuilder`는 안 A에서 HTML을 조립할 일이 없어(템플릿은 고정 파일) `DocumentUrlMapper`와 `ViewerScriptBuilder`로 나눴다.
 
-**안 B (보류 — PoC-1이 통과해 쓰지 않는다):** `IsScriptEnabled = true`로 두고, CSP `script-src https://appassets.example`(인라인 금지)로
+**안 B (스크립트 허용 부분만 2026-11-22에 채택 — 위 4. 웹 메시지 통로는 쓰지 않는다):** `IsScriptEnabled = true`로 두고, CSP `script-src https://appassets.example`(인라인 금지)로
 템플릿의 앱 스크립트만 허용한다. `innerHTML`로 넣은 `<script>`는 실행되지 않고, 인라인 이벤트 속성(`onerror` 등)은 CSP가 막는다.
 호스트와는 `PostWebMessageAsString`/`WebMessageReceived`로 주고받는다.
 
@@ -270,7 +291,7 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 | 설정 | 값 | 이유 |
 |------|----|------|
 | 사용자 데이터 폴더 | `%LOCALAPPDATA%\MDFileViewer\WebView2` | exe 폴더에 쓰기 권한이 없는 위치(예: Program Files)에서도 동작하게 한다 |
-| `IsScriptEnabled` | `false` (안 A) | 문서 안 스크립트 차단 |
+| `IsScriptEnabled` | `true` (2026-11-22, 그전에는 `false`) | 앱 스크립트 `viewer.js`와 Mermaid를 실행한다(§17.16). 문서 안 스크립트는 CSP가 막는다(§6.5) |
 | `AreDefaultScriptDialogsEnabled` | `false` | `alert` 등 대화상자 차단 |
 | `IsWebMessageEnabled` | `false` | 쓰지 않는 통로는 닫는다 (안 A 확정) |
 | `AreBrowserAcceleratorKeysEnabled` | `false` | `F5`·`Ctrl+R` 새로고침으로 템플릿이 다시 로드되어 본문이 사라지는 것을 막는다. 인쇄 등 브라우저 기능도 끈다. 이 설정에서는 `Ctrl+=`·`Ctrl+-`·`Ctrl+0`도 WebView2가 처리하지 않으므로, 앱이 줌 단축키를 직접 처리해 01 F-06의 단계를 그대로 쓴다 (PoC-3) |
@@ -280,7 +301,7 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
 | `AreDevToolsEnabled` | Debug 빌드만 `true` | |
 | 자동 완성·비밀번호 저장 | `false` | 필요 없는 기능 |
 | `AreHostObjectsAllowed` | `false` | 쓰지 않는 통로는 닫는다 |
-| `AllowExternalDrop` | `false` | 뷰어 위에 놓은 파일을 WebView2가 열지 않고 창이 받게 한다 (§17.10, PoC-7) |
+| `AllowExternalDrop` | `true` | 꺼 두면 뷰어 위의 드롭이 창으로도 오지 않고 사라진다. 켜 두고, WebView2가 보내는 `file:` 새 창 요청을 막아 드롭으로 넘긴다 (§17.10, PoC-7) |
 
 - **컨텍스트 메뉴 결과 (2026-11-17 실행 확인):** 항목 이름은 영어 레이블의 lower camel case다(SDK 문서 `CoreWebView2ContextMenuItem.Name`).
   글자를 선택하고 우클릭하면 "복사 Ctrl+C"만 나오고, 선택 없이 우클릭하면 메뉴가 뜨지 않는다. Chromium은 문서 글자 위에서
@@ -327,21 +348,26 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
   (`a.md.` → `a.md`). 둘 다 루트를 벗어나지 않는다(2026-11-17 확인). `DocumentUrlMapper.TryGetLocalPath`는 예외를 내지 않는다.
 - `mailto:` 링크의 매개변수(`subject`·`body`·`cc` 등)는 메일 앱이 그대로 받는다. 사용자가 링크를 누를 때만 열리므로 걸러 내지 않는다.
 
-### 6.5 보안 (템플릿 CSP 초안)
+### 6.5 보안 (템플릿 CSP)
 
 ```
 default-src 'none';
 img-src https: data:;
 style-src https://appassets.example 'unsafe-inline';
 font-src https://appassets.example;
-script-src 'none';
+script-src https://appassets.example;
 frame-src 'none'; object-src 'none'; form-action 'none';
 base-uri https://docroot.example;
 ```
 
 - 문서 안 인라인 스타일(`<span style>`)을 위해 `style-src`에 `'unsafe-inline'`을 둔다.
 - `http://` 이미지는 페이지가 https라서 혼합 콘텐츠 정책에 따라 보이지 않을 수 있다.
-- `script-src 'none'`을 넣어도 `ExecuteScriptAsync`는 동작한다 (PoC-1). 위 CSP로 PoC를 실행해 확인했다.
+- **`script-src https://appassets.example` (2026-11-22, 그전에는 `'none'`):** 앱 폴더의 스크립트 파일만 실행한다. `'unsafe-inline'`·`'unsafe-eval'`을
+  두지 않으므로 문서의 인라인 `<script>`, 이벤트 속성, `javascript:` 주소가 막힌다. 문서 폴더(`docroot.example`)는 허용 목록에 없어
+  문서 옆에 놓인 `.js` 파일도 실행되지 않는다. 이 정책은 `ViewerTemplateTests`가 글자 그대로 고정한다 — 바꾸면 테스트가 실패한다.
+- **앱 폴더에 두는 스크립트는 `viewer.js`와 `mermaid.min.js` 둘뿐이다.** 이 폴더의 `.js`는 문서가 실행 대상으로 삼을 수 있다고 보고,
+  새 스크립트를 넣을 때는 "문서가 이 파일을 불러 실행시키면 무슨 일이 생기는가"를 먼저 따진다.
+- `ExecuteScriptAsync`는 CSP와 무관하게 동작한다 (PoC-1·PoC-9). 위 CSP로 실행해 확인했다(§17.16 확인 결과).
 - `IShellLauncher.OpenExternal`은 `http`, `https`, `mailto` 스킴만 연다. 로컬 파일은 실행하지 않고 탐색기에서 선택만 한다.
   허용 규칙은 Core `ExternalLaunchPolicy` 한곳에 두고 `LinkClassifier`(분류)와 App `ShellLauncher`(실행 직전 마지막 방어선)가 같이 쓴다.
   탐색기 인수 `/select,"경로"`도 여기서 만들며, 상대 경로와 따옴표가 든 경로(인수를 끊고 다른 옵션을 끼워 넣을 수 있음)는 거부한다.
@@ -464,6 +490,8 @@ MDFileViewer.exe --unregister
 - md가 아닌 파일 경로를 받으면 실패로 끝내지 않고 그 파일이 있는 폴더를 연다(`OpenFolder`). 탐색기 메뉴는 md 파일에만 붙으므로 손으로 넘긴 경우뿐이다.
 - 해석은 경로 존재 확인(`Directory.Exists`·`File.Exists`)을 하므로, 끊긴 UNC 경로에서는 오래 걸릴 수 있다. 앱은 UI 스레드 밖에서 해석한다(Phase 4).
 - `--register`/`--unregister`는 메인 창 없이 처리하고, 결과를 메시지 상자로 보여 준 뒤 종료 코드(0 성공, 1 실패)로 끝낸다.
+- 이미 열린 창이 있고 설정이 "창 하나로 열기"면, 받은 인수를 그대로 그 창에 넘기고 종료 코드 0으로 끝낸다(§17.14). 넘겨받은 쪽이 같은
+  해석기로 푼다 — 상대 경로는 넘긴 쪽의 작업 폴더가 기준이다.
 
 ## 10. 설정 파일
 
@@ -473,18 +501,23 @@ MDFileViewer.exe --unregister
 {
   "version": 1,
   "window": { "left": 120, "top": 80, "width": 1440, "height": 900, "isMaximized": false },
-  "layout": { "treePanelWidth": 320, "editorSplitRatio": 0.5 },
+  "layout": { "treePanelWidth": 320, "editorSplitRatio": 0.5, "isOutlineVisible": false },
   "theme": "System",
   "lastFolder": "D:\\Docs",
   "editor": { "showLineNumbers": true, "wordWrap": true },
   "favorites": ["D:\\Docs", "C:\\Notes"],
   "tabs": { "files": [{ "path": "D:\\Docs\\a.md", "isPreview": false }], "activeIndex": 0 },
-  "declinedShellReregistrationExe": null
+  "declinedShellReregistrationExe": null,
+  "openInSingleWindow": true
 }
 ```
 
 - `theme`: `System` | `Light` | `Dark`.
 - `declinedShellReregistrationExe`: 탐색기 메뉴 재등록 제안을 `[나중에]`로 거절한 exe 경로. 이 exe로 시작하면 다시 묻지 않는다(01 F-13, 2026-11-18).
+- `openInSingleWindow`: 이미 열린 창에서 열지(기본 `true`), 실행할 때마다 새 창을 열지(01 F-23, 2026-11-22). 메뉴에서 바꿀 때 바로 쓰고,
+  창을 닫을 때는 이 항목만 파일의 값을 다시 읽어 그대로 쓴다 — 다른 창이 바꾼 값을 시작할 때 읽은 값으로 되돌리지 않게. 이때는
+  `ISettingsStore.TryLoad()`로 읽는다: 손상된 파일을 옮기지 않고, 읽지 못하면 `null`을 돌려주어 그 창이 가진 값을 그대로 쓴다
+  (`Load()`는 읽지 못하면 기본값을 돌려주므로, 사용자가 끈 값을 기본값 `true`로 덮어쓸 수 있었다 — 리뷰 2026-11-22).
 - 알 수 없는 필드는 무시하고, 없는 필드는 기본값을 쓴다. `version`은 형식이 바뀔 때 이전 형식을 옮기는 데 쓴다.
 - 항목 하나의 형식이 틀리면(모르는 테마 이름, 객체 자리에 문자열 등) 그 항목만 기본값을 쓴다(2026-11-18).
 - 파일 자체가 JSON 객체가 아니면 → 기본값으로 시작하고 원본을 `settings.json.bak`으로 옮긴다.
@@ -505,7 +538,9 @@ MDFileViewer.exe --unregister
 | PoC-4 | .NET 10에서 CP949 디코딩에 추가 패키지가 필요한가 | 필요하면 승인 요청, 거절되면 CP949 미지원 + 안내 | ✅ 통과 — 추가 패키지 없이 `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`만으로 동작. 엄격한 UTF-8 디코더는 CP949 바이트에서 `DecoderFallbackException`을 낸다 (`TextEncodingPlatformTests` → Phase 2에서 `TextFileCodecTests`로 흡수) |
 | PoC-5 | 2MB 넘는 문서를 `ExecuteScriptAsync`로 넣을 수 있는가 | `WebResourceRequested` + `Navigate` (§6.2) | ✅ 통과 — ASCII 3MB 154ms, 한글 150만 자 372ms. 대안 불필요 |
 | PoC-6 | `<base>`가 있을 때 `#앵커` 클릭이 `NavigationStarting`으로 들어오는가 | 안 B에서 템플릿 스크립트로 앵커 처리 | ✅ 통과 — `#far`가 `<base href>#far`로 `NavigationStarting`에 들어오고, 취소하면 본문이 유지됨. `<base href>`를 문서 파일 URL로 두기로 결정(§6.2·§6.4). `_blank`는 `NewWindowRequested`만, `javascript:`는 이벤트 없음 |
-| PoC-7 (2026-11-18) | `AllowExternalDrop=false`일 때 뷰어 위에 놓은 파일이 창의 WPF `PreviewDrop`으로 오는가 | `NavigationStarting`의 `file:` 이동을 드롭으로 넘김 (§17.10) | ⏳ 실행 확인 전 — 앱 실행이 필요해 사용자 확인 뒤 진행 |
+| PoC-7 (2026-11-18) | `AllowExternalDrop=false`일 때 뷰어 위에 놓은 파일이 창의 WPF `PreviewDrop`으로 오는가 | `NavigationStarting`의 `file:` 이동을 드롭으로 넘김 (§17.10) | ❌ 오지 않는다 → 대안 채택 (2026-11-22, 시험 앱이 창 안에서 OLE 끌기를 시작하고 마우스를 WebView2 위로 옮겨 놓음, Runtime 157.0.4341.60). `AllowExternalDrop=false`: 끌기 결과가 `None`이고 창의 `PreviewDrop`도, WebView2 이벤트도 없다(사용자가 본 "뷰어 위에서는 안 열림"과 같다). `AllowExternalDrop=true`: 놓은 항목마다 `NewWindowRequested`가 `file:///…` 주소로 놓은 순서대로 온다(`IsUserInitiated=true`, 약 1ms 간격) — md 파일 1개, 2개, 폴더, `.txt`, 섞은 3개 모두. 공백은 `%20`으로 온다. `NavigationStarting`은 오지 않았다. 처음 대안에 적은 `NavigationStarting`이 아니라 `NewWindowRequested`를 드롭으로 넘긴다(§17.10) |
+| PoC-8 (2026-11-22) | `CoreWebView2.Find`가 지금 설정(`IsScriptEnabled=false`, `AreBrowserAcceleratorKeysEnabled=false`, CSP `script-src 'none'`)에서 동작하는가, 기본 찾기 창 없이(`SuppressDefaultFindDialog`) 개수·위치를 받을 수 있는가 | 본문에 `<mark>`를 넣는 방식(렌더 결과 가공) | ✅ 통과 (시험 앱, SDK 1.0.4314.35, Runtime 157.0.4341.60) — `StartAsync` 뒤 `MatchCount`·`ActiveMatchIndex`(1부터)와 두 변경 이벤트가 온다. `FindNext`·`FindPrevious`는 끝에서 돌고 그곳으로 스크롤한다. 모든 곳 강조(노랑)·현재 위치(주황)·스크롤바 표시가 밝게·어둡게 바탕 모두에서 보인다(캡처 확인). 한글 찾기, 대소문자 구분 옵션 동작. 접힌 `<details>` 안도 센다. 포커스는 WPF 입력란에 그대로 남는다. 120만 자·2만 곳 문서에서 `StartAsync` 1.6초. **주의할 동작 4가지:** (1) 빈 찾을 글자로 `StartAsync`를 부르면(`SuppressDefaultFindDialog=true`) 끝나지 않는다(80초 넘게 대기 — 시간 제한으로 끊김) → 빈 글자는 부르지 않고 `Stop`한다. (2) 찾는 중에 본문(`innerHTML`)을 바꿔도 개수가 옛 값으로 남고 이벤트가 없다(다음 `FindNext`에서야 바뀜) → 본문을 바꾼 뒤 다시 시작한다. (3) `Stop` 뒤에도 `MatchCount`·`ActiveMatchIndex`는 마지막 값을 그대로 돌려주고 이벤트가 없다 → 앱이 자기 상태를 지운다. (4) `Stop` 뒤(세션 없음) `FindNext`는 SDK 문서("조용히 실패")와 달리 `InvalidOperationException`을 던졌다 → 세션이 있을 때만 부르고 예외를 잡는다. 찾은 곳이 없으면 개수 0·위치 0. |
+| PoC-9 (2026-11-22) | 뷰어에서 Mermaid로 ```` ```mermaid ```` 블록을 그릴 수 있는가 — ① 지금 설정(`IsScriptEnabled=false`, CSP `script-src 'none'`)을 둔 채 앱이 `ExecuteScriptAsync`로 라이브러리를 넣는 방식, ② 스크립트를 켜고 CSP로 앱 폴더(`appassets.example`)의 스크립트만 허용하는 방식 | 숨긴 별도 WebView에서 SVG로 바꿔 넣기 | ①❌ ②✅ → **②로 채택, `mermaid` 11.17.2 (§17.16, 2026-11-22 사용자 승인).** 시험 앱, Runtime 157.0.4341.60, 실제 `viewer.html`·`viewer.css` 사용. **① 안 된다:** 라이브러리는 들어가지만(0.26초, `typeof mermaid`가 `object`) 그리지 못한다. 스크립트를 끈 페이지에서는 앱이 넣은 스크립트가 예약한 콜백 가운데 프라미스(마이크로태스크)만 실행되고 `setTimeout`·`requestAnimationFrame`·`MutationObserver` 콜백은 실행되지 않는다(직접 확인). Mermaid는 먼저 DOMPurify의 Trusted Types 콜백에서 "callback is no longer runnable"로 실패했고, `trustedTypes`를 가리니 끝나지 않고 멈췄다. **② 된다:** 상태 다이어그램(중첩 상태 포함)·순서도(한글)·시퀀스 다이어그램이 밝게·어둡게(`theme: 'dark'`) 모두 그려졌다(화면 확인). 문서 본문의 `<script>`·`onerror`, 다이어그램 글자에 넣은 `<img onerror>`·`<script>`·`click … "javascript:"`는 실행되지 않았다(`securityLevel: 'strict'`). 문법이 틀린 블록은 예외로 알 수 있어 원문을 그대로 둘 수 있다 — 다만 Mermaid가 `body` 끝에 남기는 오류용 요소는 지워야 한다. 인라인 `<script>`는 템플릿에 써도 CSP가 막으므로 앱 스크립트는 파일로만 둔다. **버전·라이선스:** 처음 시험한 12.3.0(단일 파일 5.5MB)은 `elkjs`(EPL-2.0 OR GPL-3.0)가 묶여 있었다. 모듈 빌드에서 ELK 조각만 빼면 상태 다이어그램·순서도가 "Failed to fetch dynamically imported module"로 실패했다(12.x는 기본 배치에 ELK 조각을 읽는다). 11.17.2(단일 파일 3.6MB)에는 ELK가 없고 같은 그림이 모두 그려져 이 판으로 정했다. **시간(11.17.2, 실제 `viewer.js`):** 그림 3개 + 틀린 블록 1개 문서가 라이브러리 읽기를 포함해 0.26초, 같은 본문을 다시 넣으면 기억한 그림으로 같은 호출 안에서(5ms). 12.3.0으로 잰 값: 첫 그림 0.28초, 뒤의 그림 0.02~0.12초, 상태 다이어그램 20개 문서 1.4초. **확인하지 않은 것:** 찾기·줌과의 관계(실제 앱), 대안(숨긴 WebView)의 구현 (05 12-7) |
 
 ## 12. 상수
 
@@ -537,7 +572,23 @@ MDFileViewer.exe --unregister
 | `MinEditorSplitRatio` / `MaxEditorSplitRatio` | 0.2 / 0.8 | 편집기:미리보기 비율 범위 — 밖이면 기본값 (§17.8) |
 | `SettingsFileName` | `settings.json` | 설정 파일 (§10) |
 | `HelpFileName` | `help.md` | 도움말 문서 (§17.4) |
+| `ReleaseNotesFileName` | `release-notes.md` | 릴리즈 노트 문서 (§17.15) |
+| `InstanceMutexName` | `MDFileViewer.Instance.<AppId>` | 앱이 켜져 있음을 설치·제거 프로그램에 알리는 뮤텍스 이름 (§15.1) |
+| `PrimaryInstanceMutexName` | `MDFileViewer.Primary.<AppId>` | 열기 요청을 받는 창(먼저 뜬 앱)이 쥐는 뮤텍스 이름 (§17.14) |
+| `OpenRequestPipeName` | `MDFileViewer.Open.<AppId>` | 열기 요청 파이프 이름의 앞부분. 뒤에 `.<Windows 세션 번호>`를 붙인다 (§17.14) |
+| `OpenRequestTimeout` | 5초 | 열기 요청을 넘기고 답을 받기까지 기다리는 시간. 넘으면 자기 창을 연다 (§17.14) |
+| `MaxOpenRequestBytes` | 128KB | 열기 요청 한 줄의 최대 크기. Windows 명령줄 길이(약 3만 2천 자)를 UTF-8로 담고 남는다 (§17.14) |
 | `MaxDroppedFiles` | 20 | 한 번에 끌어다 놓아 여는 md 파일 수 (§17.10, 01 F-19) |
+| `DefaultOutlinePanelWidth` / `MinOutlinePanelWidth` | 260 / 160 | 목차 패널 너비 (§17.12, 03 §2.6) |
+| `FindDebounce` | 0.2초 | 찾기 입력이 멈춘 뒤 찾기까지 기다리는 시간 (§17.11, 01 F-20) |
+| `MaxHighlightedBlockLength` | 50,000 | 구문 색상을 입히는 코드 블록의 최대 글자 수 — 넘으면 색 없이 표시 (§17.13, 01 F-22) |
+| `HighlightLineTimeout` | 0.2초 | 코드 한 줄 토큰화 시간 제한 (§17.13) |
+| `ViewerScriptFileName` | `viewer.js` | 뷰어 템플릿이 읽는 앱 스크립트 파일 (§17.16) |
+| `DiagramLibraryFileName` / `DiagramLibraryVersion` | `mermaid.min.js` / `11.17.2` | 내장 Mermaid 파일과 그 버전 — 고지 파일·파일 내용과 맞는지 테스트가 본다 (§2, §17.16) |
+| `HighlightCacheMaxLength` | 2,000,000 | 색 입힌 블록을 기억해 두는 코드 글자 수 합의 상한 — 넘으면 비운다 (§17.13) |
+
+뷰어 스크립트에만 쓰는 값은 `viewer.js` 머리에 이름 있는 상수로 둔다 — `CACHE_LIMIT`(200, 기억해 두는 그림 수. 넘으면 전부 비운다),
+`BLOCK_SELECTOR`(`pre > code.language-mermaid`), `DIAGRAM_CLASS`(`diagram`), `FAILED_ATTRIBUTE`(`data-diagram-failed`).
 
 WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로 둔다.
 
@@ -674,6 +725,7 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
   - 사용자 단위 설치(`PrivilegesRequired=lowest`, 기본 `%LOCALAPPDATA%\Programs\MDFileViewer`, UAC 없음). 설치 화면에서 전체 사용자 설치도 고를 수 있다.
   - 한국어 설치 화면, 시작 메뉴 바로 가기, 바탕 화면 바로 가기(선택), 설치 뒤 실행(선택), 제거 지원.
   - `AppId`는 업그레이드 식별자라 바꾸지 않는다.
+  - **실행 중 확인 (2026-11-22, 05 9-7):** `AppMutex=MDFileViewer.Instance.<AppId>` — 이 이름의 뮤텍스가 있으면 설치·제거 프로그램이 "앱을 모두 닫고 확인을 누르라"고 안내하고, 취소하면 끝낸다(Inno Setup 도움말 `AppMutex`). 앱은 메인 창을 띄우는 실행에서만 시작할 때 이 뮤텍스를 만들어 끝날 때까지 쥔다(`App._instanceMutex`, 이름은 `AppConstants.InstanceMutexName`). `--register`·`--unregister` 실행은 만들지 않는다 — 제거 프로그램이 부르는 `--unregister --silent`와 겹치지 않게. 이름이 같은지는 `InstallerScriptTests`가 확인한다. 이 확인이 없을 때는 앱을 켠 채 제거하면 잠긴 파일을 지우지 못해 "일부를 삭제할 수 없었다" 경고와 함께 설치 폴더가 남았다(사용자 보고). 포터블 exe나 개발 빌드가 켜져 있어도 같은 안내가 나온다(같은 뮤텍스). 조용한 제거(`/VERYSILENT`)에서 어떻게 되는지는 도움말에 없어 확인하지 않았다.
   - 제거해도 사용자 데이터(`%LOCALAPPDATA%\MDFileViewer` — 로그·WebView2 데이터)는 남긴다.
   - 탐색기 우클릭 메뉴 해제(`--unregister`)를 제거 단계에 넣는 것은 Phase 9(메뉴 등록 구현)에서 한다.
 - 측정(2026-11-17, 버전 0.1.0):
@@ -698,12 +750,19 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
   |-----------|------|----------|---------------------|
   | Markdig | 1.6.0 | BSD-2-Clause | Alexandre Mutel (nuspec `copyright`) |
   | AvalonEdit | 6.3.1.120 | MIT | 2000-2025 AlphaSierraPapa for the SharpDevelop Team (nuspec) |
+  | TextMateSharp · TextMateSharp.Grammars | 2.0.5 | MIT | 2021 Daniel Peñalba (저장소 `LICENSE.md`, nuspec `authors`) |
+  | Onigwrap (TextMateSharp의 전이 의존성) | 1.0.11 | MIT + 패키지 `THIRD-PARTY-NOTICES.TXT`(Oniguruma BSD-2-Clause 등) | 2024 Aikawa Yataro (nuspec) / Oniguruma 2002-2021 K.Kosako |
+  | mermaid (내장 `mermaid.min.js`) | 11.17.2 | MIT | 2014-2022 Knut Sveidqvist (패키지 `LICENSE`) |
+  | mermaid에 묶인 구성 요소 | (파일에 묶인 판) | MIT 18개(cytoscape, dagre-d3-es, dayjs, katex, marked, roughjs, stylis, uuid 등) · ISC(d3) · BSD-3-Clause(d3-sankey) · Apache-2.0(DOMPurify — MPL-2.0과 택일이라 Apache-2.0을 고름) | 구성 요소별 저작권 줄은 고지 파일에 적음 (각 npm 패키지의 `LICENSE`·`package.json`) |
   | Microsoft.Web.WebView2 (SDK) | 1.0.4314.35 | Microsoft BSD 계열 (패키지 `LICENSE.txt`) + 패키지 `NOTICE.txt` | Microsoft Corporation |
   | .NET 런타임 (`Microsoft.NETCore.App`) | 10.0.x | MIT (런타임 팩 `LICENSE.TXT`) + 자체 `THIRD-PARTY-NOTICES.TXT` | .NET Foundation and Contributors |
   | Windows Desktop 런타임 (WPF) | 10.0.x | MIT (런타임 팩 `LICENSE`) | .NET Foundation and Contributors |
 
   self-contained 배포라 .NET·WPF 런타임이 배포본에 들어간다. 테스트 전용 패키지(xUnit, FlaUI, coverlet 등)는 배포본에 들어가지 않아 넣지 않는다.
   WebView2 Runtime은 배포본에 넣지 않고 사용자 PC의 것을 쓴다(§13).
+- **mermaid 고지의 범위 (2026-11-22):** `mermaid.min.js`는 여러 라이브러리를 한 파일로 묶은 배포본이다. mermaid가 직접 쓰는 구성 요소는 이름·저장소·
+  저작권 줄과 라이선스 원문을 고지 파일에 적었다. 그 구성 요소들이 다시 쓰는 것(`d3-*` 모듈 등)은 원문을 옮기지 않고 저장소를 가리킨다 —
+  전부를 하나씩 확인하지는 않았다(알려진 한계). `fastdom`은 패키지에 라이선스 파일이 없어 `package.json`의 MIT 표기를 따랐다.
 - **고지 파일:** 레포 루트 `THIRD-PARTY-NOTICES.txt`에 위 구성 요소의 라이선스 원문을 모은다. .NET 런타임 자체의 제3자 고지(1,400여 줄)는 원문을 옮기지 않고
   출처(런타임 팩의 `THIRD-PARTY-NOTICES.TXT`, dotnet/runtime 저장소)를 적는다. 패키지 버전을 올리면 이 표와 고지 파일을 함께 확인한다.
 - **배포본에 넣는 방법:** 앱 프로젝트가 두 파일을 `LICENSE.txt`·`THIRD-PARTY-NOTICES.txt`로 출력·발행 폴더에 복사한다
@@ -870,10 +929,225 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - **창 (App `MainWindow`):** 창에 `AllowDrop`을 켜고 `PreviewDragOver`·`PreviewDrop`(터널링)에서 `DataFormats.FileDrop`일 때만
   처리하고 `Handled = true` — 편집기(AvalonEdit)가 파일 경로를 글자로 넣지 않게 한다. 파일이 아닌 끌기(편집기 안 글자 옮기기)는 건드리지 않는다.
   끄는 동안의 커서는 존재 확인 없이 정한다(파일 목록이면 복사, 아니면 놓을 수 없음) — 마우스가 움직일 때마다 디스크를 묻지 않는다.
-- **뷰어 영역 (PoC-7):** WebView2는 자체 창(HWND)으로 그려진다. 기본값(`AllowExternalDrop = true`)에서는 WebView2가 드롭을 직접 받으므로
-  창의 WPF 이벤트로 오지 않을 수 있고, 그 뒤 WebView2가 일으키는 이동을 §6.4가 어떻게 분류할지도 확인하지 않았다. 그래서
-  `AllowExternalDrop = false`로 WebView2가 드롭을 받지 않게 한다. 그때 창이 그 드롭을 받는지는 실행해서 확인한다(PoC-7, 확인 전).
-  창이 받지 못하면 대안은 `NavigationStarting`의 `file:` 이동을 드롭으로 넘기는 것이다.
+- **뷰어 영역 (PoC-7, 2026-11-22 고침):** WebView2는 자체 창(HWND)으로 그려져, 그 위의 드롭은 창의 WPF 이벤트로 오지 않는다. 처음에는
+  `AllowExternalDrop = false`로 두면 창이 받을 것으로 보았으나 PoC-7에서 아무 데도 오지 않았다(사용자 보고 결함 — 05 10-6).
+  그래서 `AllowExternalDrop = true`로 두고, WebView2가 놓은 항목마다 보내는 `NewWindowRequested`(`file:` 주소, `IsUserInitiated`)를 `WebViewHost`가 막아
+  Core `DroppedFileUrl.TryGetLocalPath`로 로컬 경로로 바꾼다. 항목마다 따로 오므로 `DropBatchDelay`(0.1초) 동안 모아 `IViewerHost.PathsDropped`로 한 번 알리고,
+  `MainViewModel`이 창 드롭과 같은 `OpenDroppedAsync`로 연다. 새 창은 만들지 않고 그 파일로 이동하지도 않는다.
+  - 끄는 동안 뷰어 위의 커서는 WebView2가 정한다(시험에서는 `.txt`도 "복사"였다). 열 수 없는 항목은 놓은 뒤 상태 표시줄로 알린다.
+  - 문서 안의 `file:` 링크(`target="_blank"`)가 같은 이벤트로 올 수 있는지는 확인하지 않았다. 온다면 드롭처럼 다뤄 md 파일은 탭으로 열고 폴더는 트리에서 고른다 —
+    파일을 실행하거나 탐색기를 열지는 않는다(md 링크·폴더 이동과 같은 수준). 그 밖의 `file:` 이동(`NavigationStarting`)은 지금처럼 막는다(§6.4).
+  - 도움말 창의 뷰어도 같은 컨트롤이라 드롭을 받지만 구독자가 없어 아무 일도 하지 않는다.
+- **놓은 순서 (2026-11-22 고침):** 첫 파일을 먼저 열어 활성 탭으로 만든 뒤 나머지를 거꾸로 그 오른쪽에 넣는다. 나머지를 먼저 넣던 처음 구현은 탭이 하나도 없을 때
+  첫 파일이 맨 뒤로 갔다(단위 테스트로 발견).
+
+### 17.11 뷰어 안 찾기 (01 F-20, 2026-11-22)
+
+WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 찾기 줄은 앱(WPF)이 그린다(사용자 결정). 동작 근거는 PoC-8(§11).
+
+- **`IViewerHost` 추가 멤버:** `Task StartFindAsync(string term, CancellationToken)`(처음부터 새로 찾음, `term`은 비어 있지 않음), `void FindNext()`, `void FindPrevious()`,
+  `void StopFind()`, `event EventHandler<FindMatchesChangedEventArgs> FindMatchesChanged`(`MatchCount`, `ActiveMatchIndex` — 1부터, 없으면 0).
+- **`FindViewModel` (Core, `MainViewModel.Find`):** `IsOpen`, `Term`, `StatusText`(`3/12`·"결과 없음"·빈 값), `HasNoMatches`, 명령 `OpenCommand`·`CloseCommand`·`NextCommand`·`PreviousCommand`,
+  이벤트 `FocusRequested`(입력란 포커스·전체 선택)·`Closed`(포커스를 문서로). `Term`이 바뀌면 `Debouncer`(`FindDebounce` 0.2초)로 찾는다. 빈 글자면 `StopFind`하고 상태를 지운다(PoC-8 주의 1).
+  `NextCommand`는 입력란의 글자가 마지막으로 찾은 글자와 다르면(디바운스 대기 중) 기다리지 않고 그 글자로 찾고, 같으면 `FindNext`. 닫을 때 `StopFind`하고 상태를 지운다(PoC-8 주의 3).
+  `OpenCommand`는 "문서가 보이고 편집 모드가 아닐 때"만 실행된다 — `MainViewModel`이 조건 함수를 주고, `Document.IsDocumentVisible`·`IsEditing`이 바뀌어 조건이 깨지면 `Close`한다.
+  찾기 시작 실패(시간 초과 등)는 로그로 남기고 상태를 지운다.
+- **`WebViewHost` (App, `WebViewHost.Find.cs`):** 찾는 글자를 기억한다(`_findTerm`). `StartFindAsync`는 표시 잠금(§6.2) 안에서 `Find.Stop()` → `Find.StartAsync(옵션)` —
+  옵션은 `SuppressDefaultFindDialog=true`, `ShouldHighlightAllMatches=true`, 대소문자·단어 구분 없음. 시작이 끝나면 결과를 한 번 알린다(개수가 그대로면 이벤트가 없을 수 있음).
+  **문서 표시·본문 교체(`ShowDocumentAsync`·`UpdateBodyAsync`) 뒤에 글자가 기억돼 있으면 같은 잠금 안에서 다시 시작한다**(PoC-8 주의 2) — 탭 전환·`F5`·자동 새로고침·프로세스 복구 뒤에도
+  개수가 새 내용 기준이 된다. `FindNext`·`FindPrevious`는 글자가 기억돼 있고 템플릿이 있을 때만 부르고 `InvalidOperationException`은 로그만 남긴다(PoC-8 주의 4).
+  컨트롤을 새로 만들 때마다(`InitializeCoreAsync`) 찾기 이벤트를 다시 건다. 죽은 컨트롤의 늦은 이벤트는 구독할 때의 세대 번호로 버린다 — 이벤트를 보낸 객체와 `core.Find`를 객체 비교하면 같은 객체가 아니라서 모든 이벤트가 버려졌다(2026-11-22 E2E로 발견). 시작 대기는 `ViewerResponseTimeout`을 쓴다. 기다리는 사이 `StopFind`가 왔으면 끝난 뒤 바로 `Stop`한다.
+- **창 (App `MainWindow.Find.cs`):** 찾기 줄은 탭 줄 아래 한 줄(03 §2.5) — WebView2(HwndHost) 위에는 WPF 요소를 겹칠 수 없어 문서 위에 띄우지 않고 줄을 끼운다.
+  `Ctrl+F`·`F3`·`Shift+F3`은 창 `InputBindings`(문서 영역 포커스에서도 WPF로 온다 — PoC-3), `Enter`·`Shift+Enter`·`Esc`는 입력란 `InputBindings`,
+  문서 영역 포커스의 `Esc`는 창 `OnPreviewKeyDown`에서 찾기 줄이 열려 있을 때만 처리한다. 편집 모드에서 편집기에 포커스가 있으면 `Ctrl+F`는 AvalonEdit 찾기 패널이 먼저 받는다
+  (명령이 실행 불가라 창 바인딩은 넘어간다).
+- **찾기 강조 색:** Chromium 기본 색(노랑·주황)을 그대로 쓴다 — 페이지 CSS로 바꿀 수 없고, 두 테마 바탕에서 모두 보인다(PoC-8 캡처).
+- **테스트:** `FindViewModelTests`(가짜 뷰어·가짜 시간), `MainViewModel` 연결(편집 모드 진입·문서 숨김 때 닫힘), E2E 1개(`Ctrl+F` → 입력 → `1/N` → `Enter` → `2/N` → 다른 문서 → 개수 바뀜 → `Esc`).
+  `WebViewHost`의 다시 시작은 App 계층이라 E2E로만 확인한다.
+
+### 17.12 목차 패널 (01 F-21, 2026-11-22)
+
+- **제목 추출 (Core `MarkdownRenderer.ExtractHeadings`):** 렌더링과 **같은 Markdig 파이프라인**으로 파싱해 `HeadingBlock`마다 `OutlineHeading(Level, Title, AnchorId)`를 만든다.
+  앵커 id는 자동 id 확장이 파싱 때 붙인 값(`GetAttributes().Id`)을 그대로 쓴다 — 렌더 결과의 `<h2 id>`와 같아야 이동이 맞는다(한글 제목, 같은 제목의 `-1` 접미사 포함. 단위 테스트로 렌더 결과와 대조한다).
+  제목 글자는 인라인의 글자·코드만 이어 붙인다(강조 기호·링크 주소 제외). id가 없는 제목(빈 제목)은 뺀다. 도움말 창은 렌더 결과 HTML에서 `<h2>`만 정규식으로 읽지만(§17.4),
+  여기는 모든 단계와 단계 값이 필요해 파싱 결과를 쓴다.
+- **`OutlineViewModel` (Core, `MainViewModel.Outline`):** `IsPanelOpen`(사용자가 여닫은 상태 — 설정에 저장), `IsVisible`(= 열림 && 문서가 보임 && 편집 모드 아님),
+  `Headings`, `IsEmpty`(보이는데 제목이 없음), `ToggleCommand`, `GoTo(heading)`. `DocumentViewModel`의 `Content`·`IsDocumentVisible`·`IsEditing` 변경을 듣고,
+  패널이 보일 때만 `Content.Text`에서 제목을 뽑는다(UI 스레드 밖, 요청 번호로 늦은 결과는 버림). 패널이 숨어 있으면 목록을 비워 두고 다시 보일 때 뽑는다.
+  이동은 `DocumentViewModel.ScrollToAnchorAsync`(링크의 문서 내 앵커와 같은 길).
+- **설정:** `layout.isOutlineVisible`(bool, 기본 `false`, §10). `JsonSettingsStore.Sanitize`가 레이아웃을 새로 만들며 새 필드를 버리지 않게 `with`로 바꾼다.
+  창을 닫을 때 `Outline.IsPanelOpen`을 저장하고(편집 모드로 숨겨진 상태가 아니라 사용자가 고른 상태), 시작할 때 넣는다.
+- **창 (App `MainWindow.Outline.cs`):** `BodyGrid`에 열 두 개(구분선 6, 패널 260·최소 160)를 문서 열 오른쪽에 더하고, `Outline.IsVisible`에 따라 열 너비를 0으로 접거나 되돌린다
+  (탐색 패널과 같은 방식, 애니메이션 없음 — 03 §8). 목록은 `ListBox`이고 고르면 이동한다(도움말 창 목차와 같다). 같은 항목을 다시 눌러도 이동하도록 클릭도 처리한다.
+  `Ctrl+Shift+B`는 창 `InputBindings`.
+- **테스트:** `MarkdownRendererTests`(추출·렌더 id 대조), `OutlineViewModelTests`/`MainViewModel` 연결, `JsonSettingsStoreTests`(왕복), E2E 1개(켜기 → 항목 → 문서 바뀜 → 편집 모드에서 숨김).
+
+### 17.13 코드 블록 구문 색상 (01 F-22, 2026-11-22)
+
+- **라이브러리:** `TextMateSharp`(토큰화) + `TextMateSharp.Grammars`(VS Code와 같은 TextMate 문법 64개). 뷰어 스크립트를 막아 둔 구조(§6.2 안 A, §6.5 CSP)라
+  highlight.js 같은 뷰어 쪽 스크립트 방식은 쓸 수 없어, 렌더링 단계(C#)에서 `<span class="tk-…">`를 만든다. 정규식 엔진은 네이티브 `libonigwrap.dll`(Oniguruma)이다.
+  후보 비교(2026-11-22): ColorCode 2.0.15는 10배 이상 빠르지만 25개 언어뿐이고(bash·yaml·go·rust 없음) 2023-07 이후 갱신이 없다 — 사용자가 TextMateSharp를 골랐다.
+- **측정(2026-11-22, Release, 이 PC):** 코드 200줄(약 5,600자) C# 153~175ms·C++ 126~351ms(ColorCode는 7~12ms). 처음 쓸 때 문법 목록·레지스트리 준비 약 1초,
+  언어별 문법 로딩 0~300ms(C# 294ms, 셸 277ms, JSON·YAML·XML 2ms 이하). 그래서 **한 번에 표시하지 않고 두 단계로 나눈다**(사용자 결정).
+- **두 단계 표시:**
+  1. `MarkdownRenderer.RenderBody(markdown)` — 지금과 같은 자리에서 부른다. 코드 블록은 **이미 색을 입혀 기억해 둔 것만** 색을 입혀 내고(사전 조회뿐, 토큰화·라이브러리 준비 없음),
+     나머지는 지금과 같은 HTML이다. 그래서 문서 표시 시간은 구문 색상이 없을 때와 같다.
+  2. 문서를 보여 준 뒤 `DocumentViewModel`이 UI 스레드 밖에서 `MarkdownRenderer.RenderHighlightedBody(markdown, token)`을 부른다. 기억에 없는 블록을 토큰화해 기억에 넣고
+     전체 본문 HTML을 돌려준다(색을 입힌 블록이 하나도 없으면 `null`). `DocumentViewModel`은 결과가 **화면에 보여 준 본문과 다를 때만** `IViewerHost.UpdateBodyAsync`로
+     본문을 바꾼다(스크롤 유지, 찾는 중이면 뷰어가 다시 찾는다 — §17.11). "새로 토큰화했는가"로 판단하지 않는다 — 1단계와 2단계 사이에 다른 문서가 같은 블록을
+     기억에 넣으면 화면은 색이 없는데 새로 입힌 것도 없는 경우가 생긴다(리뷰 2026-11-22).
+  - 블록 하나에서 실패(문법 로딩·토큰화 예외)하면 그 블록만 색 없이 두고 로그를 남긴 뒤 나머지를 계속 입힌다. 로딩에 실패한 문법은 없는 것으로 기억해 다시 시도하지 않는다.
+  - 2단계를 시작하는 곳: 문서 열기, 새로고침(`F5`·자동), 편집 중인 탭으로 돌아올 때, 편집 미리보기 갱신. 새 요청(다른 문서·새로고침·미리보기)이 시작되면 진행 중인
+    2단계를 취소한다(`CancellationToken`, 줄마다 확인) — 앞 문서의 색이 새 문서를 덮지 않는다. 취소·실패는 로그만 남기고 문서는 색 없이 그대로 둔다.
+  - 본문을 바꾸면 사용자가 그사이 한 글자 선택은 풀린다(알려진 한계 — 새로고침·미리보기와 같다).
+  - **알려진 한계(리뷰 2026-11-22, 보류):** 색이 나오기 전에 시작한 다른 열기가 실패·거절되면(큰 파일 확인에서 취소 등) 화면에 남은 앞 문서는 색 없이 남는다(`F5`로 다시 입혀진다).
+    편집 중인 블록은 글자를 칠 때마다 새 내용으로 기억에 쌓여, 큰 블록을 오래 고치면 기억 상한에 닿아 전부 비워질 수 있다(다시 입히면 된다).
+- **코드 블록 렌더러:** Markdig `CodeBlockRenderer`를 상속한 렌더러로 바꿔 끼운다. 언어(`FencedCodeBlock.Info`)가 있고 색을 입힌 HTML이 있으면
+  `<pre><code class="language-…">` 안에 그것을 쓰고, 아니면 기본 렌더러 그대로다(출력이 지금과 같다).
+- **`CodeHighlighter`(Core, static):**
+  - 언어 찾기: 정보 문자열을 소문자로 바꿔 문법의 id → 별칭 → 확장자(점 뺌) 순으로 찾는다(`csharp`·`c#`·`cs`, `shellscript`·`bash`·`sh`, `yaml`·`yml`). 추가 별칭 `shell` → `shellscript`.
+  - 토큰화: 줄 단위(`IGrammar.TokenizeLine`, 줄마다 앞 줄의 상태를 넘김). 줄마다 시간 제한(`HighlightLineTimeout`)을 주고, 토큰이 줄 끝까지 덮지 않으면 남은 글자는 색 없이 쓴다.
+    TextMateSharp의 스레드 안전성은 확인하지 못해 토큰화 전체를 잠금 하나로 직렬화한다. 레지스트리와 문법은 처음 쓸 때 만든다(앱 시작을 늦추지 않는다).
+  - 분류: 토큰의 scope를 안쪽에서 바깥쪽으로 보며 처음 맞는 규칙의 클래스를 쓴다. 보간(`meta.interpolation`·`meta.embedded`·`meta.template.expression`)을 만나면 멈춘다 — 문자열 안 `{x}`의 `x`가 문자열 색이 되지 않게.
+
+    | scope 앞부분 | 클래스 |
+    |--------------|--------|
+    | `comment` | `tk-comment` |
+    | `string` | `tk-string` |
+    | `constant.numeric`, `constant` | `tk-number` |
+    | `support.type.property-name`, `entity.other.attribute-name` | `tk-attribute` |
+    | `entity.name.tag` | `tk-tag` |
+    | `entity.name.function`, `support.function` | `tk-function` |
+    | `entity.name.type`·`class`·`namespace`·`section`, `entity.other.inherited-class`, `support.type`, `support.class` | `tk-type` |
+    | `keyword.operator` | 글자로 시작하면(`new`, `typeof`, `and`) `tk-keyword`, 기호면 색 없음 |
+    | `keyword`, `storage`, `variable.language` | `tk-keyword` |
+    | `markup.inserted` / `markup.deleted` (diff) | `tk-inserted` / `tk-deleted` |
+
+    변수·구두점은 색을 입히지 않는다(색 수를 줄여 03 "종이와 잉크" 방향을 지킨다). 같은 클래스가 이어지는 토큰은 한 `<span>`으로 합친다.
+  - 글자는 모두 HTML 이스케이프하고, 클래스 이름은 위 고정 목록에서만 나온다 — 문서 내용이 태그·속성으로 들어갈 길이 없다(§6.5).
+  - 기억(캐시): `(소문자 언어 문자열, 코드)` → 색 입힌 HTML. 기억한 코드 글자 수 합이 `HighlightCacheMaxLength`를 넘으면 전부 비운다(단순하게 — 다시 열면 다시 입힌다).
+  - `MaxHighlightedBlockLength`를 넘는 블록은 입히지 않는다(5만 자 ≈ 수 초).
+- **스타일:** `viewer.css`의 `--code-*` 변수 8개(테마 블록마다)와 `.tk-*` 규칙. 테마를 바꿔도 다시 렌더링하지 않는다(CSS 변수만 바뀐다). 색 값은 03 §6.1.
+- **도움말 창:** `RenderBody`만 부르므로 색을 입히지 않는다(같은 블록을 뷰어에서 이미 입혔다면 기억에서 나온다).
+- **배포:** `TextMateSharp.dll`(0.15MB)·`TextMateSharp.Grammars.dll`(6.7MB)·`Onigwrap.dll`·네이티브 `libonigwrap.dll`(win-x64 0.5MB)이 배포본에 더해진다.
+- **테스트:** `CodeHighlighterTests`(언어 찾기, 분류, 이스케이프, 여러 줄 상태, 캐시, 취소, 큰 블록), `MarkdownRendererTests`(두 단계 출력), `DocumentViewModelHighlightTests`
+  (2단계 본문 교체, 취소, `null`이면 교체 없음), `ViewerTemplateTests`(색 토큰 03 §6.1과 대조), `LicenseNoticesTests`(고지).
+
+### 17.14 창 하나로 열기 — 단일 인스턴스 (01 F-23, 2026-11-22)
+
+- **역할 나누기:** 메인 창을 띄우는 실행은 시작할 때 이름 있는 뮤텍스(`PrimaryInstanceMutexName`)를 잡아 본다. 잡은 앱이 **받는 창**이다
+  — 창을 만들기 전에 이름 있는 파이프(`OpenRequestPipeName.<세션 번호>`)를 열어 열기 요청을 받는다. 잡지 못한 앱은 설정이
+  `openInSingleWindow`면 받은 인수를 넘기고 끝나고, 아니면 자기 창을 띄운다. 받는 창은 **자기 설정과 상관없이** 늘 받는다 — 설정을 켠 뒤의
+  첫 실행부터 지금 창으로 오게 하려는 것이다. 뮤텍스로 가르므로 동시에 여러 개가 실행돼도(탐색기에서 파일 여러 개 열기) 하나만 받는 창이 된다.
+- **기존 뮤텍스와의 구분:** `InstanceMutexName`(§15.1)은 "앱이 켜져 있다"를 설치 프로그램에 알리려고 모든 창이 만들기만 한다(쥐지 않는다).
+  `PrimaryInstanceMutexName`은 한 앱만 쥔다. 둘은 따로 둔다.
+- **요청 형식 (`OpenRequestProtocol`, Core):** UTF-8 한 줄 JSON `{"v":1,"args":[…],"cwd":"…"}` + `\n`. `args`는 넘기는 쪽이 받은 명령줄
+  인수 그대로, `cwd`는 그 앱의 작업 폴더다. 받는 쪽이 `CommandLineParser.Parse(args, cwd)`로 풀어 시작할 때와 같은 `StartupRequest`를 얻는다
+  (§9) — 해석 규칙을 두 군데에 두지 않는다. `v`가 다르거나 항목이 빠졌으면 읽지 않는다(버전이 다른 포터블 exe와 섞였을 때).
+- **주고받기:** 받는 쪽(`OpenRequestServer`)은 한 줄을 읽어 `OK` 또는 `ERR` 한 줄로 답한 뒤 요청을 처리기로 넘긴다. 답을 먼저 보내므로
+  넘기는 쪽(`OpenRequestClient.TrySendAsync`)은 창이 뜨기를 기다리지 않는다. 넘기는 쪽은 `OpenRequestTimeout`(5초) 안에 `OK`를 받지 못하면
+  실패로 본다. 받는 쪽은 한 줄이 `MaxOpenRequestBytes`를 넘거나 5초 안에 오지 않으면 버린다. 요청 하나가 잘못돼도 다음 요청은 받는다.
+  **`OK`로 답한 요청은 반드시 처리기로 넘긴다** — 넘기는 쪽은 답을 받으면 끝나므로 그 뒤에 잃으면 아무도 열지 않는다. 그래서 답을 쓴 직후
+  처리기를 부르고, 상대가 연결을 닫기를 기다리는 일은 그 뒤에 한다(기다리다 실패해도 잃는 것이 없다). 파이프에는 버퍼(4KB)를 준다 — 버퍼가
+  없으면 답 쓰기가 상대가 다 읽을 때까지 끝나지 않고, `Flush`도 같은 이유로 부르지 않는다(멈춘 상대에게 붙잡힌다, 테스트로 확인).
+  받는 루프는 예상하지 못한 예외에도 끝내지 않고 1초 쉬었다가 다시 받는다 — 끝나면 뮤텍스만 쥔 채 파이프가 사라진다.
+- **넘기지 못했을 때:** 뮤텍스를 다시 잡아 보고(받는 창이 그사이 닫혔으면 이 앱이 받는 창이 된다) 자기 창을 띄워 연다 — 요청을 잃지 않는다.
+- **보안:** 파이프는 양쪽 모두 `PipeOptions.CurrentUserOnly`로 연다(같은 Windows 사용자만). 파이프 이름은 컴퓨터 전체에서 보이므로 세션
+  번호를 붙여 사용자 세션을 나눈다(뮤텍스는 이름만으로 세션마다 따로다). 넘어오는 것은 경로뿐이고, 받는 쪽은 그것을 명령줄 인수와 똑같이
+  다룬다(존재 확인 뒤 열기) — 같은 사용자가 명령줄로 줄 수 있는 것 이상을 할 수 없다. 요청 내용은 로그에 쓰지 않는다(요청 종류만 남긴다).
+  관리자 권한으로 띄운 창과 보통 권한의 실행은 서로 붙지 못할 수 있다 — 그러면 넘기지 못한 것으로 보고 새 창을 띄운다(확인하지 않은 조합이다).
+- **받는 쪽 처리 (`App.SingleInstance.cs`):** 파이프 스레드에서 온 요청을 UI 스레드로 넘겨 **온 순서대로 하나씩** 처리한다(앞 요청의 작업에
+  이어 붙인다). 순서: 메인 창과 시작 인수 처리가 끝나기를 기다림 → 인수 해석(UI 스레드 밖) → 창을 맨 앞으로 → 창이 대화상자에 막혀 있으면
+  풀릴 때까지 0.2초마다 다시 봄 → `MainViewModel.OpenRequestAsync(request)`. 시작 인수를 다 연 뒤에 넘겨받은 요청을 열어야 지난 탭 복원이나
+  시작 파일이 넘겨받은 파일을 덮지 않는다.
+- **`MainViewModel.OpenRequestAsync`:** `OpenFile` → `NavigateToFileAsync`(고정 탭, 시작 인수·끌어다 놓기와 같다), `OpenFolder` →
+  `NavigateToFolderAsync`, `InvalidPath` → 경로 없음 알림, 그 밖(`None`, 등록·해제)은 아무것도 하지 않는다. `InitializeAsync`도 `None`이 아닌
+  요청은 이 메서드로 연다.
+- **창을 맨 앞으로 (`WindowActivator`, App):** 넘기는 쪽이 넘기기 전에 `AllowSetForegroundWindow(ASFW_ANY)`를 부른다 — Windows는 맨 앞 창을
+  가진 프로세스가 허락해야 다른 프로세스가 맨 앞으로 나올 수 있다. 받는 쪽은 최소화돼 있으면 `ShowWindow(SW_RESTORE)`(최대화했던 창을 작게
+  되돌리지 않게 `WindowState`를 쓰지 않는다) 뒤 `SetForegroundWindow`를 부른다. 창이 대화상자에 막혀 있으면(`IsWindowEnabled`가 거짓)
+  `GetLastActivePopup`으로 그 대화상자를 올린다.
+- **받기를 멈추는 때:** 메인 창이 닫히면(`Closed`) 파이프를 닫고 뮤텍스를 놓는다 — 다음에 실행된 앱이 받는 창이 된다. 창을 띄우지 못한
+  때(WebView2 Runtime 없음 안내, 시작 중 예외)에도 멈춘다 — 열 창이 없는 앱이 요청을 받아들이기만 하지 않게. 닫히는 중인 창에 넘어온
+  요청은 열리지 않고 사라질 수 있다(알려진 한계 — 로그에 경고를 남긴다). 뮤텍스는 쥔 스레드에서만 놓을 수 있어, 잡기와 놓기를 모두 UI 스레드에서 한다.
+- **설정 (`⋯` → 창 하나로 열기):** `MainWindow.OpenInSingleWindow`(메뉴 체크)와 `OpenInSingleWindowChanged` 이벤트. App이 바뀔 때 바로
+  저장하고(§10) 상태 표시줄로 알린다. 저장하지 못하면 "설정을 저장하지 못했습니다"를 보여 준다. 다른 창의 메뉴 체크는 그 창을 다시 띄울
+  때까지 예전 값으로 보일 수 있다(알려진 한계 — "여러 창"으로 쓸 때만 생긴다).
+- **Debug 빌드·E2E 격리:** Debug 빌드는 뮤텍스·파이프 이름 뒤에 `.Debug`를 붙여 설치본(Release)과 섞이지 않는다 — 개발 중인 앱이 켜 둔
+  설치본에 요청을 넘기지 않는다. Debug 빌드에서만 환경 변수 `MDFILEVIEWER_E2E_INSTANCE`의 값을 더 붙인다. E2E(`AppSession`)는 실행마다 다른
+  값을 주어 테스트 앱이 스스로 받는 창이 되게 하고, 창 하나로 열기를 보는 테스트만 두 실행에 같은 값을 준다.
+- **테스트:** `OpenRequestProtocolTests`(왕복, 줄 바꿈이 든 인수, 틀린 형식·다른 판), `OpenRequestChannelTests`(실제 파이프 — 전달, 한꺼번에
+  8개, 받는 창 없음, 틀린 형식·한도 초과 뒤에도 계속 받음, 처리기 예외, 닫은 뒤), `MainViewModelOpenRequestTests`(파일·이미 열린 파일·폴더·
+  없는 경로·인수 없음·등록 해제), `JsonSettingsStoreTests`(기본값·왕복·틀린 형식), E2E `SingleInstanceTests`(두 번째 실행이 넘기고 끝남,
+  메뉴에서 끄면 새 창).
+
+### 17.15 릴리즈 노트 (01 F-24, 2026-11-22)
+
+- **문서:** `Resources/release-notes.md`(Core). 도움말과 같이 출력 폴더의 `Resources\`로 복사되어 배포본에 들어간다. 버전마다 `## 1.2.3`
+  제목 하나(뒤에 날짜 같은 덧붙임 가능), 최신 버전이 위. 버전 안은 `### ` 소제목과 목록으로 쓴다.
+- **창:** `HelpWindow`를 그대로 쓴다 — 왼쪽 목록은 `HelpDocument`가 렌더 결과의 `<h2>`에서 뽑으므로(§17.4) 버전 목록이 된다. 창 제목·
+  AutomationId(`HelpWindow` / `ReleaseNotesWindow`)·목록의 접근성 이름("목차" / "버전")은 문서마다 달라 생성자에서 받는다. App은 문서별로
+  창을 하나씩만 둔다(`BundledDocument` → 창).
+- **`ReleaseNotes`(Core):** `DefaultPath`와 `Versions(markdown)`(코드 블록 밖의 `## x.y.z` 제목을 적힌 순서대로). 창을 띄우는 데는 쓰지 않고,
+  문서가 규칙대로 쓰였는지 테스트가 볼 때 쓴다.
+- **테스트:** `ReleaseNotesTests` — 버전 제목 읽기, 내장 문서의 버전이 최신순이고 겹치지 않음, 최신 버전이 `Directory.Build.props`의
+  `<Version>`보다 낮지 않음(버전을 올리고 노트를 빠뜨리면 실패), `## ` 제목이 모두 버전임(창 목록에 버전만 보이게). E2E
+  `ReleaseNotesButton_OpensWindowListingVersions`.
+
+### 17.16 Mermaid 다이어그램 (01 F-25, 2026-11-22)
+
+- **방식 (PoC-9):** 뷰어에서 앱 폴더의 스크립트만 실행을 허용하고(§6.2 4, §6.5), 앱 스크립트 `viewer.js`가 내장 `mermaid.min.js`로 그린다.
+  렌더러(Markdig)는 바꾸지 않는다 — ```` ```mermaid ```` 블록은 지금처럼 `<pre><code class="language-mermaid">원문</code></pre>`로 나오고
+  (꺾쇠는 이스케이프된 글자), `viewer.js`가 그 모양을 찾아 `<pre>`를 통째로 `<div class="diagram">SVG</div>`로 바꾼다.
+  구문 색상(§17.13)은 `mermaid`를 모르는 언어로 보아 건드리지 않는다(`MarkdownDiagramBlockTests`).
+- **부르는 곳:** `ViewerScriptBuilder.RenderDiagrams`(`if(window.mdfv){window.mdfv.renderDiagrams();}`)를 본문·테마를 바꾸는 스크립트
+  (`ShowDocument`, `UpdateBody`, `SetTheme`) 끝에 붙인다. 스크롤 스크립트에는 붙이지 않는다. `window.mdfv`가 없으면(스크립트를 읽지 못함) 아무 일도 하지 않고
+  문서는 코드 블록으로 보인다.
+- **지연 로드:** `renderDiagrams()`가 그릴 블록을 찾았을 때만 `<script src="https://appassets.example/mermaid.min.js">`를 `<head>`에 넣는다(한 번).
+  그림 없는 문서에서는 라이브러리를 읽지 않는다(요청 기록으로 확인). 읽기에 실패하거나 읽은 것을 쓸 수 없으면 다음 호출에서 다시 시도하고, 그동안 문서는 코드 블록으로 남는다.
+- **그리기:** `mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme })` 뒤 블록마다 `mermaid.render('mdfv-diagram-N', 원문)`.
+  테마는 `<html data-theme>`이 `dark`면 `dark`, 아니면 `default`. 블록은 문서 순서대로 하나씩 그린다.
+- **보안 경계:** 문서가 스크립트를 실행하지 못하게 하는 것은 CSP다(§6.5). `strict`는 그 안쪽의 한 겹으로, 그림 원문의 스크립트·이벤트 속성을 지우고
+  클릭 동작을 만들지 않는다. 그림 글자에 넣은 `<img>` 같은 태그는 정화된 채 그림 안에 남는다 — 문서 본문에 직접 쓴 HTML이 할 수 있는 것(그림·링크·스타일)을
+  넘지 않고, 같은 CSP와 탐색 가로채기(§6.4)를 받는다.
+- **실패한 블록:** `render`가 던지면 그 `<pre>`에 `data-diagram-failed`를 붙여 원문 그대로 두고(같은 본문에서 다시 시도하지 않는다 — 본문이 바뀌면 새 요소라 다시 시도한다),
+  Mermaid가 `body`에 남긴 임시 요소(id가 그림 id, `d`+id, `i`+id)를 지운다. 오류 그림을 문서에 넣지 않는다.
+- **기억(캐시):** `테마 + 원문 → SVG`를 `CACHE_LIMIT`(200)개까지 기억한다. 넘으면 전부 비운다. 기억한 그림은 `renderDiagrams()` 호출 안에서 바로 넣는다 —
+  본문을 넣은 같은 스크립트 안이라 화면이 한 번 그려지기 전이고, 구문 색상 2단계의 본문 교체·새로고침·편집 미리보기에서 코드 블록이 깜박이지 않는다.
+- **다시 그리기(테마):** 그린 그림 요소와 그 원문을 `WeakMap`에 둔다. 테마가 바뀌면 그 요소들을 새 테마로 다시 그린다. 문서가 흉내 낸
+  `<div class="diagram">`은 이 맵에 없으므로 건드리지 않는다.
+- **문서 전환과의 경쟁:** `renderDiagrams()`를 부를 때마다 세대 번호를 올리고, 그리는 중인 앞선 호출은 `await` 뒤마다 번호를 확인해 그만둔다.
+  번호가 바뀐 뒤에 끝난 그림은 넣지도 기억하지도 않는다 — 뒤 호출이 `initialize`로 테마를 바꾼 뒤에 끝났을 수 있어, 기억하면 다른 테마 색의 그림이
+  앞 테마 이름으로 남는다(리뷰 지적). 앞 문서의 그림이 새 문서에 끼어들지 않는다.
+  테마를 바꿔 다시 그리던 그림이 실패하면 앞 테마의 그림을 그대로 둔다.
+- **DOM clobbering:** §6.2와 같은 이유로 `viewer.js`는 `document.x`·`element.x`를 읽지 않고, 본문이 들어오기 전(파일이 읽힐 때) 잡아 둔 프로토타입
+  메서드·접근자를 `call`로 쓴다. 진입점 `window.mdfv`는 `Object.defineProperty`로 바꿀 수 없게 둬 본문의 `<img name="mdfv">`가 덮지 못한다
+  (바꿀 수 없는 자체 속성이 이름 있는 요소보다 먼저 잡힌다 — 확인). `window.mermaid`도 라이브러리가 만든 자체 속성이라 `<img name="mermaid">`보다 먼저 잡혔다(확인).
+- **스타일:** `.markdown-body .diagram`은 아래 여백 16px과 가로 스크롤(`overflow-x: auto`), 안의 `svg`는 `display: block; height: auto`(03 §6.2).
+  그림 안의 색은 Mermaid 테마가 SVG 안 `<style>`로 넣는다(CSP `style-src 'unsafe-inline'` 아래 동작).
+- **확인 결과 (2026-11-22, 시험 앱 — 실제 `Resources`를 앱과 같은 WebView2 설정으로 로드, Runtime 157.0.4341.60):**
+  그림 없는 문서에서 라이브러리 요청 없음 / 상태 다이어그램·순서도 등 그림 3개가 그려지고 틀린 블록 1개는 원문 유지 / 문서의 `<script>`·`<img onerror>`·
+  `javascript:` 링크(클릭), 그림 원문 안의 `<img onerror>`·`<script>`·`click "javascript:"`가 모두 실행되지 않음 / 문서가 흉내 낸 `div.diagram`은 그대로 /
+  `body`에 남은 임시 요소 없음 / 같은 본문 재삽입 직후(같은 호출) 그림 3개 / 테마 전환 뒤 SVG가 바뀜 / 그림 30개를 그리는 도중 다른 문서로 바꾸면 새 문서에 그림 0개 /
+  `getElementById`·`querySelector`·`createElement`를 덮는 요소가 든 문서에서도 그림이 그려짐.
+  그림 레이블에 넣은 `<img>`는 `onerror`가 지워진 채 그림 안에 남는다(실행되지 않음).
+- **보안 리뷰 (2026-11-22, security-reviewer):** 문서가 스크립트를 실행시키는 경로는 찾지 못했다(인라인·이벤트 속성·`javascript:`·문서 폴더의 js·`<base>`·`<meta http-equiv>`·`<iframe>`·`<object>`·SVG를 정책과 코드로 확인).
+  - **확인해 본 지적:** "라이브러리를 처음 읽는 순간 본문이 `<img name="implementation">`으로 `document.implementation`을 덮고 있으면 DOMPurify가 꺼진다"(번들 코드 근거의 추정) —
+    시험 앱으로 그 상태를 만들어 봤다(`document.implementation`이 요소로 덮인 것 확인). 그림 글자의 `<script>`·`onerror`는 덮지 않았을 때와 똑같이 지워졌고 실행도 없었다.
+    재현되지 않아 지연 로드를 유지한다. 다만 이 정화가 어떤 문서에서도 유지된다고 증명한 것은 아니므로, 위 "보안 경계"대로 CSP를 경계로 본다.
+  - **반영:** 세대가 바뀐 뒤 끝난 그림을 기억하지 않음, 쓸 수 없는 라이브러리도 다시 시도, 넣기(`show`)의 오류를 문법 오류로 취급하지 않음, 다시 그리기 실패 시 앞 그림 유지,
+    `Resources`의 스크립트 파일이 둘뿐임을 보는 테스트.
+  - **반영하지 않은 것:** 가상 호스트 매핑을 `DenyCors`로 바꾸기(그림·글꼴 로드에 영향이 없는지 실행 확인이 필요 — 지금은 CSP `default-src 'none'`이 `fetch`를 막는다), 그리기 실패를 로그로 남길 통로(웹 메시지를 닫아 두어 없다), 기억하는 그림의 바이트 상한(개수 200만 본다), `maxTextSize`·`maxEdges`를 기본값보다 낮추기, 같은 원문이 한 문서에 두 번 나올 때 SVG 안 id 겹침(화면 문제는 확인하지 않았다), mermaid 11.17.2의 알려진 취약점 공지 확인.
+- **알려진 한계:**
+  - 그림은 문서가 보인 뒤에 그려져 아래 내용이 밀린다. 앵커로 연 위치·복원한 스크롤 위치·찾기(§17.11) 결과 개수가 그리기 전 기준일 수 있다. 확인·보정하지 않았다.
+  - 그림이 많은 문서는 순서대로 그려져 뒤쪽 그림이 늦게 나타난다(12.3.0 기준 20개 1.4초 — 11.17.2로는 재지 않았다).
+  - 그림의 접근성 이름(스크린 리더가 읽는 내용)은 Mermaid가 만드는 대로다 — 확인하지 않았다.
+  - 포터블(단일 exe) 배포본에서 `Resources\mermaid.min.js`·`viewer.js`가 풀려 읽히는지는 배포본 확인(05 9-x) 때 본다.
+- **테스트:** `ViewerTemplateTests` — CSP 고정, 템플릿이 스크립트를 앱 폴더의 `viewer.js` 하나만 절대 URL로 읽음, `viewer.js`가 라이브러리를 지연 로드하고 `strict`를 씀,
+  `ViewerScriptBuilder`가 부르는 진입점이 있음, `document.x`를 읽지 않음, 내장 파일의 버전이 상수·고지 파일과 같음, 넓은 그림 스타일, `Resources`의 스크립트 파일은 둘뿐.
+  `ViewerScriptBuilderTests` — 본문·테마 스크립트 끝에 그리기 호출, 스크롤 스크립트에는 없음. `MarkdownDiagramBlockTests` — 렌더 결과의 블록 모양.
+  E2E `DiagramTests.MermaidBlock_BecomesDiagramAndBrokenBlockStaysAsCode`(작성·빌드만, 미실행). `viewer.js`의 동작 자체(브라우저 안)는 단위 테스트로 볼 수 없어
+  위 시험 앱과 E2E로 본다.
 
 ## 변경 이력
 
@@ -901,3 +1175,15 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
 - 2026-11-22: `ThemeDictionaryTests`·`RepositoryPaths`(§14.1).
 - 2026-11-22: E2E 샘플 폴더를 `%TEMP%`에서 레포 `tests\.e2e-samples`로 옮김, 실패 화면 남기기(§14.3).
 - 2026-11-22: 자동 새로고침 뒤 선택 복원 기준을 `F5`와 같게 수정(§17.6), E2E `CrowdedFolderTests` 추가.
+- 2026-11-22: Phase 12-1 — PoC-8(찾기 API) 결과(§11), `FindDebounce`(§12), §17.11 뷰어 안 찾기 설계.
+- 2026-11-22: 10-6 — PoC-7 결과(뷰어 위 드롭은 창으로 오지 않음), `AllowExternalDrop=true` + `NewWindowRequested`를 드롭으로 넘김(§6.3·§11·§17.10), 놓은 순서 수정.
+- 2026-11-22: 9-7 — 설치·제거 프로그램의 실행 중 확인(`AppMutex`, §15.1), `InstanceMutexName`(§12).
+- 2026-11-22: Phase 12-2 — §17.12 목차 패널 설계, 목차 패널 너비 상수(§12).
+- 2026-11-22: 코드 블록 구문 색상(01 F-22) — §2 `TextMateSharp`·`TextMateSharp.Grammars` 2.0.5 추가(Onigwrap 전이), §12 상수 3개, §15.2 고지 대상, §17.13 설계(두 단계 표시·분류 규칙·측정값).
+- 2026-11-22: §17.13 리뷰 반영 — 2단계 결과를 화면의 본문과 비교해 다를 때만 교체, 블록 단위 실패 격리, 알려진 한계 2건.
+- 2026-11-22: Phase 12-4 — §17.14 창 하나로 열기 설계(뮤텍스·파이프·요청 형식·맨 앞으로 올리기·E2E 격리), §9 넘기기, §10 `openInSingleWindow`, §12 상수 4개.
+- 2026-11-22: Phase 12-5 — §17.15 릴리즈 노트(`release-notes.md`, `HelpWindow` 재사용, `ReleaseNotes`), §12 `ReleaseNotesFileName`.
+- 2026-11-22: §17.14·§10 리뷰 반영 — 답한 요청은 반드시 넘김(답 직후 처리기 호출, 파이프 버퍼, Flush 없음), 창을 띄우지 못하면 받기 중단, 예상 밖 예외에도 받기 유지, `ISettingsStore.TryLoad()`.
+- 2026-11-22: PoC-9(Mermaid) 결과(§11) — 스크립트를 끈 채 앱이 넣는 방식은 안 되고, 앱 폴더 스크립트만 허용하는 방식은 된다. 방식·도입은 미정.
+- 2026-11-22: Phase 12-7 — Mermaid 도입. §2 내장 라이브러리(`mermaid` 11.17.2, 12.x는 ELK·EPL 때문에 제외), §6.2·§6.3·§6.5 스크립트 허용 범위(`IsScriptEnabled=true`, `script-src https://appassets.example`), §11 PoC-9 갱신, §12 상수, §15.2 고지, §17.16 설계·확인 결과·한계.
+- 2026-11-22: §17.16 보안 리뷰 반영 — 보안 경계(CSP)와 `strict`의 실제 동작, 재현해 본 지적과 결과, 반영·미반영 항목.

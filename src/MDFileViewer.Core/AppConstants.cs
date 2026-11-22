@@ -44,8 +44,20 @@ public static class AppConstants
     /// <summary>문서 표시 스타일 (03 §4~6).</summary>
     public const string ViewerStylesheetFileName = "viewer.css";
 
+    /// <summary>뷰어 템플릿이 읽는 앱 스크립트 — Mermaid 코드 블록을 그림으로 바꾼다 (01 F-25, 02 §17.16).</summary>
+    public const string ViewerScriptFileName = "viewer.js";
+
+    /// <summary>앱에 내장한 Mermaid 라이브러리 파일 (02 §2·§17.16). 그림이 든 문서를 처음 볼 때 뷰어 스크립트가 읽는다.</summary>
+    public const string DiagramLibraryFileName = "mermaid.min.js";
+
+    /// <summary>내장한 Mermaid의 버전 (02 §2). 파일을 바꾸면 이 값과 제3자 고지를 함께 바꾼다 — 테스트가 셋을 맞춰 본다.</summary>
+    public const string DiagramLibraryVersion = "11.17.2";
+
     /// <summary>도움말 문서 (01 F-12, 02 §17.4).</summary>
     public const string HelpFileName = "help.md";
+
+    /// <summary>릴리즈 노트 문서 (01 F-24, 02 §17.15).</summary>
+    public const string ReleaseNotesFileName = "release-notes.md";
 
     /// <summary>줌 단계 (01 F-06). `+`·`−`는 현재보다 크거나 작은 가장 가까운 단계로 간다.</summary>
     public static readonly IReadOnlyList<double> ZoomSteps = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
@@ -72,6 +84,44 @@ public static class AppConstants
     /// </summary>
     public const int MaxDroppedFiles = 20;
 
+    /// <summary>
+    /// 메인 창을 띄운 앱이 살아 있는 동안 쥐고 있는 이름 있는 뮤텍스. 설치·제거 프로그램(`installer/setup.iss`의 `AppMutex`)이 이 이름으로
+    /// 앱이 켜져 있는지 보고 닫아 달라고 안내한다 (02 §15.1). 뒤의 값은 설치 파일의 `AppId`다.
+    /// </summary>
+    public const string InstanceMutexName = "MDFileViewer.Instance.F3FFCBCE-5B03-4F83-BAC5-8AEFB5353A22";
+
+    /// <summary>
+    /// 먼저 뜬 앱(다른 실행의 열기 요청을 받는 창)이 쥐는 이름 있는 뮤텍스 (01 F-23, 02 §17.14). 동시에 여러 개가 실행돼도 하나만 쥔다.
+    /// </summary>
+    public const string PrimaryInstanceMutexName = "MDFileViewer.Primary.F3FFCBCE-5B03-4F83-BAC5-8AEFB5353A22";
+
+    /// <summary>열기 요청을 주고받는 이름 있는 파이프의 앞부분 (02 §17.14). 뒤에 Windows 세션 번호를 붙여 사용자 세션마다 따로 쓴다.</summary>
+    public const string OpenRequestPipeName = "MDFileViewer.Open.F3FFCBCE-5B03-4F83-BAC5-8AEFB5353A22";
+
+    /// <summary>
+    /// 열기 요청을 넘기고 답을 받기까지 기다리는 시간 (02 §17.14). 넘기면 먼저 뜬 앱이 창을 띄우는 중이어도 바로 받으므로 길 필요가 없고,
+    /// 넘기지 못하면 이 시간 뒤에 자기 창을 연다.
+    /// </summary>
+    public static readonly TimeSpan OpenRequestTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// 열기 요청 한 줄의 최대 바이트 수 (02 §17.14). 경로 수십 개는 넉넉히 담는다. 한글은 JSON에서 글자마다 6바이트(\uXXXX)가 되므로 한글만
+    /// 2만 자가 넘는 명령줄은 넘을 수 있다 — 넘으면 받는 쪽이 거절하고 보낸 쪽이 자기 창을 연다.
+    /// </summary>
+    public const int MaxOpenRequestBytes = 128 * 1024;
+
+    /// <summary>찾기 입력이 멈춘 뒤 찾기까지 기다리는 시간 (01 F-20). 글자마다 문서 전체를 다시 찾지 않게 한다.</summary>
+    public static readonly TimeSpan FindDebounce = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>구문 색상을 입히는 코드 블록의 최대 글자 수 (01 F-22, 02 §17.13). 토큰화가 느려(1만 자에 약 0.3초) 이보다 큰 블록은 색 없이 둔다.</summary>
+    public const int MaxHighlightedBlockLength = 50_000;
+
+    /// <summary>코드 한 줄을 토큰화하는 시간 제한 (02 §17.13). 문법의 정규식이 유난히 느린 줄에서 색 입히기 전체가 멈추지 않게 한다.</summary>
+    public static readonly TimeSpan HighlightLineTimeout = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>색 입힌 코드 블록을 기억해 두는 코드 글자 수 합의 상한 (02 §17.13). 넘으면 전부 비운다 — 다시 열면 다시 입힌다.</summary>
+    public const int HighlightCacheMaxLength = 2_000_000;
+
     /// <summary>탭 키로 넣는 공백 수 (01 F-08).</summary>
     public const int EditorTabSize = 4;
 
@@ -79,6 +129,11 @@ public static class AppConstants
     public const double DefaultTreePanelWidth = 320;
 
     public const double MinTreePanelWidth = 160;
+
+    /// <summary>목차 패널 너비 (01 F-21, 03 §2.6).</summary>
+    public const double DefaultOutlinePanelWidth = 260;
+
+    public const double MinOutlinePanelWidth = 160;
 
     /// <summary>편집기:미리보기 기본 비율과 허용 범위 (01 F-07, 02 §17.8). 범위 밖으로 저장된 값은 한쪽이 너무 좁아지므로 기본값으로 되돌린다.</summary>
     public const double DefaultEditorSplitRatio = 0.5;

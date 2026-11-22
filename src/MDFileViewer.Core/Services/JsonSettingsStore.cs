@@ -35,13 +35,7 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
 
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(filePath));
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                throw new JsonException("설정 파일의 최상위가 객체가 아닙니다.");
-            }
-
-            return Sanitize(ReadItems(document.RootElement));
+            return Parse(File.ReadAllText(filePath));
         }
         catch (JsonException exception)
         {
@@ -54,6 +48,25 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
             // 잠시 잠긴 파일은 손상이 아니므로 옮기지 않는다
             logger.Warn($"설정 파일을 열지 못해 기본값으로 시작합니다: {filePath}", exception);
             return new AppSettings();
+        }
+    }
+
+    public AppSettings? TryLoad()
+    {
+        if (!File.Exists(filePath))
+        {
+            return new AppSettings();
+        }
+
+        try
+        {
+            return Parse(File.ReadAllText(filePath));
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            // 다른 창이 쓰는 순간이었을 수 있다 — 손상으로 보고 옮기지 않는다. 호출자가 가진 값을 그대로 쓴다
+            logger.Info($"지금 설정 파일을 읽지 못했습니다: {filePath} ({exception.GetType().Name})");
+            return null;
         }
     }
 
@@ -82,6 +95,17 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
             TryDelete(tempPath);
             return false;
         }
+    }
+
+    private AppSettings Parse(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("설정 파일의 최상위가 객체가 아닙니다.");
+        }
+
+        return Sanitize(ReadItems(document.RootElement));
     }
 
     // 바꿔 끼우기 전에 디스크까지 내려 쓴다 — 전원이 끊기면 내용 없는 파일로 바뀐 설정이 남을 수 있다
@@ -127,6 +151,7 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
         "FAVORITES" => settings with { Favorites = Read<List<string>>(property) },
         "TABS" => settings with { Tabs = Read<TabsSettings>(property) },
         "DECLINEDSHELLREREGISTRATIONEXE" => settings with { DeclinedShellReregistrationExe = Read<string?>(property) },
+        "OPENINSINGLEWINDOW" => settings with { OpenInSingleWindow = Read<bool>(property) },
         _ => settings,
     };
 
@@ -148,7 +173,8 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
         return settings with
         {
             Window = IsUsable(settings.Window) ? settings.Window : null,
-            Layout = new LayoutSettings { TreePanelWidth = width, EditorSplitRatio = ratio },
+            // 새로 만들지 않고 고친다 — 범위 검사가 없는 항목(목차 패널 여닫기 등)이 여기서 사라지지 않게
+            Layout = layout with { TreePanelWidth = width, EditorSplitRatio = ratio },
             Theme = Enum.IsDefined(settings.Theme) ? settings.Theme : ThemeMode.System,
             LastFolder = string.IsNullOrWhiteSpace(settings.LastFolder) ? null : settings.LastFolder,
             Editor = settings.Editor ?? new EditorSettings(),

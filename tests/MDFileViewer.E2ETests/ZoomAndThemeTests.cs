@@ -90,7 +90,7 @@ public sealed class ZoomAndThemeTests : IDisposable
         try
         {
             ScrollWheelAt(session, point, 1);
-            AppSession.WaitUntil(() => percent.Name == "110%", $"Ctrl+휠 한 칸 뒤 배율이 110%가 아닙니다: {percent.Name}");
+            WaitForPercent(percent, "110%", "Ctrl+휠 한 칸 뒤 배율");
             for (var notch = 0; notch < WheelNotchesPastMinimum + 1; notch++)
             {
                 ScrollWheelAt(session, point, -1);
@@ -102,7 +102,7 @@ public sealed class ZoomAndThemeTests : IDisposable
             Keyboard.Release(VirtualKeyShort.CONTROL);
         }
 
-        AppSession.WaitUntil(() => percent.Name == "50%", $"범위를 벗어난 Ctrl+휠 뒤 배율이 50%가 아닙니다: {percent.Name}");
+        WaitForPercent(percent, "50%", "범위를 벗어난 Ctrl+휠 뒤 배율");
         Assert.False(session.FindById("ZoomOutButton").IsEnabled);
     }
 
@@ -212,8 +212,31 @@ public sealed class ZoomAndThemeTests : IDisposable
         }
     }
 
-    private static void WaitForPercent(AutomationElement percent, string expected) =>
-        AppSession.WaitUntil(() => percent.Name == expected, $"배율이 {expected}가 아닙니다: {percent.Name}");
+    // 실패하면 기다리는 동안 본 배율을 순서대로 알린다 — 메시지를 미리 만들면 입력을 보낸 직후의 값만 남아
+    // 입력이 안 간 것인지, 늦게 반영된 것인지, 두 번 간 것인지 가릴 수 없다
+    private static void WaitForPercent(AutomationElement percent, string expected, string what = "배율")
+    {
+        var seen = new List<string>();
+        try
+        {
+            AppSession.WaitUntil(
+                () =>
+                {
+                    var current = percent.Name;
+                    if (seen.Count == 0 || seen[^1] != current)
+                    {
+                        seen.Add(current);
+                    }
+
+                    return current == expected;
+                },
+                what);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException($"{what}이 {expected}가 아닙니다. 본 값(순서대로): {string.Join(" → ", seen)}", exception);
+        }
+    }
 
     // 휠은 요청한 점이 아니라 그 순간 마우스가 있는 곳으로 간다. 도는 사이 마우스가 움직였을 수 있으므로 칸마다 다시 옮기고 확인한다
     // — Ctrl을 누른 채라 다른 창으로 가면 그 창이 확대·축소된다(리뷰 2026-11-22).

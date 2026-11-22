@@ -43,6 +43,10 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Setup and Uninstall ask the user to close the app while this mutex exists. Without it, uninstalling
+; with the app open leaves locked files behind ("some elements could not be removed").
+; Must equal AppConstants.InstanceMutexName (checked by InstallerScriptTests).
+AppMutex=MDFileViewer.Instance.F3FFCBCE-5B03-4F83-BAC5-8AEFB5353A22
 SetupIconFile=..\src\MDFileViewer\Assets\app.ico
 
 [Languages]

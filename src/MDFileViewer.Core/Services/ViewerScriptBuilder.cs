@@ -4,7 +4,7 @@ using MDFileViewer.Core.Models;
 namespace MDFileViewer.Core.Services;
 
 /// <summary>
-/// viewer.html에 `ExecuteScriptAsync`로 보낼 스크립트를 만든다 (02 §6.2 안 A). 문서 안 스크립트는 꺼져 있어도
+/// viewer.html에 `ExecuteScriptAsync`로 보낼 스크립트를 만든다 (02 §6.2 안 A). 문서 안 스크립트는 CSP가 막아도
 /// 호스트가 보내는 이 스크립트는 실행된다(PoC-1). 값은 모두 JSON 문자열로 넣어 따옴표·줄 바꿈·비ASCII로 문법이 깨지지 않게 한다.
 /// </summary>
 /// <remarks>
@@ -21,6 +21,12 @@ public static class ViewerScriptBuilder
     /// <summary>viewer.html에서 본문 HTML을 넣는 요소 id.</summary>
     public const string ContentElementId = "content";
 
+    /// <summary>
+    /// 본문의 Mermaid 코드 블록을 그림으로 바꾸라고 뷰어 스크립트(viewer.js)에 시킨다 (02 §17.16). 본문이나 테마를 바꾼 뒤에 붙인다.
+    /// `mdfv`는 템플릿이 읽을 때 만든 바꿀 수 없는 속성이라 본문의 이름 있는 요소가 덮지 못한다. 스크립트를 읽지 못했으면 아무것도 하지 않는다.
+    /// </summary>
+    public const string RenderDiagrams = "if(window.mdfv){window.mdfv.renderDiagrams();}";
+
     private const string ScrollToTop = "window.scrollTo(0,0);";
 
     private const string DocumentElement =
@@ -30,10 +36,11 @@ public static class ViewerScriptBuilder
     public static string ShowDocument(string bodyHtml, string documentUrl) =>
         $"{GetElementById(BaseElementId)}.href={Literal(documentUrl)};" +
         SetContent(bodyHtml) +
-        ScrollToTop;
+        ScrollToTop +
+        RenderDiagrams;
 
     /// <summary>같은 문서의 본문만 바꾼다. 스크롤 위치는 그대로 둔다(편집 미리보기, 01 F-09).</summary>
-    public static string UpdateBody(string bodyHtml) => SetContent(bodyHtml);
+    public static string UpdateBody(string bodyHtml) => SetContent(bodyHtml) + RenderDiagrams;
 
     /// <summary>id가 같은 요소로 스크롤한다. 빈 id는 문서 처음으로 간다. 없는 id는 아무것도 하지 않는다.</summary>
     public static string ScrollToAnchor(string anchorId)
@@ -55,7 +62,7 @@ public static class ViewerScriptBuilder
             EffectiveTheme.Dark => "dark",
             _ => throw new ArgumentOutOfRangeException(nameof(theme), theme, "알 수 없는 테마입니다."),
         };
-        return $"Element.prototype.setAttribute.call({DocumentElement},{Literal("data-theme")},{Literal(value)});";
+        return $"Element.prototype.setAttribute.call({DocumentElement},{Literal("data-theme")},{Literal(value)});" + RenderDiagrams;
     }
 
     /// <summary>

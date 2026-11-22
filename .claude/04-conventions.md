@@ -14,9 +14,9 @@ MDFileViewer/
 │   │   ├── Properties/PublishProfiles/  # 발행 프로필 win-x64-singlefile(포터블)·win-x64-folder(설치 파일)
 │   │   ├── AppPaths.cs             # %LOCALAPPDATA% 아래 로그·WebView2 폴더, 리소스 폴더 경로
 │   │   ├── app.manifest            # 모니터별 DPI(Per-Monitor V2), 실행 수준 asInvoker (02 §4.2)
-│   │   ├── Views/                  # MainWindow(.Editing·.Menus 부분 파일), HelpWindow, 대화상자(MessageDialog)
+│   │   ├── Views/                  # MainWindow(.Editing·.Menus·.Drop·.Find·.Outline 부분 파일), HelpWindow, 대화상자(MessageDialog)
 │   │   ├── Controls/               # MarkdownView(WebView2 래퍼), 변환기. 편집기(AvalonEdit)는 MainWindow에 직접 둔다
-│   │   ├── Services/               # ThemeService, SystemThemeSource, DialogService, ShellLauncher, WebViewHost, WindowFitter,
+│   │   ├── Services/               # ThemeService, SystemThemeSource, DialogService, ShellLauncher, WebViewHost(.Find 부분 파일), WindowFitter,
 │   │   │                           # AvalonTextBuffer(탭 편집 버퍼), MarkdownHighlighting(xshd 읽기)
 │   │   ├── Themes/                 # Light.xaml, Dark.xaml(색상 토큰), Controls.xaml(공통 스타일)
 │   │   ├── Highlighting/           # Markdown-Light.xshd, Markdown-Dark.xshd
@@ -197,3 +197,5 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-18: 폴더 구조에 `docs/manual.md`(사용자 결정)·README 설명(§1), 원격 저장소와 공개 저장소 주의(§5).
 - 2026-11-18: 사용자 결정 — 폴더 구조에 `LICENSE`·`THIRD-PARTY-NOTICES.txt` 추가(§1).
 - 2026-11-18: §1 폴더 구조에 Phase 5~10 파일 반영(App.Shell.cs, MainWindow 부분 파일, 편집기는 MainWindow에 직접, App Services 추가분).
+- 2026-11-22: §1 폴더 구조에 찾기 부분 파일(`MainWindow.Find.cs`, `WebViewHost.Find.cs`) 반영.
+- 2026-11-22: §1 폴더 구조에 `MainWindow.Outline.cs` 반영.

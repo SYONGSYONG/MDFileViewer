@@ -28,6 +28,11 @@ public sealed record AppSettings
     /// 탐색기 메뉴가 다른 exe로 등록돼 있을 때 재등록 제안을 "나중에"로 거절한 exe 경로(2026-11-18 사용자 결정). 이 exe로 시작하면 다시 묻지 않는다.
     /// </summary>
     public string? DeclinedShellReregistrationExe { get; init; }
+
+    /// <summary>
+    /// 이미 열린 창이 있으면 새 창을 띄우지 않고 그 창에서 연다 (01 F-23). <c>false</c>면 실행할 때마다 새 창을 연다. 다음 실행부터 적용된다.
+    /// </summary>
+    public bool OpenInSingleWindow { get; init; } = true;
 }
 
 public sealed record WindowSettings(double Left, double Top, double Width, double Height, bool IsMaximized);
@@ -37,6 +42,9 @@ public sealed record LayoutSettings
     public double TreePanelWidth { get; init; } = AppConstants.DefaultTreePanelWidth;
 
     public double EditorSplitRatio { get; init; } = AppConstants.DefaultEditorSplitRatio;
+
+    /// <summary>목차 패널을 열어 두었는가 (01 F-21). 편집 모드로 잠시 숨긴 상태가 아니라 사용자가 고른 상태다.</summary>
+    public bool IsOutlineVisible { get; init; }
 }
 
 public sealed record EditorSettings

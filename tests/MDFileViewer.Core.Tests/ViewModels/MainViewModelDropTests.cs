@@ -126,6 +126,21 @@ public sealed class MainViewModelDropTests
         Assert.Equal(Readme, main.Document.FilePath);
     }
 
+    [Fact]
+    public async Task DropOnViewer_OpensFilesLikeDropOnWindow()
+    {
+        // Arrange — 문서 영역(WebView2) 위에 놓은 항목은 창이 아니라 뷰어가 알린다 (02 §17.10, PoC-7)
+        var main = await CreateMainAsync();
+
+        // Act
+        _viewer.RaisePathsDropped(Guide, Readme);
+        await main.PendingWork;
+
+        // Assert
+        Assert.Equal([Guide, Readme], main.Tabs.Tabs.Select(tab => tab.FilePath));
+        Assert.Equal(Guide, main.Document.FilePath);
+    }
+
     private async Task<MainViewModel> CreateMainAsync()
     {
         var main = NoSyncContext.Create(() =>

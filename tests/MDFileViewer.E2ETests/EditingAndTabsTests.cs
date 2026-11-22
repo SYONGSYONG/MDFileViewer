@@ -13,6 +13,10 @@ public sealed class EditingAndTabsTests : IDisposable
     private const string TypedText = "E2E ";
     private const int HelpSectionCount = 17;
 
+    // 릴리즈 노트는 1.0.0부터 적는다(01 F-24). 버전이 늘어도 맨 아래 1.0.0의 첫 줄은 그대로다 — 목록 첫 항목은 "숫자."으로 시작하는지만 본다
+    private const string FirstReleaseVersion = "1.";
+    private const string ReleaseNotesFirstLine = "첫 정식 버전입니다.";
+
     private readonly SampleDocuments _samples = new();
 
     public void Dispose() => _samples.Dispose();
@@ -124,6 +128,28 @@ public sealed class EditingAndTabsTests : IDisposable
         AppSession.WaitUntil(() => contents.FindAllChildren().Length == HelpSectionCount, "도움말 목차 수가 다릅니다.");
         AppSession.WaitUntil(() => help.FindFirstDescendant(cf => cf.ByName("Markdown 문법 도움말")) is not null, "도움말 문서가 보이지 않습니다.");
         help.Close();
+    }
+
+    [Fact]
+    public void ReleaseNotesButton_OpensWindowListingVersions()
+    {
+        // Arrange — 01 F-24
+        using var session = AppSession.Launch(_samples.PathOf(SampleDocuments.GuideFileName));
+        session.FindByName(SampleDocuments.GuideHeading);
+
+        // Act
+        session.FindById("ReleaseNotesButton").AsButton().Invoke();
+
+        // Assert — 왼쪽 목록에 버전이 있고 문서도 보인다. 다시 눌러도 창은 하나다
+        var notes = session.WaitForModalWindow(UiText.ReleaseNotesWindowTitle);
+        var contents = AppSession.FindIn(notes, "HelpContents");
+        AppSession.WaitUntil(
+            () => contents.FindAllChildren().Select(item => item.Name).FirstOrDefault()?.StartsWith(FirstReleaseVersion, StringComparison.Ordinal) == true,
+            "릴리즈 노트 목록의 첫 항목이 버전이 아닙니다.");
+        AppSession.WaitUntil(() => notes.FindFirstDescendant(cf => cf.ByName(ReleaseNotesFirstLine)) is not null, "릴리즈 노트 문서가 보이지 않습니다.");
+        session.FindById("ReleaseNotesButton").AsButton().Invoke();
+        Assert.Single(session.OwnedWindows(), window => window.Title == UiText.ReleaseNotesWindowTitle);
+        notes.Close();
     }
 
     [Fact]

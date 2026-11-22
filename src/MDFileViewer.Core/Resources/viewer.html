@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <!--
   문서 표시 템플릿 (.claude/02-specs.md §6.2 안 A). 앱이 한 번만 로드하고, 본문·<base>·테마는 ExecuteScriptAsync로 바꾼다.
-  문서 안 스크립트를 막으려고 스크립트를 두지 않고 CSP로 script-src를 막는다. 앱이 보내는 스크립트는 그래도 실행된다(PoC-1).
+  스크립트는 앱 폴더(appassets.example)의 것만 CSP가 허용한다 — 앱 스크립트 viewer.js와 그것이 읽는 Mermaid뿐이다 (§6.5·§17.16).
+  문서 안 스크립트(인라인·이벤트 속성·javascript: 주소·바깥 주소)는 실행되지 않는다. 인라인 스크립트는 여기에도 쓸 수 없다.
   <base>가 문서 위치로 바뀌므로 앱 리소스는 절대 URL로 참조한다. id는 ViewerScriptBuilder의 상수와 같아야 한다.
 -->
 <html lang="ko" data-theme="light">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src https://appassets.example 'unsafe-inline'; font-src https://appassets.example; script-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri https://docroot.example;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src https://appassets.example 'unsafe-inline'; font-src https://appassets.example; script-src https://appassets.example; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri https://docroot.example;">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base id="docbase" href="https://docroot.example/">
   <link rel="stylesheet" href="https://appassets.example/viewer.css">
+  <script src="https://appassets.example/viewer.js"></script>
   <title>MDFileViewer</title>
 </head>
 <body>
