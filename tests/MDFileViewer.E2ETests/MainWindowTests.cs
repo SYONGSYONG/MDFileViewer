@@ -164,7 +164,11 @@ public sealed class MainWindowTests : IDisposable
         session.FindSelectable(tree, SampleDocuments.AddedFileName);
         AppSession.WaitUntil(
             () => IsSelected(session.FindSelectable(tree, SampleDocuments.GuideFileName)), "새로고침 뒤 고른 파일의 선택이 풀렸습니다.");
-        Assert.Equal(TitleOf(SampleDocuments.GuideFileName), session.MainWindow.Title);
+
+        // 트리 선택은 문서가 다 열리기 전에 잡힌다 — 그때 F5를 누르면 제목은 문서가 열릴 때까지 폴더 이름이다(2026-11-22 간헐 실패). 열린 뒤의 제목을 본다
+        AppSession.WaitUntil(
+            () => session.MainWindow.Title == TitleOf(SampleDocuments.GuideFileName),
+            $"새로고침 뒤 창 제목이 고른 파일이 아닙니다: '{session.MainWindow.Title}'");
         Assert.Equal(_samples.PathOf(SampleDocuments.GuideFileName), session.FindById("DocumentPathText").Name);
     }
 
