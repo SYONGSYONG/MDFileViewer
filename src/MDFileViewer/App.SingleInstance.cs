@@ -33,7 +33,13 @@ public partial class App
     /// </summary>
     private bool TryBecomePrimary()
     {
-        var mutex = new Mutex(initiallyOwned: false, AppConstants.PrimaryInstanceMutexName + InstanceSuffix);
+        // 권한이 다른 실행(다른 계정의 관리자 권한으로 켠 창 등)이 받는 창이면 뮤텍스를 열지 못할 수 있다 — 받는 창이 되지 못한 것으로 보고,
+        // 호출자가 넘겨 보다가(파이프도 막힌다) 자기 창을 띄우게 한다. 시작을 실패시키지 않는다 (02 §17.14)
+        if (NamedMutex.TryOpen(AppConstants.PrimaryInstanceMutexName + InstanceSuffix, _logger) is not { } mutex)
+        {
+            return false;
+        }
+
         bool isOwner;
         try
         {

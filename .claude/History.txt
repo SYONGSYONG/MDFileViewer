@@ -242,3 +242,6 @@ A: 7557914 커밋·푸시. Directory.Build.props 1.0.0, docs/manual.md·README.m
 [2026-11-23 07:51]
 Q: 다른 PC 작업 뒤 원격 상태 확인, 원격 main 기준으로 맞춤, F5 테스트 수정 커밋·푸시, stash·로컬 브랜치 필요 여부 비교
 A: 원격 main 8f878ad(1.0.0)로 fast-forward. 이 PC의 미커밋 12-4·12-5 구현은 원격 구현(OpenRequest*)과 겹쳐 stash로 보관. 원격에 없던 F5 간헐 실패 테스트 수정(tests/MDFileViewer.E2ETests/MainWindowTests.cs — 창 제목을 기다려 확인)만 fix/e2e-f5-title-wait에 커밋. 빌드 경고 0, Core 737 통과, E2E는 실행하지 않음.
+[2026-11-23 08:13]
+Q: stash·로컬 feature/viewer-find 삭제, 뮤텍스 생성 실패 고치기
+A: stash·브랜치 삭제. 권한이 다른 실행이 만든 뮤텍스를 열 때 UnauthorizedAccessException으로 시작이 실패하던 경로 수정 — src/MDFileViewer.Core/Services/NamedMutex.cs(TryOpen) 추가, App.xaml.cs(_instanceMutex)·App.SingleInstance.cs(TryBecomePrimary)가 사용. NamedMutexTests 4개(거부된 뮤텍스로 재현, 구현 전 실패 확인). 02 §15.1·§17.14, 05 기록. 브랜치 fix/mutex-access-denied.

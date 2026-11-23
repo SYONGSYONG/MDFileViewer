@@ -76,7 +76,8 @@ public partial class App : Application
 
         // 설치·제거 프로그램이 "앱이 켜져 있다"를 알 수 있게 한다(02 §15.1). 등록·해제만 하고 끝나는 실행(위)은 만들지 않는다 —
         // 제거 프로그램이 스스로 부르는 `--unregister`가 자기 확인에 걸리지 않게.
-        _instanceMutex = new Mutex(initiallyOwned: false, AppConstants.InstanceMutexName);
+        // 권한이 다른 실행이 먼저 만든 뮤텍스는 열지 못할 수 있다 — 그래도 창은 띄운다(이 창은 설치 프로그램의 확인에 잡히지 않는다).
+        _instanceMutex = NamedMutex.TryOpen(AppConstants.InstanceMutexName, _logger);
 
         _settingsStore = new JsonSettingsStore(ResolveSettingsPath(), _logger);
         _settings = _settingsStore.Load();
