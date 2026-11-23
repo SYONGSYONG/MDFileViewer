@@ -32,6 +32,9 @@ public partial class App : Application
     // 프로세스가 끝날 때까지 쥐고 있어야 하므로 필드로 둔다(지역 변수면 수거되며 닫힌다). 끝날 때 Windows가 닫는다.
     private Mutex? _instanceMutex;
 
+    // 끝나는 중에 난 예외는 알리지 않고 프로세스를 끝낸다 (02 §13)
+    private readonly ShutdownMonitor _shutdown = new();
+
     // 시작 처리 전체가 이벤트 처리기 안에서 돌아야 하므로 async void를 쓴다(04 §3.2 예외). 예외는 모두 안에서 잡는다.
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -55,6 +58,22 @@ public partial class App : Application
                 Shutdown(ExitCodeFailure);
             }
         }
+    }
+
+    // Windows의 종료 요청(로그오프·시스템 종료, 설치 프로그램이 앱을 닫을 때). 받아들이면 WPF가 곧바로 앱을 끝낸다
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+        if (!e.Cancel)
+        {
+            _shutdown.MarkShuttingDown();
+        }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _shutdown.MarkShuttingDown();
+        base.OnExit(e);
     }
 
     private async Task StartAsync(IReadOnlyList<string> arguments)
@@ -155,6 +174,9 @@ public partial class App : Application
         };
         window.CloseConfirmed += (_, _) => SaveSettings(window, viewModel);
         window.Closed += (_, _) => StopReceivingOpenRequests();
+
+        // 메인 창이 닫히면 앱이 끝난다(ShutdownMode.OnMainWindowClose) — 그 뒤의 예외로 대화상자를 띄워 프로세스를 붙잡지 않는다
+        window.Closed += (_, _) => _shutdown.MarkShuttingDown();
         window.OpenInSingleWindow = _settings.OpenInSingleWindow;
         window.OpenInSingleWindowChanged += (_, isSingleWindow) => SaveOpenInSingleWindow(isSingleWindow, viewModel);
         WireWindowRequests(window, viewModel, shell);
@@ -320,7 +342,23 @@ public partial class App : Application
     {
         _logger.Error("처리하지 못한 예외 (UI 스레드)", e.Exception);
         e.Handled = true;
+        if (_shutdown.DecideOnUnhandledError() == UnhandledErrorAction.ExitProcess)
+        {
+            ExitAfterShutdownFailure();
+            return;
+        }
+
         ShowUnexpectedError();
+    }
+
+    /// <summary>
+    /// 끝나는 중에 난 예외 — 알릴 창도 이어 쓸 화면도 없으니 프로세스를 끝낸다. 예외를 처리됨으로만 두면 중단된 종료가 다시 이어지지 않아
+    /// 창 없는 프로세스가 남고, 앱이 닫히기를 기다리는 설치 프로그램이 멈춘다(2026-11-23 사용자 보고 — 종료 요청 처리 중 WPF 안에서 난 예외).
+    /// </summary>
+    private void ExitAfterShutdownFailure()
+    {
+        _logger.Warn("끝나는 중에 예외가 나서 프로세스를 바로 끝냅니다.");
+        Environment.Exit(ExitCodeFailure);
     }
 
     // 종료자 스레드에서 오므로 대화상자는 UI 스레드로 넘긴다. 대화상자에서 난 예외가 작업에 담겨 묻히지 않도록 BeginInvoke를 쓴다.
@@ -328,6 +366,13 @@ public partial class App : Application
     {
         _logger.Error("처리하지 못한 예외 (작업)", e.Exception);
         e.SetObserved();
+
+        // 끝나는 중이면 알리지 않는다 — 대화상자가 종료를 붙잡는다. 이 예외는 종료를 중단시키지 않으므로 프로세스를 따로 끝낼 필요는 없다
+        if (_shutdown.IsShuttingDown)
+        {
+            return;
+        }
+
         Dispatcher.BeginInvoke(new Action(ShowUnexpectedError));
     }
 
@@ -335,6 +380,12 @@ public partial class App : Application
     private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         _logger.Error("처리하지 못한 예외 (프로세스 종료)", e.ExceptionObject as Exception);
+        if (_shutdown.IsShuttingDown)
+        {
+            // 메시지 상자를 띄우면 닫아 줄 사람이 없는 채(창이 이미 없다) 프로세스가 남는다
+            return;
+        }
+
         MessageBox.Show(UiText.UnexpectedErrorMessage, UiText.UnexpectedErrorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
