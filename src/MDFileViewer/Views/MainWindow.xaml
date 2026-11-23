@@ -122,6 +122,7 @@
         <KeyBinding Key="OemMinus" Modifiers="Control" Command="{Binding Zoom.ZoomOutCommand}" />
         <KeyBinding Key="Subtract" Modifiers="Control" Command="{Binding Zoom.ZoomOutCommand}" />
         <KeyBinding Key="F" Modifiers="Control" Command="{Binding Find.OpenCommand}" />
+        <KeyBinding Key="P" Modifiers="Control" Command="{Binding PrintCommand}" />
         <KeyBinding Key="F3" Command="{Binding Find.NextCommand}" />
         <KeyBinding Key="F3" Modifiers="Shift" Command="{Binding Find.PreviousCommand}" />
         <KeyBinding Key="D0" Modifiers="Control" Command="{Binding Zoom.ResetCommand}" />
@@ -145,6 +146,14 @@
                     <TextBlock Style="{StaticResource IconText}" Text="{x:Static themes:IconGlyphs.More}" />
                     <Button.ContextMenu>
                         <ContextMenu>
+                            <!-- 인쇄·내보내기 (01 F-26). 문서가 보이지 않으면 명령이 꺼져 항목이 흐려진다 -->
+                            <MenuItem Header="{x:Static core:UiText.PrintMenu}" Command="{Binding PrintCommand}" InputGestureText="Ctrl+P"
+                                      AutomationProperties.AutomationId="PrintMenuItem" />
+                            <MenuItem Header="{x:Static core:UiText.ExportPdfMenu}" Command="{Binding ExportPdfCommand}"
+                                      AutomationProperties.AutomationId="ExportPdfMenuItem" />
+                            <MenuItem Header="{x:Static core:UiText.ExportHtmlMenu}" Command="{Binding ExportHtmlCommand}"
+                                      AutomationProperties.AutomationId="ExportHtmlMenuItem" />
+                            <Separator />
                             <!-- 창 하나로 열기 (01 F-23). 누르면 체크가 바뀌고 바로 저장한다 — 다음 실행부터 적용 -->
                             <MenuItem x:Name="SingleWindowMenuItem" Header="{x:Static core:UiText.SingleWindowMenu}" IsCheckable="True"
                                       Click="OnSingleWindowClick" ToolTip="{x:Static core:UiText.SingleWindowToolTip}"

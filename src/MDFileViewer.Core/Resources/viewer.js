@@ -1,5 +1,7 @@
 // 뷰어 템플릿(viewer.html)이 읽는 앱 스크립트 (.claude/02-specs.md §17.16, 01 F-25).
 // 본문의 ```mermaid 코드 블록을 그림(SVG)으로 바꾼다. 앱이 본문·테마를 바꾼 뒤 window.mdfv.renderDiagrams()를 부른다.
+// 인쇄·내보내기(01 F-26, 02 §17.17) 전에는 앱이 prepareOutput()을 부르고 isOutputReady()가 참이 되기를 기다린다 — 결과물은 늘 밝은 테마라,
+// 어두운 테마로 그려 둔 그림 옆에 밝은 그림을 숨겨서 넣어 둔다(인쇄용 스타일이 그쪽을 보여 준다). exportHtml()은 그 밝은 그림으로 바꾼 본문을 준다.
 //
 // 문서 안 스크립트는 CSP(script-src는 앱 폴더뿐)가 막는다. 이 파일과 mermaid.min.js만 실행된다.
 // 본문의 원시 HTML이 document.getElementById 같은 속성을 덮을 수 있으므로(DOM clobbering, ViewerScriptBuilder 참고)
@@ -14,6 +16,9 @@
   var FAILED_ATTRIBUTE = 'data-diagram-failed';
   var THEME_ATTRIBUTE = 'data-theme';
   var DARK = 'dark';
+  var LIGHT = 'default';
+  var LIGHT_COPY_CLASS = 'diagram-light';
+  var HAS_LIGHT_ATTRIBUTE = 'data-has-light';
 
   // 그린 결과를 기억하는 개수. 넘으면 전부 비운다 — 편집 미리보기는 입력마다 본문을 다시 넣으므로 바뀌지 않은 그림을 다시 그리지 않게 한다
   var CACHE_LIMIT = 200;
@@ -33,6 +38,8 @@
   var setClassName = Object.getOwnPropertyDescriptor(Element.prototype, 'className').set;
   var replaceWith = Element.prototype.replaceWith;
   var removeElement = Element.prototype.remove;
+  var cloneNode = Node.prototype.cloneNode;
+  var getInnerHtml = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').get;
 
   var library = null;        // 불러온 mermaid
   var libraryLoading = null; // 불러오는 중인 Promise
@@ -40,6 +47,8 @@
   var sources = new WeakMap(); // 이 파일이 만든 그림 요소 → 원문. 본문이 흉내 낸 요소는 여기에 없다
   var generation = 0;        // 본문·테마가 다시 바뀌면 앞선 그리기를 그만둔다
   var sequence = 0;
+  var queue = Promise.resolve(); // 그리기는 한 번에 하나씩 한다 — mermaid 설정(테마)이 전역이라 겹치면 다른 테마로 그려진다
+  var outputReady = true;
 
   function currentTheme() {
     return getAttribute.call(rootElement, THEME_ATTRIBUTE) === DARK ? DARK : 'default';
@@ -97,6 +106,35 @@
     }
   }
 
+  function enqueue(work) {
+    queue = queue.then(work, work);
+    return queue;
+  }
+
+  // strict: 그림 원문의 스크립트·이벤트 속성을 지우고 클릭 동작을 만들지 않는다. 스크립트를 막는 경계는 CSP이고 이것은 그 안쪽의 한 겹이다
+  function configure(mermaid, theme) {
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: theme });
+  }
+
+  // 그리지 못하면(문법이 틀린 블록) null
+  async function renderSvg(mermaid, source) {
+    var id = 'mdfv-diagram-' + (++sequence);
+    try {
+      return (await mermaid.render(id, source)).svg;
+    } catch (error) {
+      removeLeftovers(id);
+      return null;
+    }
+  }
+
+  function remember(theme, source, svg) {
+    if (cache.size >= CACHE_LIMIT) {
+      cache.clear();
+    }
+
+    cache.set(theme + '\n' + source, svg);
+  }
+
   // 그릴 대상: 아직 코드 블록인 것(<pre>를 통째로 바꾼다)과, 테마가 바뀌어 다시 그릴 이미 그린 그림
   function collectTargets(content) {
     var targets = [];
@@ -125,18 +163,12 @@
       return;
     }
 
-    // strict: 그림 원문의 스크립트·이벤트 속성을 지우고 클릭 동작을 만들지 않는다. 스크립트를 막는 경계는 CSP이고 이것은 그 안쪽의 한 겹이다
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: theme });
+    configure(mermaid, theme);
     for (var index = 0; index < pending.length; index++) {
       var item = pending[index];
-      var id = 'mdfv-diagram-' + (++sequence);
-      var svg = null;
-      try {
-        svg = (await mermaid.render(id, item.source)).svg;
-      } catch (error) {
-        // 문법이 틀린 블록 — 아래에서 원문 그대로 둔다
-        removeLeftovers(id);
-      }
+
+      // 문법이 틀린 블록은 null — 아래에서 원문 그대로 둔다
+      var svg = await renderSvg(mermaid, item.source);
 
       // 그리는 사이 본문·테마가 바뀌었으면 결과를 버린다. 기억하지도 않는다 — 뒤 호출이 설정(테마)을 바꾼 뒤에 끝난 그림일 수 있다
       if (mine !== generation) {
@@ -153,13 +185,82 @@
         continue;
       }
 
-      if (cache.size >= CACHE_LIMIT) {
-        cache.clear();
-      }
-
-      cache.set(theme + '\n' + item.source, svg);
+      remember(theme, item.source, svg);
       show(item.element, item.source, svg);
     }
+  }
+
+  // 어두운 테마로 그려 둔 그림마다 밝은 그림을 숨겨서 붙인다. 밝은 테마면 화면의 그림이 곧 결과물이라 할 일이 없다
+  async function addLightCopies() {
+    var content = getElementById.call(doc, CONTENT_ID);
+    if (!content || currentTheme() !== DARK) {
+      return;
+    }
+
+    var mermaid = null;
+    var drawn = querySelectorAll.call(content, 'div.' + DIAGRAM_CLASS);
+    for (var index = 0; index < drawn.length; index++) {
+      var holder = drawn[index];
+      var source = sources.get(holder);
+      if (typeof source !== 'string' || getAttribute.call(holder, HAS_LIGHT_ATTRIBUTE)) {
+        continue;
+      }
+
+      var svg = cache.get(LIGHT + '\n' + source);
+      if (typeof svg !== 'string') {
+        if (!mermaid) {
+          mermaid = await loadLibrary();
+          configure(mermaid, LIGHT);
+        }
+
+        svg = await renderSvg(mermaid, source);
+        if (typeof svg !== 'string') {
+          continue;
+        }
+
+        remember(LIGHT, source, svg);
+      }
+
+      var copy = createElement.call(doc, 'div');
+      setClassName.call(copy, LIGHT_COPY_CLASS);
+      setInnerHtml.call(copy, svg);
+      appendChild.call(holder, copy);
+      setAttribute.call(holder, HAS_LIGHT_ATTRIBUTE, '1');
+    }
+  }
+
+  // 앞서 시작한 그리기가 끝난 뒤에 준비한다 — 아직 코드 블록인 그림이 결과물에 원문으로 나가지 않게
+  function prepareOutput() {
+    outputReady = false;
+    enqueue(function () {
+      return addLightCopies().catch(function () { });
+    }).then(function () {
+      outputReady = true;
+    });
+  }
+
+  function isOutputReady() {
+    return outputReady;
+  }
+
+  // 화면의 본문은 건드리지 않고 복사본에서 어두운 그림을 밝은 그림으로 바꿔 돌려준다
+  function exportHtml() {
+    var content = getElementById.call(doc, CONTENT_ID);
+    if (!content) {
+      return '';
+    }
+
+    var clone = cloneNode.call(content, true);
+    var copies = querySelectorAll.call(clone, 'div.' + DIAGRAM_CLASS + '[' + HAS_LIGHT_ATTRIBUTE + '] > div.' + LIGHT_COPY_CLASS);
+    for (var index = 0; index < copies.length; index++) {
+      var holder = parentOf.call(copies[index]);
+      var replacement = createElement.call(doc, 'div');
+      setClassName.call(replacement, DIAGRAM_CLASS);
+      setInnerHtml.call(replacement, getInnerHtml.call(copies[index]));
+      replaceWith.call(holder, replacement);
+    }
+
+    return getInnerHtml.call(clone);
   }
 
   function renderDiagrams() {
@@ -185,13 +286,15 @@
 
     if (pending.length > 0) {
       // 불러오기 실패는 여기서 끝낸다 — 코드 블록이 원문 그대로 남는다
-      renderPending(pending, theme, mine).catch(function () { });
+      enqueue(function () {
+        return renderPending(pending, theme, mine).catch(function () { });
+      });
     }
   }
 
   // 본문의 이름 있는 요소(<img name="mdfv">)가 덮지 못하게 바꿀 수 없는 속성으로 둔다
   Object.defineProperty(window, 'mdfv', {
-    value: Object.freeze({ renderDiagrams: renderDiagrams }),
+    value: Object.freeze({ renderDiagrams: renderDiagrams, prepareOutput: prepareOutput, isOutputReady: isOutputReady, exportHtml: exportHtml }),
     writable: false,
     configurable: false,
     enumerable: false

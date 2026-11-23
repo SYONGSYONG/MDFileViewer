@@ -17,4 +17,8 @@ public sealed record MainServices(IDialogService Dialogs, IShellLauncher Shell, 
 
     /// <summary>끌어다 놓은 항목이 폴더인지 (01 F-19). 테스트는 가짜 폴더 목록으로 바꾼다.</summary>
     public Func<string, bool> DirectoryExists { get; init; } = Directory.Exists;
+
+    /// <summary>HTML로 내보낼 때 파일 안에 넣을 뷰어 스타일 (01 F-26). 기본은 출력 폴더의 <c>Resources\viewer.css</c>다.</summary>
+    public Func<string> ReadStylesheet { get; init; } = () => File.ReadAllText(
+        Path.Combine(AppContext.BaseDirectory, AppConstants.ResourcesFolderName, AppConstants.ViewerStylesheetFileName));
 }

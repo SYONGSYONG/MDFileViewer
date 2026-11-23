@@ -300,3 +300,86 @@ body {
   display: block;
   height: auto;
 }
+
+/* 인쇄·내보내기용 밝은 그림 (01 F-26). 어두운 테마일 때 viewer.js가 그림 옆에 넣어 두고, 화면에서는 숨긴다 */
+.markdown-body .diagram .diagram-light {
+  display: none;
+}
+
+/* ── 인쇄·PDF (01 F-26, 02 §17.17): 앱 테마와 상관없이 항상 밝은 테마 ──
+   아래 색 값은 위 밝은 테마 블록과 같아야 한다(ViewerTemplateTests가 비교한다). CSS에는 블록을 가리켜 다시 쓰는 방법이 없어 한 번 더 적는다. */
+@media print {
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --surface-chrome: #F4F2EE;
+    --surface-panel: #EEEBE5;
+    --surface-document: #FFFFFF;
+    --surface-hover: #E4E0D8;
+    --surface-selected: #DCE6F8;
+    --border-subtle: #DAD6CE;
+    --border-strong: #8C877D;
+    --text-primary: #1E2228;
+    --text-secondary: #5B6270;
+    --text-disabled: #9A9FA8;
+    --accent: #2F6FDE;
+    --mode-edit: #C77700;
+    --status-danger: #C2382E;
+    --status-success: #1F7A44;
+    --code-background: #F4F1EA;
+    --quote-bar: #D3CDC1;
+    --code-comment: #5B6270;
+    --code-string: #1B6B3A;
+    --code-number: #A3420F;
+    --code-keyword: #B02A37;
+    --code-function: #6F3FC0;
+    --code-type: #8A5300;
+    --code-tag: #1F4FB0;
+    --code-attribute: #0B6A70;
+  }
+
+  /* 여백은 용지 설정이 정한다 */
+  .markdown-body {
+    padding: 0;
+  }
+
+  /* 종이에는 가로 스크롤이 없다 — 긴 코드 줄은 접고, 넓은 그림은 잘리지 않게 둔다 */
+  .markdown-body pre {
+    overflow: visible;
+  }
+
+  .markdown-body pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .markdown-body table,
+  .markdown-body .diagram {
+    overflow: visible;
+  }
+
+  .markdown-body .diagram[data-has-light] > svg {
+    display: none;
+  }
+
+  .markdown-body .diagram .diagram-light {
+    display: block;
+  }
+
+  /* 제목만 쪽 끝에 남거나 그림·표·코드가 쪽 사이에서 잘리지 않게 한다(한 쪽보다 길면 브라우저가 나눈다) */
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    break-after: avoid;
+  }
+
+  .markdown-body pre,
+  .markdown-body table,
+  .markdown-body img,
+  .markdown-body blockquote,
+  .markdown-body .diagram {
+    break-inside: avoid;
+  }
+}

@@ -39,6 +39,8 @@ public sealed partial class MainViewModel : ObservableObject
         _watcher = services.Watcher;
         _fileExists = services.FileExists;
         _directoryExists = services.DirectoryExists;
+        _viewer = viewer;
+        _readStylesheet = services.ReadStylesheet;
         _uiContext = SynchronizationContext.Current;
 
         OpenFolderCommand = new AsyncRelayCommand(_ => OpenFolderAsync(), OnCommandFailed);
@@ -47,6 +49,7 @@ public sealed partial class MainViewModel : ObservableObject
         InitializeTabCommands();
         InitializeMenuCommands();
         InitializeDropCommand();
+        InitializeExportCommands();
         Zoom = CreateZoom(viewer);
         Outline = new OutlineViewModel(document, services.Logger);
         Find = new FindViewModel(viewer, services.Time, services.Logger, () => Document.IsDocumentVisible && !Document.IsEditing);
@@ -306,6 +309,7 @@ public sealed partial class MainViewModel : ObservableObject
                 Find.NotifyCanOpenChanged();
                 break;
             case nameof(DocumentViewModel.IsDocumentVisible):
+                NotifyExportCommands();
                 Find.NotifyCanOpenChanged();
                 break;
         }

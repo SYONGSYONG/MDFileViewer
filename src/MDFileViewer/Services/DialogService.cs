@@ -39,6 +39,26 @@ public sealed class DialogService : IDialogService
     public bool ConfirmConvertToUtf8(string fileName) =>
         MessageDialog.Show(Owner, UiText.ConvertToUtf8Title, string.Format(UiText.ConvertToUtf8Format, fileName), UiText.ConvertToUtf8Button, UiText.CancelButton);
 
+    public string? PickSaveFile(SaveFileRequest request)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = request.Title,
+            FileName = request.SuggestedFileName,
+            Filter = $"{request.FilterName} (*.{request.Extension})|*.{request.Extension}",
+            DefaultExt = request.Extension,
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (!string.IsNullOrEmpty(request.InitialFolder))
+        {
+            dialog.InitialDirectory = request.InitialFolder;
+        }
+
+        var isPicked = Owner is { } owner ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+        return isPicked == true ? dialog.FileName : null;
+    }
+
     public string? PickFolder(string? initialFolder)
     {
         var dialog = new OpenFolderDialog { Title = UiText.OpenFolderTitle, Multiselect = false };

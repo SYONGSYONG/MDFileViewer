@@ -146,6 +146,58 @@ public sealed partial class ViewerTemplateTests
     }
 
     [Fact]
+    public void ViewerScript_ExposesTheOutputEntryPointsTheScriptBuilderCalls()
+    {
+        // Act
+        var script = ReadViewerScript();
+
+        // Assert — 인쇄·내보내기 준비와 본문 꺼내기 (01 F-26)
+        Assert.Contains("prepareOutput: prepareOutput", script, StringComparison.Ordinal);
+        Assert.Contains("isOutputReady: isOutputReady", script, StringComparison.Ordinal);
+        Assert.Contains("exportHtml: exportHtml", script, StringComparison.Ordinal);
+        Assert.Contains("window.mdfv.prepareOutput()", ViewerScriptBuilder.PrepareOutput, StringComparison.Ordinal);
+        Assert.Contains("window.mdfv.isOutputReady()", ViewerScriptBuilder.IsOutputReady, StringComparison.Ordinal);
+        Assert.Contains("window.mdfv.exportHtml()", ViewerScriptBuilder.ExportHtml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stylesheet_PrintsDarkThemeWithLightTokens()
+    {
+        // Arrange — 인쇄용 블록은 원래의 어두운 테마 블록 뒤에 있다
+        var css = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerStylesheetFileName));
+        var print = css[css.IndexOf("@media print", StringComparison.Ordinal)..];
+        var start = print.IndexOf(":root[data-theme=\"dark\"] {", StringComparison.Ordinal);
+        Assert.True(start >= 0, "인쇄용 어두운 테마 블록이 없습니다.");
+        var block = print[start..print.IndexOf('}', start)];
+
+        // Act
+        var printTokens = CustomProperty().Matches(block).ToDictionary(match => match.Groups["name"].Value, match => match.Groups["value"].Value.Trim());
+
+        // Assert — 결과물은 앱 테마와 상관없이 밝은 테마다 (01 F-26). 밝은 테마 값을 고치면 여기도 같이 고쳐야 한다
+        Assert.Equal(ReadThemeBlock("light"), printTokens);
+        Assert.Contains("color-scheme: light;", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stylesheet_ShowsLightDiagramCopyOnlyInPrint()
+    {
+        // Arrange
+        var css = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerStylesheetFileName));
+        var printStart = css.IndexOf("@media print", StringComparison.Ordinal);
+
+        // Act
+        var screen = css[..printStart];
+        var print = css[printStart..];
+
+        // Assert — 화면에서는 숨기고, 인쇄에서는 어두운 그림 대신 보여 준다
+        Assert.Contains(".markdown-body .diagram .diagram-light {\n  display: none;", screen.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains(".markdown-body .diagram[data-has-light] > svg {\n    display: none;", print.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains(".markdown-body .diagram .diagram-light {\n    display: block;", print.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("'diagram-light'", ReadViewerScript(), StringComparison.Ordinal);
+        Assert.Contains("'data-has-light'", ReadViewerScript(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ViewerScript_DoesNotReadClobberableDocumentMembers()
     {
         // Act — 주석을 뺀 코드만 본다

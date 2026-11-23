@@ -47,6 +47,18 @@ public interface IViewerHost
     event EventHandler<FindMatchesChangedEventArgs>? FindMatchesChanged;
 
     /// <summary>
+    /// 지금 보이는 문서의 인쇄 미리보기 창을 연다 (01 F-26, 02 §17.17). 창을 띄우면 돌아온다 — 인쇄가 끝나기를 기다리지 않는다.
+    /// 결과물은 테마와 상관없이 밝은 테마다(아래 두 메서드도 같다).
+    /// </summary>
+    Task ShowPrintDialogAsync(CancellationToken cancellationToken);
+
+    /// <summary>지금 보이는 문서를 PDF 파일로 만든다. 만들지 못하면 <c>false</c>.</summary>
+    Task<bool> SaveAsPdfAsync(string filePath, CancellationToken cancellationToken);
+
+    /// <summary>지금 보이는 본문의 HTML — 구문 색상과 그림으로 바뀐 다이어그램(밝은 테마)이 들어 있다. HTML 내보내기에 쓴다.</summary>
+    Task<string> GetOutputHtmlAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// 사용자가 문서 영역 위에 파일·폴더를 놓았다 (01 F-19). 한 번에 놓은 항목을 놓은 순서대로 모아 알린다 —
     /// 문서 영역은 창의 드롭 이벤트로 오지 않아 뷰어가 따로 알린다 (02 §17.10).
     /// </summary>

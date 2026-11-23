@@ -267,6 +267,9 @@ public sealed partial class WebViewHost : IViewerHost
     {
         var generation = _webViewGeneration;
         _isTemplateLoaded = false;
+
+        // 템플릿을 불러오는 동안에는 바탕색이 그대로 보인다 — 인쇄하느라 종이색으로 둔 것(WebViewHost.Output.cs)을 테마 색으로 되돌린다
+        _view.RestoreBackground();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _templateCompletion = completion;
         core.Navigate(TemplateUrl);

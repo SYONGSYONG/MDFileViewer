@@ -27,6 +27,18 @@ public static class ViewerScriptBuilder
     /// </summary>
     public const string RenderDiagrams = "if(window.mdfv){window.mdfv.renderDiagrams();}";
 
+    /// <summary>
+    /// 인쇄·내보내기 준비를 시킨다 (01 F-26, 02 §17.17) — 어두운 테마로 그려 둔 그림의 밝은 그림을 만든다. 끝났는지는 <see cref="IsOutputReady"/>로 묻는다.
+    /// </summary>
+    public const string PrepareOutput = "if(window.mdfv){window.mdfv.prepareOutput();}";
+
+    /// <summary>준비가 끝났으면 <c>true</c>. 뷰어 스크립트를 읽지 못했으면 준비할 것이 없으므로 <c>true</c>다.</summary>
+    public const string IsOutputReady = "(!window.mdfv||window.mdfv.isOutputReady())";
+
+    /// <summary>지금 보이는 본문의 HTML(밝은 그림으로 바꾼 것). 뷰어 스크립트를 읽지 못했으면 본문 그대로다.</summary>
+    public static string ExportHtml { get; } =
+        $"(window.mdfv?window.mdfv.exportHtml():Object.getOwnPropertyDescriptor(Element.prototype,\"innerHTML\").get.call({GetElementById(ContentElementId)}))";
+
     private const string ScrollToTop = "window.scrollTo(0,0);";
 
     private const string DocumentElement =

@@ -245,3 +245,15 @@ A: 원격 main 8f878ad(1.0.0)로 fast-forward. 이 PC의 미커밋 12-4·12-5 �
 [2026-11-23 08:13]
 Q: stash·로컬 feature/viewer-find 삭제, 뮤텍스 생성 실패 고치기
 A: stash·브랜치 삭제. 권한이 다른 실행이 만든 뮤텍스를 열 때 UnauthorizedAccessException으로 시작이 실패하던 경로 수정 — src/MDFileViewer.Core/Services/NamedMutex.cs(TryOpen) 추가, App.xaml.cs(_instanceMutex)·App.SingleInstance.cs(TryBecomePrimary)가 사용. NamedMutexTests 4개(거부된 뮤텍스로 재현, 구현 전 실패 확인). 02 §15.1·§17.14, 05 기록. 브랜치 fix/mutex-access-denied.
+[2026-11-23 13:57]
+Q: main에 두 fix 브랜치 합치기·버전 검토·보완 기능 검토, 인쇄·PDF·HTML 내보내기 추가(1.1.0, HTML 파일 하나, 항상 밝은 테마, ⋯ 메뉴)
+A: fix 두 개를 main에 합쳐 푸시(9017671), 버전은 1.0.0 유지 권고. 브랜치 feature/print-export에 F-26 구현 — Core: Services/HtmlExporter.cs, ViewModels/MainViewModel.Export.cs, Models/SaveFileRequest.cs, IViewerHost·IDialogService·MainServices·AppConstants·UiText, Resources/viewer.js(prepareOutput·exportHtml·그리기 큐)·viewer.css(@media print). App: Services/WebViewHost.Output.cs, DialogService.PickSaveFile, MainWindow.xaml(⋯ 메뉴·Ctrl+P). 01 F-26, 02 §17.17(PoC-10), 03, 04, 05 Phase 13, manual·help·release-notes(1.1.0 절). Core 771 통과, 빌드 경고 0. 앱 실행·E2E는 하지 않음. 커밋 안 함.
+[2026-11-23 14:03]
+Q: (이어서) 인쇄·내보내기 코드 리뷰 반영
+A: code-reviewer HIGH 1·MEDIUM 3·LOW 일부 반영 — HtmlExporter(문서 루트 안의 상대 주소 그림만 넣기, CSP에서 http 제외), MainViewModel.Export.cs(문서가 바뀌면 내보내지 않음, 임시 파일에 쓰고 바꾸기), WebViewHost.Output.cs(PDF 2분 제한, 준비 대기 취소, 예외 종류 통일). 02 §17.17·01 F-26·manual 갱신. Core 782 통과, 빌드 경고 0. 커밋 안 함.
+[2026-11-23 14:25]
+Q: PDF 테두리(여백)가 어둡게 나오는데 일부러 한 것인지
+A: 결함. 어두운 테마의 WebView2 기본 바탕색이 용지 여백에 찍혔다(시험 프로그램으로 재현). 내보내는 동안 종이색으로 두도록 수정 — src/MDFileViewer/Controls/MarkdownView.cs(UsePaperBackground·RestoreBackground), Services/WebViewHost.Output.cs, WebViewHost.cs. 02 §17.17·05 기록. 커밋 안 함.
+[2026-11-23 14:32]
+Q: 인쇄 미리보기 정상 확인(사용자), 이 브랜치에서 1.1.0으로 올리고 릴리즈 노트 작성, 커밋·푸시(그 뒤 main에 머지 예정)
+A: Directory.Build.props 1.1.0, README.md·docs/manual.md 버전 문장·표, 릴리즈 노트 1.1.0 절(앞서 작성), 05 13-1·13-2 갱신. Core 테스트 통과·빌드 경고 0 확인 뒤 feature/print-export에 커밋·푸시.

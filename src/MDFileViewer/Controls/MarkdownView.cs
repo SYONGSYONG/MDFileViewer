@@ -35,6 +35,16 @@ public sealed class MarkdownView : ContentControl
         WebView.DefaultBackgroundColor = _background;
     }
 
+    /// <summary>
+    /// 인쇄·내보내기 동안 바탕색을 종이색(흰색)으로 둔다 (01 F-26). 이 색은 페이지가 칠하지 않는 곳에 깔리는데, 인쇄물에서는 용지 여백이
+    /// 그런 곳이라 어두운 테마의 바탕색이 여백에 테두리처럼 찍힌다(2026-11-23 사용자 보고, PoC-10으로 재현). 화면은 템플릿이 전체를 칠하고
+    /// 있어 바뀌어 보이지 않는다. 끝나면 <see cref="RestoreBackground"/>로 되돌린다.
+    /// </summary>
+    public void UsePaperBackground() => WebView.DefaultBackgroundColor = LightBackground;
+
+    /// <summary>바탕색을 지금 테마의 색으로 되돌린다.</summary>
+    public void RestoreBackground() => WebView.DefaultBackgroundColor = _background;
+
     /// <summary>기존 WebView2를 버리고 새것으로 바꾼다. 새 컨트롤은 아직 초기화되지 않았다.</summary>
     public WebView2 ReplaceWebView()
     {

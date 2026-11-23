@@ -106,6 +106,37 @@ internal sealed class FakeViewerHost : IViewerHost
     public void RaiseFindMatches(int matchCount, int activeMatchIndex) =>
         FindMatchesChanged?.Invoke(this, new FindMatchesChangedEventArgs(matchCount, activeMatchIndex));
 
+    public int PrintDialogCount { get; private set; }
+
+    public List<string> PdfPaths { get; } = [];
+
+    public bool PdfResult { get; set; } = true;
+
+    public string OutputHtml { get; set; } = string.Empty;
+
+    public int OutputHtmlCount { get; private set; }
+
+    /// <summary>인쇄·내보내기 요청이 던질 예외(뷰어가 준비되지 않은 경우 등).</summary>
+    public Exception? OutputFailure { get; set; }
+
+    public Task ShowPrintDialogAsync(CancellationToken cancellationToken)
+    {
+        PrintDialogCount++;
+        return OutputFailure is null ? Task.CompletedTask : Task.FromException(OutputFailure);
+    }
+
+    public Task<bool> SaveAsPdfAsync(string filePath, CancellationToken cancellationToken)
+    {
+        PdfPaths.Add(filePath);
+        return OutputFailure is null ? Task.FromResult(PdfResult) : Task.FromException<bool>(OutputFailure);
+    }
+
+    public Task<string> GetOutputHtmlAsync(CancellationToken cancellationToken)
+    {
+        OutputHtmlCount++;
+        return OutputFailure is null ? Task.FromResult(OutputHtml) : Task.FromException<string>(OutputFailure);
+    }
+
     public event EventHandler<PathsDroppedEventArgs>? PathsDropped;
 
     public void RaisePathsDropped(params string[] paths) => PathsDropped?.Invoke(this, new PathsDroppedEventArgs(paths));

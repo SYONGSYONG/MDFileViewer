@@ -573,6 +573,7 @@ MDFileViewer.exe --unregister
 | `SettingsFileName` | `settings.json` | 설정 파일 (§10) |
 | `HelpFileName` | `help.md` | 도움말 문서 (§17.4) |
 | `ReleaseNotesFileName` | `release-notes.md` | 릴리즈 노트 문서 (§17.15) |
+| `MaxEmbeddedImageBytes` | 10MB | HTML로 내보낼 때 파일 안에 넣는 그림 하나의 최대 크기. 넘으면 원래 주소로 남긴다 (§17.17) |
 | `InstanceMutexName` | `MDFileViewer.Instance.<AppId>` | 앱이 켜져 있음을 설치·제거 프로그램에 알리는 뮤텍스 이름 (§15.1) |
 | `PrimaryInstanceMutexName` | `MDFileViewer.Primary.<AppId>` | 열기 요청을 받는 창(먼저 뜬 앱)이 쥐는 뮤텍스 이름 (§17.14) |
 | `OpenRequestPipeName` | `MDFileViewer.Open.<AppId>` | 열기 요청 파이프 이름의 앞부분. 뒤에 `.<Windows 세션 번호>`를 붙인다 (§17.14) |
@@ -1153,6 +1154,72 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
   E2E `DiagramTests.MermaidBlock_BecomesDiagramAndBrokenBlockStaysAsCode`(작성·빌드만, 미실행). `viewer.js`의 동작 자체(브라우저 안)는 단위 테스트로 볼 수 없어
   위 시험 앱과 E2E로 본다.
 
+### 17.17 인쇄, PDF·HTML로 내보내기 (01 F-26, 2026-11-23)
+
+- **새 의존성 없음.** 인쇄와 PDF는 WebView2의 `CoreWebView2.ShowPrintUI(Browser)`·`PrintToPdfAsync`, HTML은 뷰어의 본문을 꺼내 Core가 문서로 만든다.
+- **흐름:** `MainViewModel.Export.cs`의 `PrintCommand`·`ExportPdfCommand`·`ExportHtmlCommand`(문서가 보이고 파일 경로가 있을 때만 실행 가능)
+  → `IDialogService.PickSaveFile`(PDF·HTML) → `IViewerHost.ShowPrintDialogAsync` / `SaveAsPdfAsync` / `GetOutputHtmlAsync`
+  → (HTML만) `HtmlExporter.Build` + 파일 쓰기(UI 스레드 밖, UTF-8 BOM 없음) → 상태 표시줄.
+  파일 쓰기 실패·뷰어 실패(`IOException`·`UnauthorizedAccessException`·`InvalidOperationException`·`TimeoutException`)는 로그와 대화상자로 끝낸다.
+- **항상 밝은 테마 — 두 부분으로 나눠 푼다.**
+  - **색:** `viewer.css`의 `@media print` 블록이 `:root[data-theme="dark"]`의 색 토큰을 밝은 테마 값으로 덮는다. 인쇄 미리보기와
+    `PrintToPdfAsync`는 인쇄용 스타일로 그리므로 화면의 테마 속성을 건드리지 않고 밝게 나온다. CSS에는 블록을 가리켜 다시 쓰는 방법이
+    없어 값을 한 번 더 적었다 — `ViewerTemplateTests.Stylesheet_PrintsDarkThemeWithLightTokens`가 밝은 테마 블록과 같은지 비교한다.
+  - **Mermaid 그림:** 그림의 색은 그릴 때 SVG에 박히므로 CSS로 바꿀 수 없다. 내보내기 전에 `viewer.js`의 `prepareOutput()`이
+    어두운 테마로 그려 둔 그림마다 밝은 그림을 따로 그려 그 상자 안에 숨겨서 붙인다(`div.diagram-light`, 상자에 `data-has-light`).
+    화면에서는 숨기고 인쇄용 스타일에서만 어두운 그림 대신 보여 준다. 밝은 테마면 할 일이 없다. 본문을 다시 넣으면 사라지고, 그린 결과는 기억한다.
+  - 테마를 잠깐 밝게 바꿨다가 되돌리는 방식은 쓰지 않았다 — 인쇄 창은 띄우고 바로 돌아와 언제 되돌릴지 알 수 없고, 화면이 번쩍인다.
+- **준비를 기다리는 방법:** 밝은 그림 그리기는 비동기(Promise)인데 웹 메시지를 닫아 두어(§6.3) 끝났다고 알릴 통로가 없다.
+  호스트가 `prepareOutput()`을 부른 뒤 `isOutputReady()`가 참이 될 때까지 50ms 간격으로 묻는다(`WebViewHost.Output.cs`, 최대 30초).
+  이 동안 뷰어 잠금을 쥐고 있어 본문 교체·테마 변경이 끼어들지 않는다.
+- **그리기 직렬화:** Mermaid 설정(테마)은 전역이라 어두운 그림 그리기와 밝은 그림 그리기가 겹치면 테마가 섞인다. `viewer.js`의 그리기를
+  모두 하나의 큐(`enqueue`)로 차례대로 한다. `prepareOutput`은 큐 끝에 들어가므로, 아직 코드 블록인 그림이 다 그려진 뒤에 준비가 끝난다.
+- **HTML 만들기 (`HtmlExporter`):** `exportHtml()`이 본문의 복사본에서 어두운 그림을 밝은 그림으로 바꿔 돌려주고(화면은 그대로),
+  Core가 `<!DOCTYPE html>` + `data-theme="light"` + `<style>`(`viewer.css` 전체) + `<main class="markdown-body">`로 감싼다.
+  - **그림 넣기:** `<img src>`가 로컬 파일이면(문서 기준 상대 경로, 루트 기준 경로, `file:` 주소) `data:` URI로 바꾼다. `?`·`#` 뒤는 떼고
+    `%20` 같은 이스케이프는 푼다. 그림 확장자(png·jpg·gif·svg·webp·bmp·ico·avif)가 아니면 읽지 않는다 — 그림이 아닌 파일을 통째로
+    넣지 않는다. `MaxEmbeddedImageBytes`를 넘거나 읽지 못하면 원래 주소로 남기고 개수를 센다. 원격(`http`·`https`)·`data:`는 그대로 둔다.
+  - **보안:** 문서의 원시 HTML에 든 `<script>`·이벤트 속성은 뷰어에서 CSP가 막고 있을 뿐 본문에는 들어 있다. 내보낸 파일에도
+    CSP를 넣는다 — `default-src 'none'; img-src data: https: file:; style-src 'unsafe-inline'; font-src data:; form-action 'none'; base-uri 'none'`.
+    스크립트 출처를 하나도 허용하지 않는다. 스타일 글자 안의 `</`는 `<\/`로 바꿔 `<style>`을 끝내지 못하게 한다.
+- **리뷰 반영 (code-reviewer, 2026-11-23 — CRITICAL 없음, HIGH 1·MEDIUM 3·LOW 3):**
+  - **HIGH — 넣는 그림의 범위:** 처음 구현은 `file:` 주소·다른 드라이브·UNC 경로의 그림도 읽어 넣었다. 뷰어는 문서가 있는 루트 하나만
+    가상 호스트로 열어 두므로(§6.2) 그런 그림은 화면에 나오지 않는다 — 화면에 없던 파일이 내보낸 파일에 실리고, 문서가 적어 둔 서버에
+    접속(SMB)하게 된다. 이제 **절대 주소는 건드리지 않고, 상대 주소가 문서 루트(`DocumentUrlMapper.GetRootFolder`) 안으로 풀릴 때만** 읽는다.
+    `//server/share/a.png`처럼 상대 주소 모양으로 다른 서버를 가리키는 것도 루트 검사에서 걸린다.
+  - **MEDIUM — 문서가 바뀐 경우:** 저장 위치를 묻는 동안 보고 있는 문서가 바뀌면(창 하나로 열기로 넘어온 파일 등) 고른 이름으로 다른 문서가
+    나갈 수 있었다. 대화상자가 닫힌 뒤 `Document.FilePath`가 그대로인지 보고, 다르면 내보내지 않고 상태 표시줄로 알린다.
+    (확인한 뒤 뷰어 잠금을 얻기까지의 짧은 틈은 남는다 — 알려진 한계.)
+  - **MEDIUM — 덮어쓰기:** HTML은 옆의 임시 파일(`<이름>.mdfv-part`)에 다 쓴 뒤 고른 이름으로 바꾼다 — 쓰다 실패해도 기존 파일이 반쪽으로 남지 않는다.
+  - **MEDIUM — 시간 제한:** `PrintToPdfAsync`에 2분 제한을 건다(끝나지 않으면 뷰어 잠금을 쥔 채 이후 표시가 모두 멈춘다). 준비를 기다리는
+    동안 취소에 반응한다.
+  - **LOW:** 뷰어 프로세스가 끝났을 때의 `COMException`·이상한 답의 `JsonException`을 `InvalidOperationException`으로 바꿔 "내보내지 못했습니다"로
+    알린다. 내보낸 파일의 CSP `img-src`에서 `http:`를 뺐다(뷰어와 같게 — 위 CSP 문자열은 `img-src data: https: file:`이다).
+  - **반영하지 않은 것:** `<img srcset>`은 처리하지 않는다(상대 경로 `srcset`이 있으면 내보낸 파일에서 그 그림이 깨질 수 있다 — 알려진 한계).
+    그리기 큐가 끝나지 않는 그림 하나에 막히면 이후 그리기가 모두 기다린다(직렬화 전에는 겹쳐 돌았다) — 재현하지 못해 두었다.
+- **여백에 찍히는 바탕색 (2026-11-23 사용자 보고):** 어두운 테마에서 만든 PDF의 용지 여백이 어두운 색으로 찍혀 테두리처럼 보였다.
+  WebView2의 `DefaultBackgroundColor`(템플릿을 불러오는 동안 번쩍이지 않게 테마 바탕색을 넣어 둔다, §6.6)는 페이지가 칠하지 않는 곳에 깔리는데,
+  인쇄물에서는 용지 여백이 그런 곳이다. PoC-10에서 이 색을 어둡게 두면 여백이 어둡고 흰색으로 두면 사라지는 것을 PDF로 확인했다
+  (처음 PoC는 기본값인 흰색으로 돌려 이 문제가 보이지 않았다). 내보내는 동안 종이색으로 둔다(`MarkdownView.UsePaperBackground`) —
+  PDF는 만든 뒤 바로 되돌리고, 인쇄 창은 닫히는 때를 알 수 없어 다음 템플릿 로드·테마 변경 때 되돌린다. 화면은 템플릿이 전체를 칠해 달라 보이지 않는다.
+  인쇄 미리보기 창에서도 여백이 밝게 나오는지는 실행해 보지 않았다.
+- **종이용 스타일:** 본문 여백 0(용지 설정이 정한다), `pre code`는 `pre-wrap` + 아무 데서나 줄 바꿈, 표·그림 상자의 가로 스크롤 해제,
+  제목 `break-after: avoid`, 코드·표·그림·인용 `break-inside: avoid`.
+- **PoC-10 (2026-11-23, 저장소 밖 시험 프로그램 — 창을 띄우지 않는 WebView2에 실제 `Resources`를 물림. WebView2 Runtime 157):**
+  - 어두운 테마에서 `PrintToPdfAsync` 결과가 밝은 테마로 나온다(글·코드 색·표·인용·Mermaid 그림 2개). 밝은 테마의 결과와 파일 크기가 같다.
+  - 문서를 넣은 직후(그림이 그려지기 전) 준비를 시켜도 그림이 다 그려진 뒤에 끝난다 — 화면 그림 2개, 밝은 사본 2개, 틀린 블록 1개는 코드로 남음.
+    걸린 시간은 처음(라이브러리 읽기 포함) 약 5초, 기억한 뒤 0.6초, 밝은 테마 0.01초.
+  - 내보낸 HTML을 파일 주소로 열면 그림(넣은 PNG)·SVG 2개가 보이고 바탕 흰색·글자 `#1E2228`이며, 본문의 `<script>`가 실행되지 않는다(제목이 바뀌지 않음).
+  - 내보낸 뒤 화면의 테마 속성과 그림 수는 그대로다.
+  - 처음에는 긴 코드 줄이 종이에서 잘렸다(`pre`가 아니라 `pre code`에 `white-space: pre`가 걸려 있었다) — 고친 뒤 줄이 바뀌는 것을 PDF로 확인.
+- **확인하지 못한 것:** 인쇄 미리보기 창(`ShowPrintUI`)이 실제로 뜨는지와 그 미리보기의 모양, `Ctrl+P`·메뉴 동작, 저장 대화상자,
+  앱 안에서의 PDF·HTML 결과(시험 프로그램은 앱의 `WebViewHost`가 아니라 같은 스크립트를 직접 불렀다), 쪽이 여러 장인 문서의 쪽 나눔,
+  큰 그림·넓은 표, 배포본.
+- **테스트:** `HtmlExporterTests`(문서 틀, CSP, 그림 넣기·경로 풀기·남기기, 태그 경계, 스타일 닫힘 방지, 크기 제한),
+  `MainViewModelExportTests`(명령 가능 여부, 권하는 이름·폴더, 취소, 성공·실패 알림, 파일 내용),
+  `ViewerTemplateTests`(진입점 이름, 인쇄용 색 = 밝은 테마 색, 밝은 사본 표시 규칙). `viewer.js`의 동작과 `WebViewHost.Output.cs`는
+  단위 테스트로 볼 수 없어 PoC-10과 실행 확인으로 본다. E2E는 만들지 않았다.
+
 ## 변경 이력
 
 - 2026-11-17: 최초 작성 — 스택, 의존성(승인 3·요청 4), 구조, 렌더링 안 A/B, 셸 통합 레지스트리, 설정 스키마, PoC 6건, 테스트 전략.
@@ -1192,3 +1259,5 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - 2026-11-22: Phase 12-7 — Mermaid 도입. §2 내장 라이브러리(`mermaid` 11.17.2, 12.x는 ELK·EPL 때문에 제외), §6.2·§6.3·§6.5 스크립트 허용 범위(`IsScriptEnabled=true`, `script-src https://appassets.example`), §11 PoC-9 갱신, §12 상수, §15.2 고지, §17.16 설계·확인 결과·한계.
 - 2026-11-22: §17.16 보안 리뷰 반영 — 보안 경계(CSP)와 `strict`의 실제 동작, 재현해 본 지적과 결과, 반영·미반영 항목.
 - 2026-11-23: §15.1·§17.14 — 이름 있는 뮤텍스를 열지 못해도 시작이 실패하지 않게 함(`NamedMutex.TryOpen`), 알려진 한계 1건.
+- 2026-11-23: §17.17 인쇄, PDF·HTML로 내보내기(F-26) — 항상 밝은 테마(인쇄용 색 + 밝은 그림 사본), 준비 폴링, 그리기 직렬화, HTML 만들기와 CSP, PoC-10 결과, §12 `MaxEmbeddedImageBytes`.
+- 2026-11-23: §17.17 — 어두운 테마에서 PDF 여백이 어둡게 찍히던 문제(뷰어 기본 바탕색) 수정.

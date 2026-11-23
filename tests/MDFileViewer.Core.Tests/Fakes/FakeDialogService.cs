@@ -28,6 +28,14 @@ internal sealed class FakeDialogService : IDialogService
 
     public List<string> ConvertQuestions { get; } = [];
 
+    /// <summary>저장 위치 대화상자의 답. <c>null</c>이면 취소한 것이다.</summary>
+    public string? SaveFileResult { get; set; }
+
+    public List<SaveFileRequest> SaveFileRequests { get; } = [];
+
+    /// <summary>저장 위치 대화상자가 떠 있는 동안 일어나는 일을 흉내 낸다.</summary>
+    public Action? WhilePickingSaveFile { get; set; }
+
     public bool Confirm(string title, string message, string confirmButtonText)
     {
         Confirms.Add((title, message, confirmButtonText));
@@ -48,6 +56,13 @@ internal sealed class FakeDialogService : IDialogService
     {
         SaveQuestions.Add(fileName);
         return SaveChoices.Count > 0 ? SaveChoices.Dequeue() : SaveChoice;
+    }
+
+    public string? PickSaveFile(SaveFileRequest request)
+    {
+        SaveFileRequests.Add(request);
+        WhilePickingSaveFile?.Invoke();
+        return SaveFileResult;
     }
 
     public bool ConfirmConvertToUtf8(string fileName)

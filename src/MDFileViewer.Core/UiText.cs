@@ -57,6 +57,22 @@ public static class UiText
     public const string LinkTargetMissingFormat = "파일을 찾을 수 없습니다: {0}";
     public const string LinkOpenFailed = "링크를 열지 못했습니다";
     public const string UnexpectedErrorTitle = "오류";
+
+    // 인쇄·내보내기 (01 F-26)
+    public const string PrintMenu = "인쇄…";
+    public const string ExportPdfMenu = "PDF로 내보내기…";
+    public const string ExportHtmlMenu = "HTML로 내보내기…";
+    public const string ExportPdfTitle = "PDF로 내보내기";
+    public const string ExportHtmlTitle = "HTML로 내보내기";
+    public const string PdfFilterName = "PDF 문서";
+    public const string HtmlFilterName = "HTML 문서";
+    public const string ExportedFormat = "내보냈습니다: {0}";
+    public const string ExportedWithSkippedImagesFormat = "내보냈습니다: {0} (파일에 넣지 못한 그림 {1}개)";
+    public const string ExportDocumentChanged = "보고 있는 문서가 바뀌어 내보내지 않았습니다";
+    public const string ExportFailedTitle = "내보내지 못함";
+    public const string ExportFailedMessage = "파일을 내보내지 못했습니다. 저장 위치와 쓰기 권한을 확인하세요.";
+    public const string PrintFailedTitle = "인쇄하지 못함";
+    public const string PrintFailedMessage = "인쇄 창을 열지 못했습니다.";
     public const string UnexpectedErrorMessage = "작업 중 오류가 났습니다. 자세한 내용은 로그에 남겼습니다.";
 
     /// <summary>제목 표시줄 (03 §10.1): "&lt;이름&gt; - MDFileViewer".</summary>

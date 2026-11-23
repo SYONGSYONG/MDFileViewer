@@ -85,6 +85,12 @@ public static class AppConstants
     public const int MaxDroppedFiles = 20;
 
     /// <summary>
+    /// HTML로 내보낼 때 파일 안에 넣는 그림 하나의 최대 크기 (01 F-26). 넘는 그림은 원래 주소로 남긴다 — base64로 넣으면 약 1.33배가 되어
+    /// 큰 그림 몇 개로 내보낸 파일이 수십 MB가 된다.
+    /// </summary>
+    public const long MaxEmbeddedImageBytes = 10 * 1024 * 1024;
+
+    /// <summary>
     /// 메인 창을 띄운 앱이 살아 있는 동안 쥐고 있는 이름 있는 뮤텍스. 설치·제거 프로그램(`installer/setup.iss`의 `AppMutex`)이 이 이름으로
     /// 앱이 켜져 있는지 보고 닫아 달라고 안내한다 (02 §15.1). 뒤의 값은 설치 파일의 `AppId`다.
     /// </summary>

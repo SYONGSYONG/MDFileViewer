@@ -19,6 +19,9 @@ public interface IDialogService
     /// <summary>CP949로 나타낼 수 없는 글자가 있을 때 UTF-8로 바꿔 저장할지 묻는다 (01 F-10, 2026-11-18 결정).</summary>
     bool ConfirmConvertToUtf8(string fileName);
 
+    /// <summary>저장할 파일 위치를 묻는다 (01 F-26 내보내기). 같은 이름의 파일이 있으면 대화상자가 덮어쓸지 묻는다. 취소하면 <c>null</c>.</summary>
+    string? PickSaveFile(SaveFileRequest request);
+
     /// <summary>알림(버튼 하나). 오류가 아닌 결과 안내에 쓴다 — 탐색기 메뉴 등록 결과, 앱 정보.</summary>
     void ShowInfo(string title, string message);
 }
