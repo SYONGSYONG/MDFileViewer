@@ -70,14 +70,52 @@ dotnet test tests/MDFileViewer.E2ETests                                     # E2
 
 ## 기술 스택
 
+### 언어
+
+| 언어 | 쓰인 곳 |
+|------|---------|
+| C# (.NET 10, `net10.0-windows`) | 앱 전체 — 로직, 화면 코드, 테스트 |
+| XAML | WPF 화면과 테마(밝게·어둡게 색상 토큰, 공통 스타일) |
+| HTML · CSS | 문서 표시 템플릿(`viewer.html`)과 문서 스타일(`viewer.css`) |
+| JavaScript | 뷰어 스크립트(`viewer.js`) — Mermaid 그리기, 인쇄·내보내기 준비 |
+| Inno Setup 스크립트 · 배치 파일 | 설치 파일(`installer/setup.iss`), 배포 자동화(`publish-*.bat`) |
+
+### 프레임워크와 구조
+
+- **WPF** 데스크톱 앱, MVVM 구조. MVVM 라이브러리 없이 직접 만든 `ObservableObject`·`RelayCommand`를 씁니다.
+- 화면과 무관한 로직은 `MDFileViewer.Core`, 화면은 `MDFileViewer`로 나눴습니다. 테스트는 대부분 Core를 대상으로 합니다.
+- nullable 참조 형식을 켜고 경고를 오류로 처리합니다.
+
+### 앱에 들어가는 라이브러리
+
+| 라이브러리 | 버전 | 용도 | 라이선스 |
+|------------|------|------|----------|
+| [Markdig](https://github.com/xoofx/markdig) | 1.6.0 | Markdown → HTML 변환 | BSD-2-Clause |
+| [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) SDK | 1.0.4314.35 | 문서 표시, 인쇄·PDF 내보내기 | Microsoft BSD 계열 |
+| [AvalonEdit](https://github.com/icsharpcode/AvalonEdit) | 6.3.1.120 | 편집 모드의 텍스트 편집기 | MIT |
+| [TextMateSharp](https://github.com/danipen/TextMateSharp) · TextMateSharp.Grammars | 2.0.5 | 코드 블록 구문 색상(64개 언어) | MIT |
+| [Onigwrap](https://github.com/aikawayataro/Onigwrap) (Oniguruma 포함) | 1.0.11 | TextMateSharp가 쓰는 정규식 엔진 | MIT · BSD-2-Clause |
+| [Mermaid](https://github.com/mermaid-js/mermaid) | 11.17.2 | 다이어그램 그리기(`mermaid.min.js`로 내장) | MIT |
+
+라이브러리 없이 Windows 기능을 직접 쓰는 부분도 있습니다 — 레지스트리(탐색기 우클릭 메뉴), 이름 있는 뮤텍스·파이프(창 하나로 열기), `user32` 호출(창을 맨 앞으로 올리기, 창 크기 맞추기).
+
+### 테스트 도구
+
+| 도구 | 버전 | 용도 |
+|------|------|------|
+| [xUnit](https://xunit.net/) | 2.9.3 | 단위·통합 테스트 |
+| Microsoft.NET.Test.Sdk | 18.12.0 | 테스트 실행 |
+| coverlet.collector | 10.1.1 | 커버리지 수집 |
+| [FlaUI](https://github.com/FlaUI/FlaUI) (UIA3) | 5.0.0 | 실제 창을 조작하는 E2E 테스트 |
+
+### 빌드와 배포
+
 | 구분 | 사용 |
 |------|------|
-| 런타임·UI | .NET 10, WPF |
-| 문서 표시 | Microsoft Edge WebView2 |
-| Markdown → HTML | [Markdig](https://github.com/xoofx/markdig) |
-| 편집기 (편집 모드) | [AvalonEdit](https://github.com/icsharpcode/AvalonEdit) |
-| 테스트 | xUnit(단위·통합), [FlaUI](https://github.com/FlaUI/FlaUI)(E2E) |
+| SDK | .NET 10 SDK |
+| 배포 방식 | .NET 런타임을 포함한 자체 포함(win-x64) — 포터블 단일 exe, 설치 파일 |
 | 설치 파일 | Inno Setup 6 (빌드할 때만) |
+| 실행에 필요한 것 | WebView2 Runtime (Windows 11에는 기본 설치) |
 
 ## 폴더 구조
 

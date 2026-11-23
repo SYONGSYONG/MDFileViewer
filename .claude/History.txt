@@ -260,3 +260,9 @@ A: Directory.Build.props 1.1.0, README.md·docs/manual.md 버전 문장·표, �
 [2026-11-23 16:24]
 Q: feature/print-export를 main에 머지·브랜치 삭제, 1.1.0 설치가 멈춘 원인 로그 확인, 종료 중 예외에서는 그냥 끝나게 수정하고 1.1.1로, 릴리즈 노트도 수정
 A: main 8b59c35로 머지·푸시, 브랜치 삭제. 설치 로그는 없고(설정 없음) 앱 로그에서 원인 확인 — 어제부터 남은 0.1.0 프로세스가 종료 요청 처리 중 예외로 살아남음. 브랜치 fix/exit-on-shutdown-exception: src/MDFileViewer.Core/Services/ShutdownMonitor.cs, src/MDFileViewer/App.xaml.cs(OnSessionEnding·OnExit·창 닫힘 표시, 예외 처리기 3곳), ShutdownMonitorTests. Directory.Build.props 1.1.1, release-notes.md 1.1.1 절, README·manual, 02 §13, 05 13-3. Core 785 통과, 빌드 경고 0. 실제 종료 요청으로는 확인하지 못함.
+[2026-11-23 17:06]
+Q: 1.1.1 커밋·main 머지·푸시, fix 브랜치 3개 삭제, 탐색기 우클릭 메뉴가 사라진 원인, 다음 버전부터 설치 화면에 체크 항목 추가(메모)
+A: a3bb927을 main에 합쳐 푸시, fix 브랜치 3개 삭제(로컬·원격). 메뉴는 2026-11-22 제거 때 해제된 뒤 다시 등록되지 않은 것(레지스트리 키 4곳 없음, 설치 프로그램은 등록하지 않음) — 앱의 ⋯ → 탐색기 메뉴 등록으로 되살린다. .claude/05-tasks.md에 Phase 14(14-1 설치 화면 체크 항목, 다음 버전) 추가. 코드 변경 없음, 커밋 안 함.
+[2026-11-24 08:29]
+Q: 프로그램에 쓴 언어·라이브러리 정리, GitHub README에 넣기
+A: README.md "기술 스택" 절을 언어, 프레임워크와 구조, 앱에 들어가는 라이브러리(버전·용도·라이선스), 테스트 도구, 빌드와 배포로 넓힘. 버전은 csproj, 라이선스는 THIRD-PARTY-NOTICES.txt 기준. 코드 변경 없음.
