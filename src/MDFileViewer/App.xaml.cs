@@ -35,11 +35,15 @@ public partial class App : Application
     // 끝나는 중에 난 예외는 알리지 않고 프로세스를 끝낸다 (02 §13)
     private readonly ShutdownMonitor _shutdown = new();
 
+    // 끝나기 시작한 뒤에도 프로세스가 남으면 스스로 끝낸다 (02 §13)
+    private ShutdownWatchdog? _shutdownWatchdog;
+
     // 시작 처리 전체가 이벤트 처리기 안에서 돌아야 하므로 async void를 쓴다(04 §3.2 예외). 예외는 모두 안에서 잡는다.
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         _logger = CreateLogger();
+        _shutdownWatchdog = new ShutdownWatchdog(TimeProvider.System, AppConstants.ShutdownGracePeriod, ExitOverdueShutdown);
         RegisterGlobalExceptionHandlers();
 
         try
@@ -66,21 +70,44 @@ public partial class App : Application
         base.OnSessionEnding(e);
         if (!e.Cancel)
         {
+            _logger.Info("Windows의 종료 요청을 받아들였습니다.");
+
+            // 감시(ShutdownWatchdog)는 여기서 시작하지 않는다 — 저장하지 않은 변경을 묻는 창에 답하는 동안 시간이 지나 프로세스를 끝내면
+            // 그 변경을 잃는다. 창이 닫히거나 OnExit에 들어온 뒤에 시작한다
             _shutdown.MarkShuttingDown();
         }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _shutdown.MarkShuttingDown();
+        // 창 없는 프로세스가 남았을 때 어디까지 갔는지 가려낼 수 있게 남긴다 — 이 줄이 있는데 프로세스가 남았으면 그 뒤(스레드·정리)가 붙잡은 것이다
+        _logger.Info($"종료 (코드 {e.ApplicationExitCode})");
+        BeginShutdown();
         base.OnExit(e);
+
+        // 여기서 돌아가면 프로세스가 내려가며 DLL 정리를 도는데, 그 단계에서 멈춰 창 없는 프로세스가 남은 적이 있다 — 거치지 않고 끝낸다
+        ProcessTerminator.Terminate(e.ApplicationExitCode);
+    }
+
+    private void BeginShutdown()
+    {
+        _shutdown.MarkShuttingDown();
+        _shutdownWatchdog?.Start();
+    }
+
+    // 타이머 스레드에서 불린다. 여기까지 왔으면 정상 종료가 어디선가 멈춘 것이다
+    private void ExitOverdueShutdown()
+    {
+        _logger.Warn($"끝나기 시작한 지 {AppConstants.ShutdownGracePeriod.TotalSeconds:0}초가 지나도 프로세스가 남아 있어 바로 끝냅니다.");
+        ProcessTerminator.Terminate(ExitCodeFailure);
     }
 
     private async Task StartAsync(IReadOnlyList<string> arguments)
     {
         // 존재 확인이 끊긴 UNC 경로에서 오래 걸릴 수 있어 UI 스레드 밖에서 해석한다 (02 §9)
         var parsed = await Task.Run(() => CommandLineParser.Parse(arguments, Environment.CurrentDirectory));
-        _logger.Info($"시작 — 요청: {parsed.Request}");
+        // 프로세스 번호와 빌드 종류는 남은 프로세스가 어느 실행인지 가려내는 데 쓴다 (2026-11-25)
+        _logger.Info($"시작 — 요청: {parsed.Request} (버전 {AppVersion} {BuildKind}, 프로세스 {Environment.ProcessId})");
         if (parsed.IgnoredArguments.Count > 0)
         {
             _logger.Warn($"쓰지 않은 인수: {string.Join(" ", parsed.IgnoredArguments)}");
@@ -176,7 +203,11 @@ public partial class App : Application
         window.Closed += (_, _) => StopReceivingOpenRequests();
 
         // 메인 창이 닫히면 앱이 끝난다(ShutdownMode.OnMainWindowClose) — 그 뒤의 예외로 대화상자를 띄워 프로세스를 붙잡지 않는다
-        window.Closed += (_, _) => _shutdown.MarkShuttingDown();
+        window.Closed += (_, _) =>
+        {
+            _logger.Info("메인 창이 닫혔습니다.");
+            BeginShutdown();
+        };
         window.OpenInSingleWindow = _settings.OpenInSingleWindow;
         window.OpenInSingleWindowChanged += (_, isSingleWindow) => SaveOpenInSingleWindow(isSingleWindow, viewModel);
         WireWindowRequests(window, viewModel, shell);
@@ -316,6 +347,18 @@ public partial class App : Application
         viewModel.ShowStatus(!isSaved ? UiText.SettingNotSaved : isSingleWindow ? UiText.SingleWindowTurnedOn : UiText.SingleWindowTurnedOff);
     }
 
+    private static string BuildKind
+    {
+        get
+        {
+#if DEBUG
+            return "Debug";
+#else
+            return "Release";
+#endif
+        }
+    }
+
     private static IAppLogger CreateLogger()
     {
         try
@@ -358,7 +401,7 @@ public partial class App : Application
     private void ExitAfterShutdownFailure()
     {
         _logger.Warn("끝나는 중에 예외가 나서 프로세스를 바로 끝냅니다.");
-        Environment.Exit(ExitCodeFailure);
+        ProcessTerminator.Terminate(ExitCodeFailure);
     }
 
     // 종료자 스레드에서 오므로 대화상자는 UI 스레드로 넘긴다. 대화상자에서 난 예외가 작업에 담겨 묻히지 않도록 BeginInvoke를 쓴다.

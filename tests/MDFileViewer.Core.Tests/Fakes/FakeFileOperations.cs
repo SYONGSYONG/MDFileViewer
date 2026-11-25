@@ -21,12 +21,49 @@ internal sealed class FakeFileOperations(FakeFolderTreeService tree, FakeTextFil
 
     public List<(string Path, bool ToRecycleBin)> Deleted { get; } = [];
 
+    public List<(string Source, string Target)> Copied { get; } = [];
+
+    public List<(string Path, byte[] Bytes)> Written { get; } = [];
+
+    // 이만큼 성공한 뒤의 작업에서 낼 예외(여러 파일 가운데 도중에 실패하는 경우)
+    private (int Remaining, Exception Failure)? _failureAfter;
+
     /// <summary>이미 있는 파일을 등록한다.</summary>
     public void AddFile(string path, string text)
     {
         Names(path).Add(Path.GetFileName(path));
         codec.SetFile(path, text);
         Publish(path);
+    }
+
+    /// <summary>md가 아닌 파일(그림)을 등록한다 — 트리와 코덱에는 알리지 않는다.</summary>
+    public void AddBinaryFile(string path) => Names(path).Add(Path.GetFileName(path));
+
+    /// <summary><paramref name="successes"/>번 성공한 다음 작업에서 <paramref name="failure"/>를 낸다.</summary>
+    public void FailAfterSuccesses(int successes, Exception failure) => _failureAfter = (successes, failure);
+
+    public void CopyFile(string sourcePath, string targetPath)
+    {
+        ThrowIfAsked();
+        if (Exists(targetPath))
+        {
+            throw new IOException("이미 있는 파일");
+        }
+
+        Copied.Add((sourcePath, targetPath));
+        AddBinaryFile(targetPath);
+    }
+
+    public void WriteFile(string path, byte[] bytes)
+    {
+        ThrowIfAsked();
+        if (Exists(path))
+        {
+            throw new IOException("이미 있는 파일");
+        }
+
+        Written.Add((path, bytes));
+        AddBinaryFile(path);
     }
 
     public bool Exists(string path) =>
@@ -92,6 +129,15 @@ internal sealed class FakeFileOperations(FakeFolderTreeService tree, FakeTextFil
         {
             NextFailure = null;
             throw failure;
+        }
+
+        if (_failureAfter is var (remaining, later))
+        {
+            _failureAfter = remaining > 0 ? (remaining - 1, later) : null;
+            if (remaining == 0)
+            {
+                throw later;
+            }
         }
     }
 }

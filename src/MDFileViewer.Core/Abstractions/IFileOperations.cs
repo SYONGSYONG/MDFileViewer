@@ -1,7 +1,7 @@
 namespace MDFileViewer.Core.Abstractions;
 
 /// <summary>
-/// 트리에서 하는 파일 관리 — 새 문서, 이름 바꾸기, 삭제 (01 F-27, 02 §17.18). 실패는 <see cref="IOException"/>이나
+/// 트리에서 하는 파일 관리 — 새 문서, 이름 바꾸기, 삭제 (01 F-27, 02 §17.18) — 와 그림 저장 (01 F-29, 02 §17.20). 실패는 <see cref="IOException"/>이나
 /// <see cref="UnauthorizedAccessException"/>으로 알린다.
 /// </summary>
 public interface IFileOperations
@@ -23,4 +23,10 @@ public interface IFileOperations
 
     /// <summary>파일을 지운다. <paramref name="toRecycleBin"/>이면 휴지통으로 보낸다.</summary>
     void Delete(string path, bool toRecycleBin);
+
+    /// <summary>파일을 복사한다. 대상 폴더가 없으면 만든다. 대상이 이미 있으면 덮지 않고 <see cref="IOException"/>을 던진다.</summary>
+    void CopyFile(string sourcePath, string targetPath);
+
+    /// <summary>새 파일에 바이트를 쓴다. 폴더가 없으면 만든다. 이미 있으면 덮지 않고 <see cref="IOException"/>을 던진다.</summary>
+    void WriteFile(string path, byte[] bytes);
 }

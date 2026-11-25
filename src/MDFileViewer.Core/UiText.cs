@@ -88,6 +88,12 @@ public static class UiText
     public const string MatchCaseToolTip = "대소문자 구분";
     public const string EditorFindCountFormat = "{0}개";
     public const string ReplacedAllFormat = "{0}곳을 바꿨습니다.";
+    public const string ImageInsertedFormat = "그림을 넣었습니다: {0}";
+    public const string ImagesInsertedFormat = "그림 {0}개를 넣었습니다.";
+    public const string ImagesSkippedFormat = "(그림이 아니거나 한 번에 넣을 수 있는 수를 넘은 항목 {0}개는 건너뛰었습니다)";
+    public const string NoImagesToInsert = "넣을 수 있는 그림 파일이 없습니다.";
+    public const string ImageSaveFailedMessage = "그림을 저장하지 못했습니다. 문서가 있는 폴더에 쓸 권한이 없거나 디스크에 자리가 없을 수 있습니다.";
+    public const string ImageClipboardFailed = "클립보드의 그림을 읽지 못했습니다. 다시 붙여 보세요.";
     public const string RenameMenu = "이름 바꾸기…";
     public const string DeleteMenu = "삭제";
     public const string NewDocumentTitle = "새 문서";

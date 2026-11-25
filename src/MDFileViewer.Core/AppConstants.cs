@@ -20,6 +20,12 @@ public static class AppConstants
     /// </summary>
     public const double WorkAreaFillRatio = 0.9;
 
+    /// <summary>
+    /// 메인 창이 닫힌 뒤 프로세스가 끝나기를 기다려 주는 시간 (02 §13). 정상 종료는 1초 안에 끝난다(05 14-4 측정에서 창을 닫은 뒤 끝나기까지).
+    /// 이보다 오래 살아 있으면 창 없는 프로세스로 남은 것으로 보고 스스로 끝낸다.
+    /// </summary>
+    public static readonly TimeSpan ShutdownGracePeriod = TimeSpan.FromSeconds(10);
+
     /// <summary>로그 파일 보관 일수 (02 §13).</summary>
     public const int LogRetentionDays = 7;
 
@@ -83,6 +89,15 @@ public static class AppConstants
     /// 한 번에 끌어다 놓아 여는 md 파일 수 (01 F-19). 폴더 안 파일을 모두 골라 실수로 놓아도 탭 줄이 넘치고 파일을 줄줄이 읽지 않게 막는다.
     /// </summary>
     public const int MaxDroppedFiles = 20;
+
+    /// <summary>붙이거나 놓은 그림을 저장하는 폴더 이름 — 문서가 있는 폴더 바로 아래 (01 F-29).</summary>
+    public const string ImagesFolderName = "images";
+
+    /// <summary>그림 파일로 보는 확장자 (01 F-29). 뷰어가 그대로 보여 줄 수 있는 형식이다.</summary>
+    public static readonly IReadOnlyList<string> ImageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
+
+    /// <summary>같은 이름의 그림이 있을 때 붙여 보는 번호의 끝(<c>이름-99.png</c>). 넘으면 저장하지 못했다고 알린다 (01 F-29).</summary>
+    public const int MaxDuplicateNameNumber = 99;
 
     /// <summary>Markdown 제목의 가장 깊은 단계 (01 F-28) — 제목 단계 드롭다운과 단축키 `Ctrl+Alt+1`~`6`.</summary>
     public const int MaxHeadingLevel = 6;

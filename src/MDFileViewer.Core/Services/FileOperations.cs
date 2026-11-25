@@ -29,6 +29,29 @@ public sealed class FileOperations : IFileOperations
         }
     }
 
+    public void CopyFile(string sourcePath, string targetPath)
+    {
+        CreateParentFolder(targetPath);
+        File.Copy(sourcePath, targetPath, overwrite: false);
+    }
+
+    public void WriteFile(string path, byte[] bytes)
+    {
+        CreateParentFolder(path);
+
+        // CreateNew — 이름 확인과 쓰기 사이에 같은 이름의 파일이 생겼어도 덮지 않는다
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        stream.Write(bytes);
+    }
+
+    private static void CreateParentFolder(string path)
+    {
+        if (Path.GetDirectoryName(path) is { Length: > 0 } folder)
+        {
+            Directory.CreateDirectory(folder);
+        }
+    }
+
     public void Delete(string path, bool toRecycleBin)
     {
         if (!toRecycleBin)

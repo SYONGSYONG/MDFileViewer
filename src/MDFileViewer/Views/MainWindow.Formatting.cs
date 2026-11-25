@@ -39,6 +39,13 @@ public partial class MainWindow
             return;
         }
 
+        // 클립보드가 그림이면 그림으로 붙인다(01 F-29). 한글을 조합하는 중의 키는 입력기의 것이다
+        if (e.Key != Key.ImeProcessed && TryHandleImagePaste(key, Keyboard.Modifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // 한글을 조합하는 중의 Esc·F3은 입력기의 것이다(조합 취소 등) — 찾기 줄의 키로 가로채지 않는다
         e.Handled = e.Key != Key.ImeProcessed && TryHandleReplaceKey(key, Keyboard.Modifiers);
     }

@@ -609,6 +609,7 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 | WebView2 프로세스 실패 | `CoreWebView2.ProcessFailed`에서 `BrowserProcessExited`·`RenderProcessExited`면 `MarkdownView`의 WebView2 컨트롤을 새로 만들고(환경도 새로 만든다) 마지막 문서를 다시 표시한다. 다시 보여 줄 문서는 §6.2의 잠금 안에서 고르므로, 되살리는 사이 사용자가 연 새 문서가 먼저 표시됐으면 그 문서를 보여 준다(옛 문서가 새 문서를 덮지 않음). 되살리는 중에 새 컨트롤도 끝나면 지금 복구를 마친 뒤 한 번 더 되살린다. 렌더러를 죽이는 문서처럼 다시 보여 줄 때마다 끝나는 경우를 막으려고, 사용자가 새 문서를 열기 전까지 `MaxRecoveriesWithoutNewDocument`(3)번까지만 되살리고, 넘으면 오류 로그를 남기고 이후 표시 요청을 바로 "표시하지 못함"으로 끝낸다(앱을 다시 시작해야 한다). `RenderProcessUnresponsive`(몇 초마다 다시 옴)와 그 밖의 보조 프로세스 실패는 로그만 남긴다(SDK 문서: 스스로 복구됨). 브라우저 프로세스 강제 종료 → 복구·재표시를 E2E로 자동 확인한다(§14.3). |
 | 새 요청에 밀린 요청의 늦은 실패 | 문서 열기·새로고침·트리 읽기는 새 요청이 오면 이전 요청을 취소하지만, 응답 없는 네트워크 드라이브처럼 취소에 반응하지 않는 읽기는 나중에 실패로 끝날 수 있다. 이런 실패는 화면(새 요청의 결과)을 바꾸지 않는다. 로그는 입출력·권한 예외면 정보로, 그 밖의 예외(결함일 수 있음)는 예외째 경고로 남긴다. 반대로 화면 표시까지 끝난 뒤 밀린 문서는 화면에 남아 있으므로 경로·상태 표시줄 값을 그 문서로 맞추되, 새 요청이 아직 읽는 중이면 "읽는 중" 상태는 그대로 둔다(앵커 이동은 하지 않음). 큰 파일 확인에서 "취소"하면 화면에 실제로 남아 있는 문서의 상태로 돌아간다(읽는 중이던 요청을 밀어낸 뒤라도 "읽는 중"에 머물지 않음). |
 | 예상하지 못한 예외 | UI 스레드(`DispatcherUnhandledException`): 로그 → `Handled = true` → 오류 대화상자, 앱은 계속 쓴다. 작업(`TaskScheduler.UnobservedTaskException`): 로그 → `SetObserved` → UI 스레드에서 대화상자. 프로세스(`AppDomain.UnhandledException`): 로그 → 시스템 메시지 상자(프로세스는 끝난다). 대화상자는 한 번에 하나만 띄운다. **끝나는 중에 난 예외(2026-11-23):** 세션 종료를 받아들였거나(`OnSessionEnding`) 메인 창이 닫혔거나 앱이 끝나는 중(`OnExit`)이면 `ShutdownMonitor`가 "끝나는 중"으로 기억하고, 그 뒤의 UI 스레드 예외는 로그만 남기고 `Environment.Exit(1)`로 프로세스를 끝낸다(작업·프로세스 예외는 대화상자·메시지 상자를 띄우지 않는다). 예외를 처리됨으로만 두면 중단된 종료가 이어지지 않아 창 없는 프로세스가 남는다 — 설치 프로그램이 앱을 닫으려고 보낸 종료 요청(`WM_QUERYENDSESSION`)을 WPF가 처리하다 `System.Diagnostics.Tracing`을 읽지 못해 예외가 났고(앱을 켠 채 제거해 설치 폴더의 파일이 지워진 상태), 살아남은 프로세스 때문에 다음 설치가 멈췄다(사용자 보고, 앱 로그로 확인). 실제 종료 요청으로 다시 확인하지는 못했다(단위 테스트는 판단만 본다 — `ShutdownMonitorTests`). 주의: `Dispatcher.InvokeAsync`로 넘긴 작업의 예외는 `DispatcherUnhandledException`이 아니라 그 작업에 담긴다(2026-11-17 확인) — 전역 처리기로 보내야 하면 `BeginInvoke`를 쓴다. |
+| 창을 닫은 뒤 프로세스가 남음 (2026-11-25) | **증상:** 창이 닫히고 앱의 종료 처리(`OnExit`)까지 끝났는데 프로세스가 남는다. 창이 없어 작업 표시줄에는 보이지 않고, 설치 프로그램은 뮤텍스(§15.1)로 앱이 켜져 있다고 본다(사용자 보고 — 세 개가 남아 설치가 막힘). **재현:** Debug 빌드를 파일 인수로 켜고 창이 뜬 지 0.2~0.5초 뒤(뷰어를 준비하는 도중) 닫기를 되풀이하면 72회 가운데 2회 남았다. 남은 프로세스는 스레드가 주 스레드 하나뿐이고 기다리는 상태였으며 WebView2 프로세스가 딸려 있었다 — 프로세스가 내려가며 불러온 DLL의 정리 코드를 도는 단계에서 멈춘 것이다(어느 DLL인지는 가리지 않았다). 사용자가 겪은 세 건은 뷰어 준비가 끝난 뒤 닫은 것이라 같은 원인인지는 확인하지 못했다. **처리:** ① `OnExit` 끝에서 `ProcessTerminator.Terminate`(`TerminateProcess`)로 그 단계를 거치지 않고 끝낸다 — 종료 코드는 그대로 넘긴다(`--register`의 0/1, 넘기고 끝난 실행의 0). 설정은 창을 닫을 때, 로그는 줄마다 이미 썼으므로 잃는 것이 없다. 종료자와 DLL 정리는 돌지 않는다. ② `ShutdownWatchdog`: 메인 창이 닫혔거나 `OnExit`에 들어온 뒤(세션 종료를 받아들인 것만으로는 시작하지 않는다 — 저장하지 않은 변경을 묻는 창에 답하는 동안 끝내면 그 변경을 잃는다, 리뷰 2026-11-25) `ShutdownGracePeriod`(10초)가 지나도 프로세스가 살아 있으면 경고 로그를 남기고 같은 방법으로 끝낸다 — `OnExit`까지 가지 못하고 멈춘 경우의 대비다(①의 멈춤은 다른 스레드가 이미 없는 단계라 이 감시로는 깨울 수 없었다 — 처음에 이것만 넣었을 때 재현에서 작동하지 않음을 확인). 끝나는 중에 난 예외(위 행)도 `Environment.Exit` 대신 같은 방법으로 끝낸다. ③ 가려내기용 로그: 시작 줄에 버전·빌드 종류·프로세스 번호, "메인 창이 닫혔습니다.", "종료 (코드 N)", "Windows의 종료 요청을 받아들였습니다." |
 | 로그 | `%LOCALAPPDATA%\MDFileViewer\logs\yyyyMMdd.log`. 시작할 때 "오늘 − 7일"보다 이전 날짜 파일을 지운다(오늘 포함 8일치 보관). 잠긴 파일은 건너뛰고 다음 시작 때 다시 시도한다. 여러 창이 같은 파일에 쓰므로 공유 쓰기로 연다. 기록 실패는 앱을 멈추지 않는다. 문서 내용은 로그에 쓰지 않는다. |
 
 ## 14. 테스트 전략
@@ -1351,6 +1352,31 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
   - 도구 모음 버튼은 Tab으로 닿지 않는다(03 §2.2 — 의도한 것, 키보드는 단축키).
 - **확인하지 못한 것:** 실제 앱에서의 키(한글 입력 상태의 `` Ctrl+` ``·`Ctrl+Shift+숫자`·`Ctrl+Alt+숫자`), 도구 모음 모양(밝게·어둡게), 실행 취소 단위.
 
+### 17.20 그림 붙여넣기 (01 F-29, 2026-11-25)
+
+- **나눔:** 이름·경로·링크 규칙은 Core `ImageLinks`(순수 함수), 저장과 알림은 `MainViewModel.Images.cs`, 클립보드·끌기·편집기 삽입은
+  App `MainWindow.Images.cs`. 서식(§17.19)과 같은 나눔이다.
+- **`ImageLinks`:** `IsImageFile(path)`(확장자 7종, 대소문자 무시), `PastedFileName(documentPath, now)`(`문서이름-yyyyMMdd-HHmmss.png`, 현지 시각),
+  `UniqueName(fileName, exists)`(`-2`…`-99`, 그래도 없으면 `null`), `RelativePath(documentPath, imagePath)`(문서 폴더 안이면 `/`로 이은 상대 경로, 밖이면 `null`),
+  `BuildMarkdown(documentPath, imagePath)`(`![이름](경로)`, 대체 글의 `[`·`]`는 `\`로 막고, 경로에 공백·괄호가 있으면 `<…>`).
+- **`IFileOperations` 추가:** `CopyFile(source, target)`(덮지 않음), `WriteFile(path, bytes)`(덮지 않음). 둘 다 대상 폴더가 없으면 만든다.
+- **`MainViewModel`:** `ImportPastedImageAsync(pngBytes)`와 `ImportImageFilesAsync(paths)` — 넣을 Markdown 조각들을 돌려준다(없으면 빈 목록).
+  편집 중인 탭이 없으면 아무것도 하지 않는다. 파일 작업은 UI 스레드 밖에서 한다(§9). 실패(`IOException`·`UnauthorizedAccessException` 등)는
+  로그에 예외 종류만 남기고 `ShowError`로 알린다(§13 — 경로는 로그에 쓰지 않는다). 여러 파일 가운데 일부가 실패하면 거기서 멈추고 그때까지 저장한 것만 돌려준다.
+- **창:** 편집기의 `PreviewKeyDown`에서 `Ctrl+V`·`Shift+Insert`를 먼저 본다 — 편집기 부품의 붙이기는 글자가 없으면 실행되지 않아 붙이기 처리기로는
+  그림을 받을 수 없다. 클립보드에 글자가 있으면 손대지 않는다. 그림 파일 목록이면 `ImportImageFilesAsync`, 그림이면 `PngBitmapEncoder`로 바꿔
+  `ImportPastedImageAsync`. 받은 조각은 문서의 줄 끝 문자로 빈 줄을 사이에 두고 이어, 선택 자리에 실행 취소 한 단계로 넣는다.
+  끌어다 놓기는 `OnPreviewDrop`에서 편집기 위인지와 그림 파일이 있는지를 먼저 보고, 놓은 점의 문서 위치(`GetPositionFromPoint`)에 넣는다.
+- **리뷰 반영(code-reviewer, 2026-11-25 — CRITICAL·HIGH 없음):** ① 경로의 `%`·`#`을 `%25`·`%23`으로 바꾼다 — 그대로 두면 주소로 읽힐 때
+  인코딩 표시·앵커로 풀려 그림을 찾지 못한다(한글·공백은 그대로 둔다). 만든 글을 Markdig로 다시 읽어 주소가 통째로 잡히는지 테스트한다.
+  ② 넣을 자리는 저장하기 전에 `TextAnchor`로 잡아 둔다 — 저장하는 사이 글을 고쳐도 제자리에 들어가고, 그 자리가 지워졌으면 지금 커서에 넣는다.
+  ③ 저장하는 동안의 붙이기·놓기는 받지 않는다(키를 누르고 있으면 같은 이름으로 두 번 저장하려다 하나가 실패했다).
+  ④ 클립보드에 `PNG` 형식이 있으면 그 바이트를 그대로 쓴다(`Clipboard.GetImage`는 투명한 부분을 검게 만들 수 있다).
+  **남긴 것:** 편집기에 우클릭 메뉴가 없어 붙이기는 키로만 한다. 편집기에 md 파일과 그림을 함께 놓으면 그림만 넣고 md는 열지 않는다(01 F-29).
+  줄 번호 칸이나 글 아래 빈 곳에 놓으면 문서 끝에 들어간다. PNG로 바꾸는 일은 UI 스레드에서 한다(아주 큰 그림에서 잠깐 멈출 수 있다).
+- **테스트:** `ImageLinksTests`(이름·경로·링크), `MainViewModelImagesTests`(저장 위치, 겹친 이름, 문서 폴더 안의 파일, 그림 아닌 항목, 실패 알림, 편집 중이 아닐 때).
+  클립보드와 끌기는 단위 테스트로 보지 못한다 — 실행 확인 대상이다.
+
 ## 변경 이력
 
 - 2026-11-17: 최초 작성 — 스택, 의존성(승인 3·요청 4), 구조, 렌더링 안 A/B, 셸 통합 레지스트리, 설정 스키마, PoC 6건, 테스트 전략.
@@ -1397,4 +1423,6 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - 2026-11-24: §17.19 편집기 서식·바꾸기(F-28) — `MarkdownFormatter`·`TextSearch`, 편집기 키 처리(AvalonEdit 기본 키 확인 결과), 찾기·바꾸기 줄이 `SearchPanel`을 대신함, §12 `MaxHeadingLevel`.
 - 2026-11-24: §17.19 찾기의 형광펜 강조 — 편집기 `SearchHighlightRenderer`, 미리보기 CSS Custom Highlight(`IViewerHost.SetTextHighlightAsync`), 토큰 `Find.Highlight`.
 - 2026-11-25: 파일 열기(`NavigateToFileAsync`)가 문서 열기와 트리 펼치기를 함께 진행한다 — 폴더 존재는 `MainServices.DirectoryExists`로 먼저 확인. 미리보기 형광펜은 칠할 것도 지울 것도 없으면 스크립트를 보내지 않는다(§17.19). 측정은 05 14-4.
+- 2026-11-25: §13 — 창을 닫은 뒤 프로세스가 남는 문제(종료 마지막 단계의 멈춤) 재현과 처리: `ProcessTerminator`, `ShutdownWatchdog`, 시작·종료 로그 보강.
+- 2026-11-25: §17.20 그림 붙여넣기(F-29) — `ImageLinks`, `IFileOperations.CopyFile`·`WriteFile`, 붙이기 키를 편집기보다 먼저 받는 이유.
 
