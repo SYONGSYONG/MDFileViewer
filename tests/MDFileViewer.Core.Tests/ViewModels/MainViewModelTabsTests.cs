@@ -497,11 +497,43 @@ public sealed class MainViewModelTabsTests
         Assert.Equal(Readme, main.Document.FilePath);
     }
 
+    [Fact]
+    public async Task HighlightInPreview_ForwardsTermAndCaseToViewer()
+    {
+        // Arrange — 01 F-28: 편집기에서 찾는 말을 미리보기에도 칠한다
+        var main = await CreateMainEditingGuideAsync();
+
+        // Act
+        main.HighlightInPreview("안내", matchCase: true);
+        main.HighlightInPreview(null, matchCase: false);
+        await main.PendingWork;
+
+        // Assert
+        Assert.Equal([("안내", true), (null, false)], _viewer.TextHighlights);
+    }
+
+    [Fact]
+    public async Task HighlightInPreview_ViewerFails_LogsWithoutDialogOrTerm()
+    {
+        // Arrange — 강조는 참고용이다. 실패해도 편집을 막는 창을 띄우지 않는다
+        var main = await CreateMainEditingGuideAsync();
+        _viewer.TextHighlightFailure = new InvalidOperationException("WebView2가 준비되지 않았습니다.");
+
+        // Act
+        main.HighlightInPreview("비밀 낱말", matchCase: false);
+        await main.PendingWork;
+
+        // Assert — 찾는 말은 문서 내용일 수 있어 로그에 쓰지 않는다(02 §13)
+        Assert.Empty(_dialogs.Errors);
+        var entry = Assert.Single(_logger.Entries, entry => entry.Level == "WARN");
+        Assert.DoesNotContain("비밀 낱말", entry.Message);
+    }
+
     private MainViewModel CreateMain() => NoSyncContext.Create(() =>
     {
         var tree = new FolderTreeViewModel(_treeService, _logger, _favorites, NullFolderWatcher.Instance, _time);
         var document = new DocumentViewModel(_codec, _viewer, _dialogs, _logger, _time, ReadMetadata, _buffers);
-        var services = new MainServices(_dialogs, _shell, _logger, _time) { Watcher = _watcher, FileExists = _codec.Exists };
+        var services = new MainServices(_dialogs, _shell, _logger, _time) { Watcher = _watcher, FileExists = _codec.Exists, DirectoryExists = _treeService.FolderExists };
         return new MainViewModel(tree, document, _viewer, services);
     });
 

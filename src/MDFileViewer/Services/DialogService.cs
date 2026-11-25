@@ -39,6 +39,8 @@ public sealed class DialogService : IDialogService
     public bool ConfirmConvertToUtf8(string fileName) =>
         MessageDialog.Show(Owner, UiText.ConvertToUtf8Title, string.Format(UiText.ConvertToUtf8Format, fileName), UiText.ConvertToUtf8Button, UiText.CancelButton);
 
+    public string? PromptText(TextPromptRequest request) => TextInputDialog.Show(Owner, request);
+
     public string? PickSaveFile(SaveFileRequest request)
     {
         var dialog = new SaveFileDialog

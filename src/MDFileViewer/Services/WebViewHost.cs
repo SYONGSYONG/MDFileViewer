@@ -99,6 +99,7 @@ public sealed partial class WebViewHost : IViewerHost
                 }
 
                 await RestartFindInGateAsync(core);
+                await ApplyTextHighlightInGateAsync(core);
             },
             cancellationToken);
 
@@ -190,6 +191,7 @@ public sealed partial class WebViewHost : IViewerHost
         await ExecuteScriptAsync(core, ViewerScriptBuilder.ShowDocument(bodyHtml, DocumentUrlMapper.ToDocumentUrl(documentPath)));
         _displayed = new DisplayedDocument(bodyHtml, documentPath);
         await RestartFindInGateAsync(core);
+        await ApplyTextHighlightInGateAsync(core);
     }
 
     private static Task<string> ExecuteScriptAsync(CoreWebView2 core, string script) =>
@@ -267,6 +269,9 @@ public sealed partial class WebViewHost : IViewerHost
     {
         var generation = _webViewGeneration;
         _isTemplateLoaded = false;
+
+        // 새 페이지에는 칠한 것이 없다
+        _isTextHighlightPainted = false;
 
         // 템플릿을 불러오는 동안에는 바탕색이 그대로 보인다 — 인쇄하느라 종이색으로 둔 것(WebViewHost.Output.cs)을 테마 색으로 되돌린다
         _view.RestoreBackground();

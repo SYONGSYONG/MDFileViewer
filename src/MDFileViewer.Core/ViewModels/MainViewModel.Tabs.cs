@@ -76,6 +76,25 @@ public sealed partial class MainViewModel
         return true;
     }
 
+    /// <summary>
+    /// 편집기에서 찾는 말을 미리보기에도 형광펜처럼 칠한다 (01 F-28). <paramref name="term"/>이 비었거나 <c>null</c>이면 지운다.
+    /// 참고용 표시라 실패해도 창으로 알리지 않는다.
+    /// </summary>
+    public void HighlightInPreview(string? term, bool matchCase) => Track(HighlightInPreviewAsync(term, matchCase));
+
+    private async Task HighlightInPreviewAsync(string? term, bool matchCase)
+    {
+        try
+        {
+            await _viewer.SetTextHighlightAsync(term, matchCase, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // 찾는 말은 문서 내용일 수 있어 로그에 쓰지 않는다 (02 §13)
+            _logger.Warn("미리보기에 찾는 말을 표시하지 못했습니다.", exception);
+        }
+    }
+
     /// <summary>파일을 탭에 열어 보여 준다. 이미 열린 파일이면 그 탭으로 간다(01 F-17).</summary>
     internal async Task OpenInTabAsync(string filePath, string? anchorId, bool isPreview, bool syncTree)
     {
@@ -138,6 +157,13 @@ public sealed partial class MainViewModel
             return false;
         }
 
+        await RemoveTabAsync(tab);
+        return true;
+    }
+
+    // 저장할지 묻지 않고 탭을 없앤다 — 물어야 하는 호출자는 CloseTabAsync를 쓴다. 파일을 지운 뒤에는 저장할 곳이 없어 이쪽을 쓴다(01 F-27)
+    private async Task RemoveTabAsync(DocumentTabViewModel tab)
+    {
         var next = Tabs.Remove(tab);
         if (next is not null)
         {
@@ -147,8 +173,6 @@ public sealed partial class MainViewModel
         {
             Document.Clear();
         }
-
-        return true;
     }
 
     // 남길 탭으로 먼저 옮긴다 — 활성 탭을 닫을 때마다 옆 탭을 열면 곧 닫을 문서를 읽게 된다(리뷰 2026-11-18)

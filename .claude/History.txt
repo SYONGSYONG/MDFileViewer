@@ -266,3 +266,33 @@ A: a3bb927을 main에 합쳐 푸시, fix 브랜치 3개 삭제(로컬·원격). 
 [2026-11-24 08:29]
 Q: 프로그램에 쓴 언어·라이브러리 정리, GitHub README에 넣기
 A: README.md "기술 스택" 절을 언어, 프레임워크와 구조, 앱에 들어가는 라이브러리(버전·용도·라이선스), 테스트 도구, 빌드와 배포로 넓힘. 버전은 csproj, 라이선스는 THIRD-PARTY-NOTICES.txt 기준. 코드 변경 없음.
+[2026-11-24 10:21]
+Q: 다음 개발 기능 검토 → 설치 화면에 탐색기 메뉴 등록 체크 항목(기본 켜짐)과 트리에서 파일 관리(md 파일만, 휴지통 + 확인, 작은 입력 창) 만들기
+A: 브랜치 feature/file-management(커밋 안 함). 설치: installer/setup.iss([Tasks] shellmenu, [Run] --register --silent), installer/Korean.custom.isl, InstallerScriptTests — 임시 폴더로 컴파일 성공. 파일 관리(F-27): Core FileNameRules·IFileOperations·FileOperations·TextPromptRequest·MainViewModel.Files.cs·DocumentTabViewModel.Rename, App TextInputDialog·트리 메뉴·F2/Delete. 리뷰 HIGH 1건(편집 중인 탭 이름 바꾸기에서 인코딩·보호 상태 소실) 등 반영. 문서 00~05·manual·help 갱신. 빌드 경고 0, Core 855 통과. 앱 실행·E2E·설치 실행 확인은 하지 않음, 버전·릴리즈 노트는 미정.
+[2026-11-24 15:51]
+Q: 다음 보완 기능 추천 → 편집기 보강(단축키 계획, GitHub·Google Docs 기준 확정, 서식 도구 모음 포함, 제목 단계는 드롭다운, 바꾸기는 하나·모두·대소문자 구분). 먼저 커밋하고 1~4 순서대로 진행, 버전은 한 번에
+A: 파일 관리·설치 체크 커밋(d0e69f0, 푸시 안 함). 브랜치 feature/editor-formatting(커밋 안 함): Core MarkdownFormatter(.Lines)·TextSearch·MarkdownFormat·TextEdit, App MainWindow.Formatting.cs·MainWindow.Replace.cs·편집기 열 XAML·ToolbarToggle 스타일, AvalonEdit SearchPanel은 찾기·바꾸기 줄로 대체(기본 키는 DLL에서 읽어 Ctrl+I만 겹침을 확인). 리뷰 반영(CRLF 선택 끝, 사각형 선택, 모두 바꾸기 방식 등). Directory.Build.props 1.2.0, release-notes.md 1.2.0 절, README·manual·help, 문서 00~05. 빌드 경고 0, Core 976 통과. 앱 실행·E2E는 하지 않음.
+[2026-11-24 17:15]
+Q: 찾기를 했을 때 형광펜처럼 블록 처리 — 편집기와 미리보기 둘 다
+A: 편집기는 src/MDFileViewer/Services/SearchHighlightRenderer.cs(찾은 곳 전부 바탕색), 미리보기는 viewer.js highlightText + viewer.css ::highlight(mdfv-find)(IViewerHost.SetTextHighlightAsync, ViewerScriptBuilder.HighlightText, WebViewHost가 본문 교체 뒤 다시 칠함). 토큰 Find.Highlight(Light/Dark.xaml, viewer.css). MainWindow.Replace.cs RefreshMatches로 개수·강조를 함께 갱신. 문서 01·02·03·05·manual·release-notes. Core 985 통과, 앱은 임시 폴더 빌드로 경고 0 확인(실행 중인 앱이 출력 폴더를 잡고 있었음). 커밋 안 함.
+[2026-11-25 08:51]
+Q: 기동·첫 파일 열기가 느려진 것 같다 — 성능 확인
+A: 변경 전(main)과 1.2.0 브랜치 Debug 빌드를 임시 폴더에 만들어 번갈아 6회씩 측정. 창 뜸 평균 2.59 대 2.64초, 문서 표시 6.50 대 6.46초(첫 회 제외)로 차이 없음. 측정 때 PC CPU 65%→46%, 회차가 갈수록 두 빌드 모두 빨라짐. .claude/05-tasks.md 14-4에 수치 기록. 코드 변경 없음, 커밋 안 함.
+[2026-11-25 09:14]
+Q: 1.0.0부터 버전별로 비교, 마지막 버전에서 첫 번째 파일과 두 번째 파일 여는 시간 비교
+A: 1.0.0·1.1.0·1.1.1·1.2.0 Debug 빌드를 번갈아(순서도 뒤집어) 측정 — 1.2.0만 문서 표시가 0.4초쯤 늦고, F-27만 든 빌드는 1.1.1과 같아 F-28 쪽으로 좁혀짐(세부 원인 미확인). 앞 엔트리의 "차이 없음"은 PC 부하에 묻힌 것이라 정정. 첫 파일 열기는 둘째 파일보다 2초 안팎 더 걸리며 1.0.0부터 그랬음(1.2.0에서 0.3~0.4초 추가). .claude/05-tasks.md 14-4 갱신. 코드 변경 없음, 커밋 안 함.
+[2026-11-25 09:28]
+Q: 1.2.0에서 늦어진 부분을 찾아 고치고, 첫 파일이 느린 이유도 순서대로 확인
+A: 구간별 시간 기록을 넣은 실험 빌드로 원인 확인 — 문서를 넣은 직후의 빈 형광펜 스크립트가 표시 완료를 약 0.3초 늦춤. 칠할 것도 지울 것도 없으면 보내지 않게 수정(src/MDFileViewer/Services/WebViewHost.Find.cs, WebViewHost.cs), 재측정으로 1.1.1 수준 확인. 첫 파일 내역: 읽기+변환 약 0.9초, 템플릿 약 0.23초, 그 앞 단계 약 0.6초. .claude/05-tasks.md 14-4 갱신. 커밋 안 함.
+[2026-11-25 10:10]
+Q: 첫 파일 열기 줄이기 — 예열·미리 불러오기·병렬화 검토, 순서대로 진행(막힘 수정 → 진행 표시)
+A: 실험 사본으로 측정 — 예열·템플릿 미리 불러오기는 0.1~0.2초뿐이라 넣지 않음. 첫 파일이 늦는 주원인은 트리 펼치기를 기다린 0.7초로 확인, NavigateToFileAsync가 문서 열기와 트리 펼치기를 함께 진행하도록 수정(src/MDFileViewer.Core/ViewModels/MainViewModel.cs, 테스트 2개 추가·준비 코드 6곳 보강). Core 987개 통과, 재측정 0.94초 → 0.53초. 05-tasks 14-4·02-specs 변경 이력·릴리즈 노트 갱신. 커밋 안 함.
+[2026-11-25 10:18]
+Q: 불러오는 동안 불러오는 중임을 알 수 있는 효과 — 의견 뒤 순서대로 진행
+A: 문서 영역 위 2px 진행 막대 추가, 읽기가 0.2초를 넘길 때만 표시(DocumentViewModel.IsLoadingIndicatorVisible, AppConstants.LoadingIndicatorDelay, MainWindow.xaml, Themes/Controls.xaml LoadingBar). 테스트 3개 추가, Core 990개 통과, 앱 빌드 경고 0. 03-design §2.7·05-tasks 14-4·릴리즈 노트 갱신. 화면 확인은 남음. 커밋 안 함.
+[2026-11-25 12:10]
+Q: 설치할 때 실행 중이 아닌데 실행 중으로 판단, 알 수 없는 프로세스 3개가 남아 있었음 — 테스트 흔적인지 버그인지
+A: 앱 로그와 파일 시각으로 판단 — 측정 실행은 10:09에 끝났고 모두 종료를 확인, 10:38~10:39에 인수 없이 시작한 실행 3건이 따로 있어 개수가 맞음. 로그에 프로세스 번호·실행 파일·종료 기록이 없어 창 없이 남은 버그인지는 확정하지 못함(재현 실험과 시작·종료 로그 보강을 제안). 코드 변경 없음.
+[2026-11-25 12:10]
+Q: 메인에 스쿼시 머지
+A: feature/editor-formatting의 미커밋 변경(F-28, 형광펜 지연 수정, 첫 문서 열기 개선, 불러오는 중 표시, 문서)을 브랜치에 커밋한 뒤 main에 스쿼시 커밋 하나로 합치고 푸시 (이 기록을 포함한 스쿼시 커밋, 백업 참조 backup/feature-editor-formatting-before-squash-merge-20261125). 머지 전 Core 990개 통과, 앱 빌드 경고 0. 화면 확인·E2E는 남음(05-tasks 14-4 등 🔄 그대로).

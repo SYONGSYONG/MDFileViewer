@@ -23,6 +23,11 @@
   // 그린 결과를 기억하는 개수. 넘으면 전부 비운다 — 편집 미리보기는 입력마다 본문을 다시 넣으므로 바뀌지 않은 그림을 다시 그리지 않게 한다
   var CACHE_LIMIT = 200;
 
+  // 편집기에서 찾는 말을 미리보기에 칠하는 강조의 이름(viewer.css의 ::highlight와 같아야 한다)과 칠하는 곳의 한도.
+  // 한두 글자를 찾으면 수만 곳이 될 수 있다 — 넘는 곳은 칠하지 않는다(개수와 바꾸기는 편집기가 기준이다)
+  var FIND_HIGHLIGHT = 'mdfv-find';
+  var FIND_HIGHLIGHT_LIMIT = 5000;
+
   var doc = document;
   var getElementById = Document.prototype.getElementById;
   var createElement = Document.prototype.createElement;
@@ -40,6 +45,7 @@
   var removeElement = Element.prototype.remove;
   var cloneNode = Node.prototype.cloneNode;
   var getInnerHtml = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').get;
+  var createTreeWalker = Document.prototype.createTreeWalker;
 
   var library = null;        // 불러온 mermaid
   var libraryLoading = null; // 불러오는 중인 Promise
@@ -263,6 +269,45 @@
     return getInnerHtml.call(clone);
   }
 
+  // 본문에서 term이 나오는 곳을 모두 칠한다. DOM을 바꾸지 않는 방식(CSS Custom Highlight)이라 스크롤·선택·그림을 건드리지 않는다.
+  // 글자 조각(텍스트 노드) 하나 안에서만 찾는다 — 굵게 등으로 나뉜 말은 칠하지 못한다
+  function highlightText(term, matchCase) {
+    if (!window.CSS || !CSS.highlights || typeof Highlight !== 'function') {
+      return;
+    }
+
+    CSS.highlights.delete(FIND_HIGHLIGHT);
+    var content = getElementById.call(doc, CONTENT_ID);
+    if (!content || typeof term !== 'string' || term.length === 0) {
+      return;
+    }
+
+    var needle = matchCase ? term : term.toLowerCase();
+    var walker = createTreeWalker.call(doc, content, NodeFilter.SHOW_TEXT);
+    var highlight = new Highlight();
+    var count = 0;
+    for (var node = walker.nextNode(); node && count < FIND_HIGHLIGHT_LIMIT; node = walker.nextNode()) {
+      var text = matchCase ? node.data : node.data.toLowerCase();
+
+      // 소문자로 바꾸면 길이가 달라지는 글자가 있다 — 위치가 어긋나므로 그런 조각은 건너뛴다
+      if (text.length !== node.data.length) {
+        continue;
+      }
+
+      for (var at = text.indexOf(needle); at >= 0 && count < FIND_HIGHLIGHT_LIMIT; at = text.indexOf(needle, at + needle.length)) {
+        var range = new Range();
+        range.setStart(node, at);
+        range.setEnd(node, at + needle.length);
+        highlight.add(range);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      CSS.highlights.set(FIND_HIGHLIGHT, highlight);
+    }
+  }
+
   function renderDiagrams() {
     var mine = ++generation;
     var content = getElementById.call(doc, CONTENT_ID);
@@ -294,7 +339,7 @@
 
   // 본문의 이름 있는 요소(<img name="mdfv">)가 덮지 못하게 바꿀 수 없는 속성으로 둔다
   Object.defineProperty(window, 'mdfv', {
-    value: Object.freeze({ renderDiagrams: renderDiagrams, prepareOutput: prepareOutput, isOutputReady: isOutputReady, exportHtml: exportHtml }),
+    value: Object.freeze({ renderDiagrams: renderDiagrams, prepareOutput: prepareOutput, isOutputReady: isOutputReady, exportHtml: exportHtml, highlightText: highlightText }),
     writable: false,
     configurable: false,
     enumerable: false

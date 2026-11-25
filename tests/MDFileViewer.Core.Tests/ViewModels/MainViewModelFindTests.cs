@@ -89,7 +89,7 @@ public sealed class MainViewModelFindTests
             var tree = new FolderTreeViewModel(_treeService, _logger, new FavoritesList([]), NullFolderWatcher.Instance, _time);
             var document = new DocumentViewModel(
                 _codec, _viewer, _dialogs, _logger, _time, _ => new FileMetadata(1, _time.GetUtcNow()), new FakeTextBufferFactory());
-            var services = new MainServices(_dialogs, new FakeShellLauncher(), _logger, _time) { FileExists = _codec.Exists };
+            var services = new MainServices(_dialogs, new FakeShellLauncher(), _logger, _time) { FileExists = _codec.Exists, DirectoryExists = _treeService.FolderExists };
             return new MainViewModel(tree, document, _viewer, services);
         });
         await main.InitializeAsync(new StartupRequest.OpenFolder(Docs), CancellationToken.None);

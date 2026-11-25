@@ -231,6 +231,19 @@
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
+    <!-- 불러오는 중 표시 (03 §2.7): 문서 영역 위쪽의 가는 막대. 테두리·바탕 없이 강조색만 흐른다 -->
+    <sys:Double x:Key="LoadingBarHeight">2</sys:Double>
+
+    <Style x:Key="LoadingBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="{StaticResource LoadingBarHeight}" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
     <Style x:Key="PlaceholderTitle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
         <Setter Property="FontSize" Value="15" />
@@ -272,6 +285,37 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource Text.Disabled}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 켜고 끄는 툴바 버튼 — 켜지면 Accent 테두리 (03 §2.2 찾기·바꾸기 줄의 대소문자 구분) -->
+    <Style x:Key="ToolbarToggle" TargetType="ToggleButton">
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Surface.Selected}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

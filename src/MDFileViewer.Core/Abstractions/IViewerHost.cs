@@ -43,6 +43,12 @@ public interface IViewerHost
     /// <summary>찾기를 끝내고 강조를 지운다.</summary>
     void StopFind();
 
+    /// <summary>
+    /// 문서에서 <paramref name="term"/>이 나오는 곳을 모두 형광펜처럼 칠한다 (01 F-28 — 편집기에서 찾는 말을 미리보기에도 보여 준다).
+    /// 스크롤과 찾기(<see cref="StartFindAsync"/>)의 위치는 건드리지 않는다. 본문을 바꿔도 다시 칠한다. 비었거나 <c>null</c>이면 지운다.
+    /// </summary>
+    Task SetTextHighlightAsync(string? term, bool matchCase, CancellationToken cancellationToken);
+
     /// <summary>찾은 개수나 지금 위치가 바뀌었다. <see cref="StopFind"/> 뒤에는 알리지 않는다.</summary>
     event EventHandler<FindMatchesChangedEventArgs>? FindMatchesChanged;
 

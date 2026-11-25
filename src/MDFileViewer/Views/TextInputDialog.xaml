@@ -1,0 +1,39 @@
+<!-- 글자 한 줄을 묻는 대화상자 (01 F-27 새 문서·이름 바꾸기, 03 §10.2). 쓸 수 없는 입력이면 그 자리에서 이유를 보이고 확인을 막는다. -->
+<Window x:Class="MDFileViewer.Views.TextInputDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="420" SizeToContent="Height"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Surface.Document}"
+        Foreground="{DynamicResource Text.Primary}"
+        FontFamily="{StaticResource Font.Ui}" FontSize="13">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="24,20,24,16">
+            <TextBlock x:Name="LabelText" Margin="0,0,0,8" />
+            <TextBox x:Name="InputBox" Style="{StaticResource AddressBox}" TextChanged="OnInputChanged"
+                     AutomationProperties.LabeledBy="{Binding ElementName=LabelText}"
+                     AutomationProperties.AutomationId="TextInputBox" />
+            <!-- 이유가 없을 때도 한 줄 높이를 지켜, 입력하는 동안 창 높이가 출렁이지 않게 한다 -->
+            <TextBlock x:Name="ErrorText" Margin="0,6,0,0" MinHeight="18" TextWrapping="Wrap"
+                       Foreground="{DynamicResource Status.Danger}"
+                       AutomationProperties.LiveSetting="Polite"
+                       AutomationProperties.AutomationId="TextInputError" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="{DynamicResource Surface.Chrome}" BorderBrush="{DynamicResource Border.Subtle}"
+                BorderThickness="0,1,0,0" Padding="16,12">
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                <Button x:Name="ConfirmButton" Style="{StaticResource DialogButton}" FontWeight="SemiBold" IsDefault="True"
+                        AutomationProperties.AutomationId="DialogPrimaryButton" Click="OnConfirmClick" />
+                <Button x:Name="CancelButton" Style="{StaticResource DialogButton}" Margin="8,0,0,0" IsCancel="True"
+                        AutomationProperties.AutomationId="DialogCancelButton" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

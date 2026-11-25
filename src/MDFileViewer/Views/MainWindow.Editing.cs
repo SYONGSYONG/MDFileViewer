@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using ICSharpCode.AvalonEdit.Search;
 using MDFileViewer.Core;
 using MDFileViewer.Core.Models;
 using MDFileViewer.Core.ViewModels;
@@ -68,15 +67,19 @@ public partial class MainWindow
         Editor.TextArea.SelectionForeground = null;
         Editor.TextArea.TextView.CurrentLineBackground = (Brush)FindResource("Surface.Hover");
         Editor.TextArea.TextView.CurrentLineBorder = new Pen(Brushes.Transparent, 0);
+        _searchHighlight.Brush = (Brush)FindResource("Find.Highlight");
+        Editor.TextArea.TextView.InvalidateLayer(_searchHighlight.Layer);
     }
 
-    // 탭 키는 공백 4칸(01 F-08), 찾기(Ctrl+F), 커서 위치(01 F-15), 미리보기 스크롤 동기화(01 F-09)
+    // 탭 키는 공백 4칸(01 F-08), 커서 위치(01 F-15), 미리보기 스크롤 동기화(01 F-09), 서식 단축키·찾기·바꾸기(01 F-28).
+    // 편집기 부품의 찾기 창(SearchPanel)은 바꾸기가 없어 설치하지 않는다 — 앱의 찾기·바꾸기 줄이 대신한다(02 §17.19)
     private void InitializeEditor()
     {
         Editor.Options.ConvertTabsToSpaces = true;
         Editor.Options.IndentationSize = AppConstants.EditorTabSize;
         Editor.Options.HighlightCurrentLine = true;
-        SearchPanel.Install(Editor);
+        InitializeFormatting();
+        InitializeSearchHighlight();
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateCursorPosition();
         Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => SyncPreviewScroll();
     }
@@ -107,7 +110,11 @@ public partial class MainWindow
             EditorColumn.Width = new GridLength(0);
             EditorSplitterColumn.Width = new GridLength(0);
             Editor.Visibility = Visibility.Collapsed;
+            EditorPane.Visibility = Visibility.Collapsed;
             EditorSplitter.Visibility = Visibility.Collapsed;
+
+            // 보기 모드의 문서에 편집기 찾기의 형광펜이 남지 않게 한다. 찾기 줄은 열린 채로 두어, 편집으로 돌아오면 다시 칠한다
+            ClearMatchHighlights();
             CursorPositionText.Text = string.Empty;
             return;
         }
@@ -125,10 +132,13 @@ public partial class MainWindow
             EditorSplitterColumn.Width = new GridLength(SplitterWidth);
             ViewerColumn.Width = new GridLength(1 - _editorSplitRatio, GridUnitType.Star);
             Editor.Visibility = Visibility.Visible;
+            EditorPane.Visibility = Visibility.Visible;
             EditorSplitter.Visibility = Visibility.Visible;
         }
 
         UpdateCursorPosition();
+        UpdateHeadingButton();
+        RefreshMatches();
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Editor.Focus()));
     }
 

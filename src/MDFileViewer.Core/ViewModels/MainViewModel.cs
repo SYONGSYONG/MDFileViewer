@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : ObservableObject
         _directoryExists = services.DirectoryExists;
         _viewer = viewer;
         _readStylesheet = services.ReadStylesheet;
+        _files = services.Files;
         _uiContext = SynchronizationContext.Current;
 
         OpenFolderCommand = new AsyncRelayCommand(_ => OpenFolderAsync(), OnCommandFailed);
@@ -50,6 +51,7 @@ public sealed partial class MainViewModel : ObservableObject
         InitializeMenuCommands();
         InitializeDropCommand();
         InitializeExportCommands();
+        InitializeFileCommands();
         Zoom = CreateZoom(viewer);
         Outline = new OutlineViewModel(document, services.Logger);
         Find = new FindViewModel(viewer, services.Time, services.Logger, () => Document.IsDocumentVisible && !Document.IsEditing);
@@ -176,17 +178,37 @@ public sealed partial class MainViewModel : ObservableObject
     /// 파일을 탭에 열고 트리를 그 파일까지 펼쳐 고른다. 앵커가 있으면 그 위치로 연다 (01 F-01·F-05·F-17). 시작 인수·주소 표시줄은 고정 탭,
     /// 링크는 미리보기 탭이다. 폴더가 없으면 상태 표시줄로 알린다.
     /// </summary>
+    /// <remarks>
+    /// 문서 열기와 트리 펼치기를 함께 진행한다. 트리는 처음 갈 때 드라이브부터 단계마다 폴더를 읽고 그리느라 0.7초쯤 걸렸고,
+    /// 그것을 기다린 뒤에 문서를 열어 첫 파일이 그만큼 늦게 보였다(05 14-4, 2026-11-25 측정).
+    /// </remarks>
     public async Task NavigateToFileAsync(string filePath, string? anchorId = null, bool isPreview = false)
     {
-        var node = await Tree.ExpandToFileAsync(filePath, CancellationToken.None);
-        if (node is null)
+        var fullPath = Path.GetFullPath(filePath);
+
+        // 존재 확인이 끊긴 UNC 경로에서 오래 걸릴 수 있어 UI 스레드 밖에서 한다 (02 §9)
+        if (Path.GetDirectoryName(fullPath) is not { } folderPath || !await Task.Run(() => _directoryExists(folderPath)))
         {
             ShowStatus(string.Format(UiText.PathNotFoundFormat, filePath));
             return;
         }
 
-        SelectWithoutOpening(node);
-        await OpenInTabAsync(node.FullPath, anchorId, isPreview, syncTree: false);
+        // 둘 다 기다려 어느 쪽 실패도 관찰되지 않은 채 버려지지 않게 한다
+        var opening = OpenInTabAsync(fullPath, anchorId, isPreview, syncTree: false);
+        var selecting = SelectFileWhenExpandedAsync(fullPath);
+        await Task.WhenAll(opening, selecting);
+    }
+
+    // 펼치는 사이 다른 탭으로 갔으면 그 탭의 파일이 선택돼 있어야 한다 — 늦게 끝난 이 펼치기가 선택을 되돌리지 않는다
+    private async Task SelectFileWhenExpandedAsync(string fullPath)
+    {
+        var node = await Tree.ExpandToFileAsync(fullPath, CancellationToken.None);
+        var isStillActive = Tabs.ActiveTab is { } active
+            && string.Equals(active.FilePath, fullPath, StringComparison.OrdinalIgnoreCase);
+        if (node is not null && isStillActive)
+        {
+            SelectWithoutOpening(node);
+        }
     }
 
     /// <summary>뷰어에서 눌린 링크를 현재 문서 기준으로 분류해 처리한다 (01 F-05).</summary>

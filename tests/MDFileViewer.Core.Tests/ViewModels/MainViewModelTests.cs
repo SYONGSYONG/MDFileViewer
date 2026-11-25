@@ -512,7 +512,7 @@ public sealed class MainViewModelTests
     {
         var tree = new FolderTreeViewModel(_treeService, _logger);
         var document = new DocumentViewModel(_codec, _viewer, _dialogs, _logger, _time, _ => new FileMetadata(1, _time.GetUtcNow()), new FakeTextBufferFactory());
-        return NoSyncContext.Create(() => new MainViewModel(tree, document, _viewer, new MainServices(_dialogs, _shell, _logger, _time) { Watcher = _watcher, FileExists = _codec.Exists }));
+        return NoSyncContext.Create(() => new MainViewModel(tree, document, _viewer, new MainServices(_dialogs, _shell, _logger, _time) { Watcher = _watcher, FileExists = _codec.Exists, DirectoryExists = _treeService.FolderExists }));
     }
 
     private MainViewModel CreateMainWithRealServices(FakeViewerHost viewer)

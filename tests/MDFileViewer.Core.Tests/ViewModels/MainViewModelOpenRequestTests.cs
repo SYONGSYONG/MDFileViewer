@@ -13,6 +13,8 @@ public sealed class MainViewModelOpenRequestTests
     private const string Guide = @"C:\Docs\guide.md";
     private const string Readme = @"C:\Docs\readme.md";
     private const string Memo = @"C:\Notes\memo.md";
+    private const int ShownPollAttempts = 300;
+    private static readonly TimeSpan ShownPollInterval = TimeSpan.FromMilliseconds(10);
 
     private readonly FakeFolderTreeService _treeService = new();
     private readonly FakeTextFileCodec _codec = new();
@@ -100,6 +102,43 @@ public sealed class MainViewModelOpenRequestTests
     }
 
     [Fact]
+    public async Task NavigateToFile_ShowsDocumentWithoutWaitingForTreeExpansion()
+    {
+        // Arrange — 트리가 그 폴더를 아직 읽는 중이다(느린 드라이브, 항목이 많은 폴더)
+        var main = await CreateMainAsync();
+        var listing = _treeService.HoldListing(Notes);
+
+        // Act
+        var navigating = main.NavigateToFileAsync(Memo);
+        await listing.WaitUntilStartedAsync();
+        await WaitUntilShownAsync(Memo);
+
+        // Assert — 문서는 트리 펼치기를 기다리지 않고 보인다(05 14-4). 트리 선택은 펼치기가 끝난 뒤에 따라온다
+        Assert.Contains(_viewer.Shown, shown => shown.DocumentPath == Memo);
+        Assert.NotEqual(Memo, main.Tree.SelectedNode?.FullPath);
+
+        listing.Complete(_treeService.Listing(Notes));
+        await navigating;
+        Assert.Equal(Memo, main.Tree.SelectedNode!.FullPath);
+        Assert.Equal(Memo, main.Document.FilePath);
+    }
+
+    [Fact]
+    public async Task NavigateToFile_MissingFolder_DoesNotOpenTab()
+    {
+        // Arrange
+        var main = await CreateMainAsync();
+
+        // Act
+        await main.NavigateToFileAsync(@"C:\Gone\a.md");
+
+        // Assert — 폴더가 없으면 탭을 만들지 않고 상태 표시줄로만 알린다
+        Assert.Empty(main.Tabs.Tabs);
+        Assert.Empty(_viewer.Shown);
+        Assert.Equal(string.Format(UiText.PathNotFoundFormat, @"C:\Gone\a.md"), main.StatusMessage);
+    }
+
+    [Fact]
     public async Task NoArguments_ChangesNothing()
     {
         // Arrange — 인수 없이 다시 실행하면 창만 앞으로 온다. 지난 탭을 되살리거나 폴더를 옮기지 않는다
@@ -130,6 +169,15 @@ public sealed class MainViewModelOpenRequestTests
         // Assert
         Assert.Empty(main.Tabs.Tabs);
         Assert.Empty(_dialogs.Errors);
+    }
+
+    // 문서 읽기·변환은 다른 스레드에서 끝난다 — 보일 때까지 기다린다. 끝내 보이지 않으면 단언이 실패한다
+    private async Task WaitUntilShownAsync(string path)
+    {
+        for (var attempt = 0; attempt < ShownPollAttempts && !_viewer.Shown.Any(shown => shown.DocumentPath == path); attempt++)
+        {
+            await Task.Delay(ShownPollInterval);
+        }
     }
 
     private async Task<MainViewModel> CreateMainAsync()

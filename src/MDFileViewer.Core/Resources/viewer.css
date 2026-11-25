@@ -22,6 +22,7 @@
   --status-success: #1F7A44;
   --code-background: #F4F1EA;
   --quote-bar: #D3CDC1;
+  --find-highlight: #FFE27A;
   --code-comment: #5B6270;
   --code-string: #1B6B3A;
   --code-number: #A3420F;
@@ -50,6 +51,7 @@
   --status-success: #56D364;
   --code-background: #262A31;
   --quote-bar: #3A404B;
+  --find-highlight: #6B5A14;
   --code-comment: #9AA3AF;
   --code-string: #7EE787;
   --code-number: #FFA657;
@@ -308,7 +310,17 @@ body {
 
 /* ── 인쇄·PDF (01 F-26, 02 §17.17): 앱 테마와 상관없이 항상 밝은 테마 ──
    아래 색 값은 위 밝은 테마 블록과 같아야 한다(ViewerTemplateTests가 비교한다). CSS에는 블록을 가리켜 다시 쓰는 방법이 없어 한 번 더 적는다. */
+/* 편집기에서 찾는 말 (01 F-28). 이름은 viewer.js의 FIND_HIGHLIGHT와 같다. 글자색은 두지 않는다 — 구문 색·링크 색이 그대로 보인다 */
+::highlight(mdfv-find) {
+  background-color: var(--find-highlight);
+}
+
 @media print {
+  /* 인쇄물·PDF에는 찾기 흔적을 남기지 않는다 */
+  ::highlight(mdfv-find) {
+    background-color: transparent;
+  }
+
   :root[data-theme="dark"] {
     color-scheme: light;
     --surface-chrome: #F4F2EE;
@@ -327,6 +339,7 @@ body {
     --status-success: #1F7A44;
     --code-background: #F4F1EA;
     --quote-bar: #D3CDC1;
+    --find-highlight: #FFE27A;
     --code-comment: #5B6270;
     --code-string: #1B6B3A;
     --code-number: #A3420F;

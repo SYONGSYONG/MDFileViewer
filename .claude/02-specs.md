@@ -574,6 +574,8 @@ MDFileViewer.exe --unregister
 | `HelpFileName` | `help.md` | 도움말 문서 (§17.4) |
 | `ReleaseNotesFileName` | `release-notes.md` | 릴리즈 노트 문서 (§17.15) |
 | `MaxEmbeddedImageBytes` | 10MB | HTML로 내보낼 때 파일 안에 넣는 그림 하나의 최대 크기. 넘으면 원래 주소로 남긴다 (§17.17) |
+| `MaxHeadingLevel` | 6 | Markdown 제목의 가장 깊은 단계 — 서식 단축키와 제목 단계 드롭다운 (§17.19) |
+| `MaxFileNameLength` | 255 | 새 문서·이름 바꾸기에서 받는 파일 이름(확장자 포함)의 최대 길이 — NTFS의 한 구성 요소 한계 (§17.18) |
 | `InstanceMutexName` | `MDFileViewer.Instance.<AppId>` | 앱이 켜져 있음을 설치·제거 프로그램에 알리는 뮤텍스 이름 (§15.1) |
 | `PrimaryInstanceMutexName` | `MDFileViewer.Primary.<AppId>` | 열기 요청을 받는 창(먼저 뜬 앱)이 쥐는 뮤텍스 이름 (§17.14) |
 | `OpenRequestPipeName` | `MDFileViewer.Open.<AppId>` | 열기 요청 파이프 이름의 앞부분. 뒤에 `.<Windows 세션 번호>`를 붙인다 (§17.14) |
@@ -725,6 +727,15 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
   → `ReleaseSetup\MDFileViewer-Setup-<버전>.exe`.
   - 사용자 단위 설치(`PrivilegesRequired=lowest`, 기본 `%LOCALAPPDATA%\Programs\MDFileViewer`, UAC 없음). 설치 화면에서 전체 사용자 설치도 고를 수 있다.
   - 한국어 설치 화면, 시작 메뉴 바로 가기, 바탕 화면 바로 가기(선택), 설치 뒤 실행(선택), 제거 지원.
+  - **탐색기 메뉴 등록 (2026-11-24, 01 F-13, 05 14-1):** `[Tasks]`의 `shellmenu` — `unchecked` 플래그가 없어 기본으로 켜져 있다.
+    켜져 있으면 `[Run]`에서 `MDFileViewer.exe --register --silent`를 부른다(`runhidden waituntilterminated runasoriginaluser; Tasks: shellmenu`).
+    설치 스크립트가 레지스트리를 직접 쓰지 않는다 — 키 목록은 앱(§8) 한 곳에만 둔다. `runasoriginaluser`는 전체 사용자(관리자 권한) 설치에서도
+    설치하는 사람의 `HKCU`에 등록되게 한다. 덮어 설치는 지난번 선택에서 시작한다(Inno Setup 기본 `UsePreviousTasks=yes`). 체크를 꺼도 이미 있는
+    등록을 지우지 않는다. 등록이 실패해도(종료 코드 1) 설치는 계속된다 — 앱의 `⋯` 메뉴로 다시 등록할 수 있다.
+  - **스크립트의 한글 문구:** `setup.iss`는 ASCII만 쓴다(04 §4). 스크립트가 더하는 한글 문구는 `installer\Korean.custom.isl`(UTF-8 BOM,
+    `[CustomMessages]`)에 두고 `MessagesFile: "compiler:Languages\Korean.isl,Korean.custom.isl"`로 읽어 `{cm:ShellMenuTask}`처럼 쓴다.
+    `InstallerScriptTests`가 스크립트가 ASCII인지, 메시지 파일에 BOM과 두 문구가 있는지, 작업·실행 줄의 모양을 확인한다.
+    2026-11-24 이 PC의 Inno Setup 6으로 임시 폴더에 컴파일해 성공을 확인했다(설치 화면을 띄워 보지는 않았다).
   - `AppId`는 업그레이드 식별자라 바꾸지 않는다.
   - **실행 중 확인 (2026-11-22, 05 9-7):** `AppMutex=MDFileViewer.Instance.<AppId>` — 이 이름의 뮤텍스가 있으면 설치·제거 프로그램이 "앱을 모두 닫고 확인을 누르라"고 안내하고, 취소하면 끝낸다(Inno Setup 도움말 `AppMutex`). 앱은 메인 창을 띄우는 실행에서만 시작할 때 이 뮤텍스를 만들어 끝날 때까지 쥔다(`App._instanceMutex`, 이름은 `AppConstants.InstanceMutexName`). `--register`·`--unregister` 실행은 만들지 않는다 — 제거 프로그램이 부르는 `--unregister --silent`와 겹치지 않게. 권한이 다른 실행이 먼저 만든 뮤텍스라 열지 못하면(`NamedMutex.TryOpen`이 `null`) 뮤텍스 없이 창을 띄운다 — 먼저 켜진 창이 뮤텍스를 쥐고 있어 설치 프로그램의 확인은 그대로 걸리고, 그 창만 닫히면 남은 창은 확인에 잡히지 않는다(알려진 한계, 2026-11-23). 이름이 같은지는 `InstallerScriptTests`가 확인한다. 이 확인이 없을 때는 앱을 켠 채 제거하면 잠긴 파일을 지우지 못해 "일부를 삭제할 수 없었다" 경고와 함께 설치 폴더가 남았다(사용자 보고). 포터블 exe나 개발 빌드가 켜져 있어도 같은 안내가 나온다(같은 뮤텍스). 조용한 제거(`/VERYSILENT`)에서 어떻게 되는지는 도움말에 없어 확인하지 않았다.
   - 제거해도 사용자 데이터(`%LOCALAPPDATA%\MDFileViewer` — 로그·WebView2 데이터)는 남긴다.
@@ -1220,6 +1231,126 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
   `ViewerTemplateTests`(진입점 이름, 인쇄용 색 = 밝은 테마 색, 밝은 사본 표시 규칙). `viewer.js`의 동작과 `WebViewHost.Output.cs`는
   단위 테스트로 볼 수 없어 PoC-10과 실행 확인으로 본다. E2E는 만들지 않았다.
 
+### 17.18 트리에서 파일 관리 (01 F-27, 2026-11-24)
+
+- **구성:**
+  - `Core/Services/FileNameRules.TryNormalize(input, fallbackExtension, out error)` — 이름을 다듬고 검사한다(순수 함수, 파일 시스템에 묻지 않는다).
+    앞뒤 공백 제거 → 빈 이름 → `Path.GetInvalidFileNameChars()`(경로 구분자 포함 — 고른 폴더 밖으로 나가지 못한다) → Markdown 확장자가 없으면
+    `fallbackExtension` 붙임 → 이름 부분이 점·공백뿐인지 → 첫 점 앞이 장치 이름인지 → `MaxFileNameLength`. 이유는 `UiText` 문구로 돌려준다.
+  - `Core/Abstractions/IFileOperations` + `Core/Services/FileOperations` — `Exists`(파일 또는 폴더), `CreateEmptyFile`(`FileMode.CreateNew` —
+    확인과 만들기 사이에 생긴 파일을 덮지 않는다), `Rename`(`File.Move(overwrite: false)`), `UsesRecycleBin`, `Delete(path, toRecycleBin)`.
+    `MainServices.Files`로 주입한다(기본값은 실제 구현, 테스트는 `FakeFileOperations`).
+  - `Core/Models/TextPromptRequest` + `IDialogService.PromptText` — 제목·설명·처음 글자·선택 길이·버튼 글자·검사 함수 둘
+    (`Validate`: 입력할 때마다, 이름 규칙만 / `ValidateOnConfirm`: 확인을 누를 때 한 번, 이미 있는 이름인지까지). App은
+    `Views/TextInputDialog`(`MessageDialog`와 같은 모양)로 띄운다. 창은 검사 함수의 결과를 보여 주기만 한다 — 규칙은 Core에 있다.
+  - `Core/ViewModels/MainViewModel.Files.cs` — `NewDocumentCommand`(폴더 노드), `RenameFileCommand`·`DeleteFileCommand`(md 파일 노드).
+    `RelayCommand<TreeNodeViewModel>`이고 다른 종류의 노드에서는 `CanExecute`가 `false`다.
+  - App `MainWindow.Menus.cs` — 트리 우클릭 메뉴 항목과 `OnTreePreviewKeyDown`(`F2`·`Delete`, 수식 키 없이, 고른 노드가 md 파일일 때만).
+- **검사는 두 번:** 대화상자의 검사 함수와, 답을 받은 뒤 뷰모델에서 한 번 더(`ResolveTargetPath`). 뷰모델이 파일을 만드는 경계라 대화상자만
+  믿지 않는다. 이미 있는 이름인지는 `IFileOperations.Exists`로 본다 — 이름 바꾸기에서 자기 자신(대소문자만 다른 경로)은 "이미 있음"이 아니다.
+  `Exists`는 입력할 때마다 부르지 않고 확인을 누를 때만 부른다 — UI 스레드에서 도는 조회라 끊긴 네트워크 폴더에서 글자마다 창이 멈춘다
+  (리뷰 2026-11-24). 이유가 있으면 창을 닫지 않고 입력란 아래에 보여 준다.
+- **새 문서:** `CreateEmptyFile` → 폴더 노드 `ReloadChildrenAsync` → `OpenInTabAsync(isPreview: false, syncTree: true)` → `BeginEditActive`.
+  빈 파일은 0바이트다(BOM 없음) — 저장할 때의 인코딩은 §7의 읽기 규칙(UTF-8)이 정한다.
+- **이름 바꾸기:** 저장하지 않은 변경이 있는 탭이면 알리고 그만둔다. `Rename` 뒤 `FollowRenamedFileAsync` — 열린 탭은
+  `DocumentTabViewModel.Rename(새 경로)`로 경로만 바꾼다(탭을 닫았다 열지 않는다 — 탭 순서·고정 상태 유지). 활성 탭이었으면
+  `Document.ShowTabAsync`로 다시 보여 주고(제목·경로·감시가 새 경로를 따른다), 그 뒤에 부모 노드를 다시 읽고 `SelectFileInTreeAsync(새 경로)`.
+  - **`FilePath` setter를 쓰지 않는 이유 (리뷰 2026-11-24 HIGH):** setter는 다른 파일로 바뀌는 경우(미리보기 탭)를 위한 것이라 `Format`·
+    `HasDecodingErrors`·`KnownMetadata`·`ConflictMetadata`를 지운다. 편집을 시작했지만 아직 고치지 않은 탭(`IsDirty`가 아니라 막히지 않는다)은
+    파일을 다시 읽지 않으므로 지운 값을 되찾지 못해, 그 뒤 저장이 UTF-8 + CRLF로 나가고(원래 CP949·LF였어도), 읽지 못한 글자가 있는 파일의
+    저장 차단이 풀리고, 바깥 변경 덮어쓰기 확인이 건너뛰어졌다. 보기 모드 탭도 큰 파일 확인이 다시 떴다. `Rename`은 같은 파일이므로 모두 둔다.
+  - **순서:** 탭을 먼저 다시 보여 주고 트리를 읽는다 — 바깥 변경 감시가 옛 이름을 보고 있는 시간을 줄인다.
+- **삭제:** `UsesRecycleBin`으로 문구와 방식을 정한다 → `Confirm` → `Delete` → 탭이 있으면 `RemoveTabAsync`(저장 확인 없이 닫기 — `CloseTabAsync`에서
+  떼어 낸 뒷부분) → 부모 노드 다시 읽기 → 고른 노드였고 남은 탭이 없으면 부모 폴더를 고른다.
+  - 지우려는 파일이 이미 없으면(`FileNotFoundException`·`DirectoryNotFoundException`) 실패로 알리지 않고 탭·트리 정리로 넘어간다 —
+    휴지통 방식은 예외를 던지고 `File.Delete`는 조용히 넘어가 결과가 갈리던 것을 맞췄다.
+  - **휴지통:** `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin,
+    UICancelOption.ThrowException)`. .NET에서 휴지통으로 보내는 API는 이것뿐이다(셸의 파일 작업을 부른다). `Microsoft.VisualBasic`은 .NET 공유
+    프레임워크에 들어 있어 **새 패키지가 아니다**(배포 폴더에 이미 `Microsoft.VisualBasic.Core.dll`이 있다). 셸 오류 창에서 취소하면 오는
+    `OperationCanceledException`은 `IOException`으로 바꾼다.
+  - **휴지통 유무:** 경로 루트의 `DriveInfo.DriveType == Fixed`일 때만 `true`. UNC 경로는 `DriveInfo`를 만들 수 없어 예외 → `false`.
+    네트워크·이동식 드라이브는 `false` → 영구 삭제(`File.Delete`)임을 알리고 묻는다.
+- **실패 처리:** `IOException`·`UnauthorizedAccessException`·`NotSupportedException`·`ArgumentException`을 잡아 경고 로그와
+  "작업하지 못함" 대화상자로 알린다. 그 뒤 단계(탭·트리 갱신)는 하지 않는다. 로그에는 예외의 종류 이름만 남긴다 — 이 예외들의 메시지에는
+  파일 경로가 들어 있다(§13). 그 밖의 예외는 명령 공통의 "예상하지 못한 오류" 경로로 간다.
+- **트리 갱신:** 펼쳐 둔 폴더는 F-18 감시가 다시 읽지만(0.5초 뒤) 기다리지 않고 바로 부모 노드를 다시 읽는다 — 만든 파일을 곧바로 골라야 하고,
+  감시가 안 되는 위치도 있다.
+- **상수:** `MaxFileNameLength` = 255(§12).
+- **테스트:** `FileNameRulesTests`(36 — 다듬기, 확장자 붙이기, 금지 문자, 장치 이름과 비슷하지만 되는 이름, 길이 경계. 구현 전 실패 확인),
+  `FileOperationsTests`(8 — 임시 폴더에서 만들기·덮지 않음·이름 바꾸기·대소문자만 바꾸기·영구 삭제·UNC 판단. **휴지통으로 보내기는 돌리지
+  않는다** — 사용자의 휴지통에 파일을 남긴다), `MainViewModelFilesTests`(23 — 명령 가능 여부, 권하는 이름, 검사 함수, 만들기·열기·편집,
+  탭이 따라오는 이름 바꾸기, 편집 중인 탭의 형식 유지, 저장 안 한 변경, 확인·취소, 휴지통 없는 위치, 이미 없는 파일, 실패 시 탭 유지).
+  뷰모델 테스트 21개는 구현을 먼저 쓰고 붙였다(실패 실행을 먼저 보지 못했다). 리뷰로 더한 2개(편집 중인 탭의 형식 유지, 이미 없는 파일)는
+  고치기 전에 실패를 확인했다. `TextInputDialog`와 트리의 키·메뉴는 단위 테스트로 볼 수 없어 실행 확인으로 본다. E2E는 만들지 않았다.
+- **확인하지 못한 것:** 실제 앱에서의 입력 창·메뉴·키, 실제 휴지통으로 보내기, 네트워크·이동식 드라이브에서의 문구와 영구 삭제.
+- **코드 리뷰(code-reviewer, 2026-11-24):** CRITICAL 없음. HIGH 1건(위 `FilePath` setter)과 MEDIUM 4건(큰 파일 확인 다시 뜸, 이름 바꾸기 순서,
+  글자마다 파일 시스템 조회, 50줄 넘는 함수), LOW 2건(로그의 경로, 이미 없는 파일)을 반영했다. **고치지 않고 남긴 것:**
+  - 휴지통을 끈 고정 디스크·휴지통 용량을 넘는 파일·고정 디스크의 연결 폴더(junction) 너머 네트워크 위치에서는 "휴지통으로 보낼까요?"라고
+    묻고도 Windows가 바로 지울 수 있다(리뷰의 추정 — 실행해 확인하지 않았다). 휴지통 설정을 읽는 방법은 넣지 않았다.
+  - 셸이 띄우는 오류 창은 소유 창이 없어 앱 창 뒤에 뜰 수 있고, 떠 있는 동안 앱이 멈춘다(추정).
+  - `SecurityException`·셸의 `Win32Exception`은 따로 잡지 않는다 — "예상하지 못한 오류" 창으로 간다(자료를 잃지는 않는다).
+  - 장치 이름 목록에 위 첨자 숫자(`COM¹` 등)와 `CONIN$`·`CONOUT$`는 없다. 전체 경로 길이는 따로 보지 않고 실패로 알린다.
+
+### 17.19 편집기 서식·바꾸기 (01 F-28, 2026-11-24)
+
+- **구성:**
+  - `Core/Services/MarkdownFormatter` — 서식 로직(순수 함수). `Apply(text, selectionStart, selectionLength, MarkdownFormat)` →
+    `TextEdit(Start, Length, Text, SelectionStart, SelectionLength)`: "문서의 이 범위를 이 글로 바꾸고, 그 뒤 이렇게 선택하라". 편집기 부품을 모른다.
+    `GetHeadingLevel(lineText)`는 도구 모음의 제목 단계 표시에 쓴다.
+  - `Core/Models/MarkdownFormat`(enum — Bold, Italic, Strikethrough, Code, Link, Paragraph, Heading1~6, BulletList, NumberedList, TaskList, Quote),
+    `Core/Models/TextEdit`(record).
+  - `Core/Services/TextSearch` — 찾기·바꾸기 로직(순수 함수). `FindNext`·`FindPrevious`(끝에서 처음으로 돌아감), `FindAll`(겹치지 않게 전부),
+    `Count`, `IsMatch`(선택한 곳이 찾을 말인지). 비교는 `Ordinal` / `OrdinalIgnoreCase` — 문화권 규칙을 쓰지 않는다.
+    App에서는 WPF의 `System.Windows.Controls.TextSearch`와 이름이 겹쳐 `using` 별칭으로 가리킨다.
+  - App `MainWindow.Formatting.cs` — 편집기 키 처리(`OnEditorPreviewKeyDown`), 도구 모음 버튼, 제목 단계 드롭다운, `TextEdit` 적용.
+    `MainWindow.Replace.cs` — 찾기·바꾸기 줄.
+- **키 처리:** `Editor.PreviewKeyDown`(터널링)에서 가로채 `Handled`로 끝낸다 — 창의 `KeyBinding`(`Ctrl+B` 탐색 패널, `Ctrl+F` 문서 안 찾기)과
+  AvalonEdit의 기본 키(`Ctrl+I` 들여쓰기 맞춤)보다 먼저 온다. 편집기에 포커스가 없으면 이 처리기는 불리지 않으므로 창 단축키는 그대로다.
+  `Alt`가 눌린 조합은 `Key.System`으로, 한글 입력 중에는 `Key.ImeProcessed`로 올 수 있어 `SystemKey`·`ImeProcessedKey`에서 실제 키를 꺼낸다.
+  다만 찾기 줄의 키(`Esc`·`F3`)는 `ImeProcessed`일 때 받지 않는다 — 조합을 취소하려던 `Esc`가 찾기 줄을 닫지 않게.
+  편집기의 `F3`은 찾기 줄이 닫혀 있으면 줄을 연다(그대로 두면 창의 "문서 안 찾기" 명령으로 간다).
+- **AvalonEdit 기본 키 (6.3.1.120, 2026-11-24 DLL에서 읽어 확인):** `Ctrl+I` IndentSelection, `Ctrl+D` DeleteLine, `Insert` 겹쳐 쓰기,
+  찾기 패널의 `F3`·`Shift+F3`·`Esc`. 그 밖의 명령(대소문자 바꾸기 등)에는 키가 없다. 계획한 키 가운데 겹치는 것은 `Ctrl+I` 하나다.
+- **적용:** `Document.BeginUpdate()` ~ `EndUpdate()` 안에서 `Document.Replace(Start, Length, Text)` 한 번 → 실행 취소 한 단계. 그 뒤 `Editor.Select`.
+  모두 바꾸기는 `FindAll`의 목록을 `BeginUpdate` 한 번 안에서 **뒤에서부터** 하나씩 바꾼다 — 실행 취소는 한 단계이고, 앞쪽 위치가 밀리지 않으며,
+  문서를 통째로 갈아 끼우지 않아 커서·스크롤이 남는다(리뷰 2026-11-24). `ITextBuffer.ReplaceText`는 쓰지 않는다 — 실행 취소 기록을 지운다.
+  사각형 선택(`RectangleSelection`)일 때는 서식을 적용하지 않는다 — 시작·길이 한 쌍으로 나타낼 수 없다.
+- **인라인 서식의 판단:** 선택 양 끝(안쪽 → 바로 바깥 순)에 같은 기호가 이어진 길이로 본다. 굵게·취소선은 2개 이상, 코드는 1개 이상,
+  기울임은 `*`이 1개 또는 3개일 때(2개는 굵게다) "이미 적용됨"으로 보고 벗긴다. 선택이 없고 커서가 빈 기호 쌍 사이(`**|**`)면 쌍을 지운다.
+- **줄 서식의 판단:** 선택이 걸친 줄 범위(선택 끝이 줄 맨 앞이면 그 줄은 뺀다)를 줄마다 `들여쓰기 + 기호 + 나머지`로 나눈다. 기호는 제목
+  `#{1,6} `, 작업 목록 `[-*+] [ ] `, 글머리 `[-*+] `, 번호 `숫자[.)] `, 인용 `> `. 비지 않은 줄이 모두 같은 종류면 벗기고, 아니면 그 종류로 맞춘다.
+  CRLF 문서에서 범위의 마지막 `\r`은 뺀다 — 넣으면 바꾼 뒤의 선택이 `\r`과 `\n` 사이에서 끝난다(리뷰 2026-11-24, 테스트로 재현 뒤 수정).
+- **찾기·바꾸기 줄:** AvalonEdit `SearchPanel`에는 바꾸기가 없어(공개 멤버 확인) 설치하지 않고 앱의 줄로 대신한다. 상태(찾을 말·바꿀 말·
+  대소문자)는 창이 갖는다 — 탭마다 따로 두지 않는다. 지금 가리키는 곳은 편집기의 선택으로 보여 준다.
+- **형광펜 강조 (2026-11-24):**
+  - **편집기:** App `Services/SearchHighlightRenderer`(AvalonEdit `IBackgroundRenderer`, `KnownLayer.Selection`)가 `TextSearch.FindAll`의 목록 가운데
+    화면에 보이는 줄에 걸친 곳만 `BackgroundGeometryBuilder`로 그린다. 색은 테마 토큰 `Find.Highlight`. `RefreshMatches`가 목록·개수·미리보기를
+    한꺼번에 맞춘다 — 찾는 말·대소문자·문서(탭)가 바뀔 때와, 글이 바뀐 뒤 한가할 때(`DispatcherPriority.Background`로 한 번에 모아) 부른다.
+    글을 고친 직후 한 박자는 목록이 옛 위치라, 문서 밖을 가리키는 곳은 그리지 않는다.
+  - **미리보기:** `IViewerHost.SetTextHighlightAsync(term, matchCase)` → `ViewerScriptBuilder.HighlightText` → viewer.js `mdfv.highlightText`.
+    **CSS Custom Highlight API**(`CSS.highlights`, `::highlight(mdfv-find)`)로 칠한다 — DOM을 바꾸지 않아 스크롤·선택·Mermaid 그림을 건드리지 않는다.
+    WebView2 찾기(`CoreWebView2Find`, §17.11)를 쓰지 않은 이유: 시작할 때마다 첫 결과로 스크롤해 글을 고칠 때마다 미리보기가 튀고, 대소문자 구분을
+    보기 모드 찾기와 따로 둘 수 없다. 본문을 바꾸면(`UpdateBody`·`ShowDocument`) 칠한 것이 사라지므로 `WebViewHost`가 말을 기억했다가 다시 보낸다.
+    글자 조각(텍스트 노드) 하나 안에서만 찾고, 5,000곳(`FIND_HIGHLIGHT_LIMIT`)까지만 칠한다. `document.createTreeWalker`는 본문이 덮지 못하게
+    프로토타입으로 부른다(§6). 인쇄용 CSS에서는 바탕을 투명하게 한다.
+  - `MainViewModel.HighlightInPreview`가 뷰어에 넘긴다. 실패는 경고 로그만 남기고 창으로 알리지 않는다(찾는 말은 로그에 쓰지 않는다, §13).
+  - **테스트:** `ViewerScriptBuilderTests`(말이 JSON 문자열로 들어가는지, 빈 말은 지우기), `MainViewModelTabsTests`(뷰어로 전달, 실패 시 창 없음),
+    `ViewerTemplateTests`(강조 이름이 css·js에서 같은지, 인쇄에서 숨기는지, 색 토큰), `ThemeDictionaryTests`(`Find.Highlight`). 구현 전 컴파일 실패 확인.
+  - **확인하지 못한 것:** 실제 화면의 색·모양(밝게·어둡게), 글을 고칠 때 깜빡임, 이 PC의 WebView2가 `CSS.highlights`를 지원하는지
+    (없으면 스크립트가 아무것도 하지 않는다 — 편집기 쪽 강조만 보인다).
+- **상수:** `MaxHeadingLevel` = 6(§12).
+- **테스트:** `MarkdownFormatterTests`, `TextSearchTests` — 모두 121개. 처음 115개는 빈 구현에서 103개 실패를 본 뒤 구현했고, 리뷰로 더한 것
+  (CRLF 선택 끝, `FindAll`, 경계)도 실패를 본 뒤 고쳤다. 키 처리·도구 모음·찾기 줄은 단위 테스트로 볼 수 없어 실행 확인으로 본다. E2E는 만들지 않았다.
+- **코드 리뷰(code-reviewer, 2026-11-24):** CRITICAL·HIGH 없음. 반영 — CRLF 선택 끝, 사각형 선택, 모두 바꾸기 방식, 조합 중 `Esc`, 탭을 바꾼 뒤의
+  찾은 개수, 편집기의 `F3`, 제목 단계 값이 두 곳에 있다는 주석. **고치지 않고 남긴 것:**
+  - `Ctrl+Alt`를 `AltGr`로 쓰는 자판에서는 `Ctrl+Alt+숫자`가 글자 입력(`@`·`#` 등)을 막는다(추정 — 그런 자판으로 확인하지 않았다). UI가 한국어뿐이라 두었다.
+  - 인라인 서식은 양 끝의 기호 개수만 본다 — 굵은 글 둘이 맞붙은 곳(`**가**|**나**`)이나 기호 쌍 둘에 걸친 선택에서는 엉뚱하게 벗기거나 합친다.
+  - 여러 문단에 걸친 굵게·링크는 기호가 줄바꿈을 건너 Markdown이 서식으로 보지 않는다(01 F-28 알려진 한계).
+  - 줄 서식의 정규식은 코드 블록·가로줄(`- - -`)을 가리지 않는다. 제목 단계 표시도 코드 블록 안의 `# 주석`을 제목으로 본다.
+  - 서식·찾기마다 `Document.Text`로 문서 전체 글을 만든다(O(n)). 수 MB까지는 문제없을 것으로 보지만 재지 않았다.
+  - 도구 모음 버튼은 Tab으로 닿지 않는다(03 §2.2 — 의도한 것, 키보드는 단축키).
+- **확인하지 못한 것:** 실제 앱에서의 키(한글 입력 상태의 `` Ctrl+` ``·`Ctrl+Shift+숫자`·`Ctrl+Alt+숫자`), 도구 모음 모양(밝게·어둡게), 실행 취소 단위.
+
 ## 변경 이력
 
 - 2026-11-17: 최초 작성 — 스택, 의존성(승인 3·요청 4), 구조, 렌더링 안 A/B, 셸 통합 레지스트리, 설정 스키마, PoC 6건, 테스트 전략.
@@ -1262,3 +1393,8 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - 2026-11-23: §17.17 인쇄, PDF·HTML로 내보내기(F-26) — 항상 밝은 테마(인쇄용 색 + 밝은 그림 사본), 준비 폴링, 그리기 직렬화, HTML 만들기와 CSP, PoC-10 결과, §12 `MaxEmbeddedImageBytes`.
 - 2026-11-23: §17.17 — 어두운 테마에서 PDF 여백이 어둡게 찍히던 문제(뷰어 기본 바탕색) 수정.
 - 2026-11-23: §13 — 끝나는 중에 난 예외는 알리지 않고 프로세스를 끝낸다(`ShutdownMonitor`). 설치가 멈춘 사례의 원인과 수정.
+- 2026-11-24: §17.18 트리에서 파일 관리(F-27) — 이름 규칙, `IFileOperations`, 입력 대화상자, 휴지통 판단과 삭제 순서, §12 `MaxFileNameLength`. §15.1 설치 화면의 탐색기 메뉴 등록 작업과 `Korean.custom.isl`.
+- 2026-11-24: §17.19 편집기 서식·바꾸기(F-28) — `MarkdownFormatter`·`TextSearch`, 편집기 키 처리(AvalonEdit 기본 키 확인 결과), 찾기·바꾸기 줄이 `SearchPanel`을 대신함, §12 `MaxHeadingLevel`.
+- 2026-11-24: §17.19 찾기의 형광펜 강조 — 편집기 `SearchHighlightRenderer`, 미리보기 CSS Custom Highlight(`IViewerHost.SetTextHighlightAsync`), 토큰 `Find.Highlight`.
+- 2026-11-25: 파일 열기(`NavigateToFileAsync`)가 문서 열기와 트리 펼치기를 함께 진행한다 — 폴더 존재는 `MainServices.DirectoryExists`로 먼저 확인. 미리보기 형광펜은 칠할 것도 지울 것도 없으면 스크립트를 보내지 않는다(§17.19). 측정은 05 14-4.
+

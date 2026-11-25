@@ -33,6 +33,7 @@ public sealed partial class ViewerTemplateTests
         { "--status-success", "#1F7A44", "#56D364" },
         { "--code-background", "#F4F1EA", "#262A31" },
         { "--quote-bar", "#D3CDC1", "#3A404B" },
+        { "--find-highlight", "#FFE27A", "#6B5A14" },
     };
 
     // 코드 블록 구문 색상 (03 §6.1). 문서에만 쓰는 색이라 앱 WPF 리소스(ThemeDictionaryTests)와는 맞추지 않는다
@@ -55,6 +56,23 @@ public sealed partial class ViewerTemplateTests
     private static partial Regex CustomProperty();
 
     private static readonly string ResourcesFolder = Path.Combine(AppContext.BaseDirectory, AppConstants.ResourcesFolderName);
+
+    [Fact]
+    public void ViewerStylesheet_PaintsFindHighlightAndHidesItOnPaper()
+    {
+        // Arrange — 01 F-28: 편집기에서 찾는 말을 미리보기에 형광펜처럼 칠한다. 이름은 viewer.js가 등록하는 강조 이름과 같아야 한다
+        var css = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerStylesheetFileName));
+        var script = File.ReadAllText(Path.Combine(ResourcesFolder, AppConstants.ViewerScriptFileName));
+
+        // Assert
+        Assert.Contains("::highlight(mdfv-find)", css, StringComparison.Ordinal);
+        Assert.Contains("'mdfv-find'", script, StringComparison.Ordinal);
+        Assert.Contains("highlightText: highlightText", script, StringComparison.Ordinal);
+
+        // 인쇄물·PDF에는 찾기 흔적을 남기지 않는다
+        var print = css[css.IndexOf("@media print", StringComparison.Ordinal)..];
+        Assert.Contains("::highlight(mdfv-find)", print, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Template_DeclaresExpectedContentSecurityPolicy()

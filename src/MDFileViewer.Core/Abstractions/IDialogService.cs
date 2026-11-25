@@ -24,4 +24,10 @@ public interface IDialogService
 
     /// <summary>알림(버튼 하나). 오류가 아닌 결과 안내에 쓴다 — 탐색기 메뉴 등록 결과, 앱 정보.</summary>
     void ShowInfo(string title, string message);
+
+    /// <summary>
+    /// 글자 한 줄을 묻는다 (01 F-27 새 문서·이름 바꾸기). <see cref="TextPromptRequest.Validate"/>가 이유를 돌려주는 동안에는 그 이유를
+    /// 입력란 아래에 보여 주고 확인을 막는다. 취소하면 <c>null</c>.
+    /// </summary>
+    string? PromptText(TextPromptRequest request);
 }

@@ -14,7 +14,7 @@ MDFileViewer/
 │   │   ├── Properties/PublishProfiles/  # 발행 프로필 win-x64-singlefile(포터블)·win-x64-folder(설치 파일)
 │   │   ├── AppPaths.cs             # %LOCALAPPDATA% 아래 로그·WebView2 폴더, 리소스 폴더 경로
 │   │   ├── app.manifest            # 모니터별 DPI(Per-Monitor V2), 실행 수준 asInvoker (02 §4.2)
-│   │   ├── Views/                  # MainWindow(.Editing·.Menus·.Drop·.Find·.Outline 부분 파일), HelpWindow, 대화상자(MessageDialog)
+│   │   ├── Views/                  # MainWindow(.Editing·.Formatting·.Replace·.Menus·.Drop·.Find·.Outline 부분 파일), HelpWindow, 대화상자(MessageDialog, TextInputDialog)
 │   │   ├── Controls/               # MarkdownView(WebView2 래퍼), 변환기. 편집기(AvalonEdit)는 MainWindow에 직접 둔다
 │   │   ├── Services/               # ThemeService, SystemThemeSource, DialogService, ShellLauncher, WebViewHost(.Find·.Output 부분 파일), WindowFitter,
 │   │   │                           # AvalonTextBuffer(탭 편집 버퍼), MarkdownHighlighting(xshd 읽기)
@@ -37,7 +37,8 @@ MDFileViewer/
 ├── docs/
 │   └── manual.md                   # 사용법 매뉴얼(사용자용, 2026-11-18). 개발 문서는 .claude/에 둔다
 ├── installer/
-│   └── setup.iss                   # Inno Setup 설치 파일 스크립트 (02 §15.1)
+│   ├── setup.iss                   # Inno Setup 설치 파일 스크립트 (02 §15.1). ASCII만
+│   └── Korean.custom.isl           # 스크립트가 더하는 한글 문구 [CustomMessages]. UTF-8 BOM (02 §15.1)
 ├── publish-portable.bat            # 포터블 exe 만들기 → ReleasePortable\ (커밋 제외)
 ├── publish-setup.bat               # 설치 파일 만들기 → ReleaseSetup\ (커밋 제외)
 ├── Directory.Build.props           # 공통 빌드 속성, 버전(<Version>, 02 §15.1)
@@ -200,3 +201,6 @@ C# 규칙(`rules/ecc/csharp`)이 ".NET 관례를 따른다"고 정하고 있고 
 - 2026-11-22: §1 폴더 구조에 찾기 부분 파일(`MainWindow.Find.cs`, `WebViewHost.Find.cs`) 반영.
 - 2026-11-22: §1 폴더 구조에 `MainWindow.Outline.cs` 반영.
 - 2026-11-23: §1 폴더 구조에 `WebViewHost.Output.cs` 반영.
+- 2026-11-24: §1 폴더 구조에 `TextInputDialog`, `installer/Korean.custom.isl`(UTF-8 BOM — `setup.iss`의 ASCII 규칙을 지키기 위한 한글 문구 파일) 반영.
+- 2026-11-24: §1 폴더 구조에 `MainWindow.Formatting.cs`·`MainWindow.Replace.cs` 반영.
+

@@ -84,6 +84,12 @@ public static class AppConstants
     /// </summary>
     public const int MaxDroppedFiles = 20;
 
+    /// <summary>Markdown 제목의 가장 깊은 단계 (01 F-28) — 제목 단계 드롭다운과 단축키 `Ctrl+Alt+1`~`6`.</summary>
+    public const int MaxHeadingLevel = 6;
+
+    /// <summary>파일 이름 하나의 최대 길이 (01 F-27). Windows(NTFS)의 한계다.</summary>
+    public const int MaxFileNameLength = 255;
+
     /// <summary>
     /// HTML로 내보낼 때 파일 안에 넣는 그림 하나의 최대 크기 (01 F-26). 넘는 그림은 원래 주소로 남긴다 — base64로 넣으면 약 1.33배가 되어
     /// 큰 그림 몇 개로 내보낸 파일이 수십 MB가 된다.
@@ -127,6 +133,12 @@ public static class AppConstants
 
     /// <summary>색 입힌 코드 블록을 기억해 두는 코드 글자 수 합의 상한 (02 §17.13). 넘으면 전부 비운다 — 다시 열면 다시 입힌다.</summary>
     public const int HighlightCacheMaxLength = 2_000_000;
+
+    /// <summary>
+    /// 문서를 읽기 시작한 뒤 이만큼 지나도 끝나지 않으면 "불러오는 중" 표시를 띄운다 (03 §2.7). 켜 놓은 뒤 여는 문서는 대개 0.1초 안에
+    /// 보여, 바로 띄우면 깜빡임이 된다(05 14-4 측정).
+    /// </summary>
+    public static readonly TimeSpan LoadingIndicatorDelay = TimeSpan.FromMilliseconds(200);
 
     /// <summary>탭 키로 넣는 공백 수 (01 F-08).</summary>
     public const int EditorTabSize = 4;

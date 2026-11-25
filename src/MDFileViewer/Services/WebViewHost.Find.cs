@@ -1,4 +1,5 @@
 using MDFileViewer.Core.Abstractions;
+using MDFileViewer.Core.Services;
 using Microsoft.Web.WebView2.Core;
 
 namespace MDFileViewer.Services;
@@ -12,7 +13,32 @@ public sealed partial class WebViewHost
     // 지금 찾는 글자. null이면 찾는 중이 아니다. 문서를 다시 보여 줄 때 이 글자로 다시 찾는다.
     private string? _findTerm;
 
+    // 편집기에서 찾는 말(01 F-28). 본문을 바꾸면 칠한 것이 사라져, 기억해 두었다가 다시 칠한다
+    private (string Term, bool MatchCase)? _textHighlight;
+
+    // 지금 페이지에 칠한 것이 있는가. 칠할 말도 지울 것도 없으면 스크립트를 보내지 않는다 — 문서를 넣은 직후의 스크립트는
+    // 뷰어가 본문을 그리는 일을 마칠 때까지 답이 오지 않아, 빈 요청 하나가 문서 표시 완료를 0.2~0.3초 늦췄다(05 14-4, 2026-11-25 측정)
+    private bool _isTextHighlightPainted;
+
     public event EventHandler<FindMatchesChangedEventArgs>? FindMatchesChanged;
+
+    public Task SetTextHighlightAsync(string? term, bool matchCase, CancellationToken cancellationToken)
+    {
+        _textHighlight = string.IsNullOrEmpty(term) ? null : (term, matchCase);
+        return RunInGateAsync(ApplyTextHighlightInGateAsync, cancellationToken);
+    }
+
+    /// <summary>기억한 말을 다시 칠한다(없으면 지운다). 문서 표시·본문 교체 뒤에도 부른다. 잠금 안에서만 부른다.</summary>
+    private async Task ApplyTextHighlightInGateAsync(CoreWebView2 core)
+    {
+        if (!_isTemplateLoaded || (_textHighlight is null && !_isTextHighlightPainted))
+        {
+            return;
+        }
+
+        await ExecuteScriptAsync(core, ViewerScriptBuilder.HighlightText(_textHighlight?.Term, _textHighlight?.MatchCase ?? false));
+        _isTextHighlightPainted = _textHighlight is not null;
+    }
 
     public Task StartFindAsync(string term, CancellationToken cancellationToken)
     {

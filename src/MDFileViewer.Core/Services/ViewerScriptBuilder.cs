@@ -91,6 +91,13 @@ public static class ViewerScriptBuilder
         return $"(function(){{var r={DocumentElement};window.scrollTo(0,{value}*Math.max(0,r.scrollHeight-window.innerHeight));}})();";
     }
 
+    /// <summary>
+    /// 본문에서 <paramref name="term"/>이 나오는 곳을 칠하라고 뷰어 스크립트에 시킨다 (01 F-28, 02 §17.19). 비었으면 지운다.
+    /// 본문을 바꾸면 칠한 것이 사라지므로 본문을 바꾼 뒤에 다시 보낸다.
+    /// </summary>
+    public static string HighlightText(string? term, bool matchCase) =>
+        $"if(window.mdfv){{window.mdfv.highlightText({Literal(term ?? string.Empty)},{(matchCase ? "true" : "false")});}}";
+
     // 템플릿의 <base>·<main>은 본문보다 앞에 있으므로, 본문에 같은 id가 있어도 문서 순서상 먼저인 템플릿 요소가 잡힌다
     private static string SetContent(string bodyHtml) =>
         $"{GetElementById(ContentElementId)}.innerHTML={Literal(bodyHtml)};";

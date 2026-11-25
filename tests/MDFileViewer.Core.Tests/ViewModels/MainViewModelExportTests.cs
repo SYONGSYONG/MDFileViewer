@@ -262,6 +262,7 @@ public sealed class MainViewModelExportTests : IDisposable
             var services = new MainServices(_dialogs, new FakeShellLauncher(), _logger, _time)
             {
                 FileExists = _codec.Exists,
+                DirectoryExists = _treeService.FolderExists,
                 ReadStylesheet = () => Stylesheet,
             };
             return new MainViewModel(tree, document, _viewer, services);

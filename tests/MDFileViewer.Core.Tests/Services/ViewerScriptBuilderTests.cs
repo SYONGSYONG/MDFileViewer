@@ -109,6 +109,28 @@ public sealed partial class ViewerScriptBuilderTests
     }
 
     [Fact]
+    public void HighlightText_PassesTermAsJsonLiteralAndCaseFlag()
+    {
+        // Act — 따옴표·한글·줄 끝 문자가 든 말도 스크립트를 깨지 않아야 한다(찾는 말은 사용자가 적는다)
+        var script = ViewerScriptBuilder.HighlightText("그\"림'</script>", matchCase: true);
+
+        // Assert
+        Assert.Equal("if(window.mdfv){window.mdfv.highlightText(\"\\uADF8\\u0022\\uB9BC\\u0027\\u003C/script\\u003E\",true);}", script);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void HighlightText_NoTerm_ClearsHighlight(string? term)
+    {
+        // Act
+        var script = ViewerScriptBuilder.HighlightText(term, matchCase: false);
+
+        // Assert — 빈 말을 보내면 뷰어 스크립트가 강조를 지운다
+        Assert.Equal("if(window.mdfv){window.mdfv.highlightText(\"\",false);}", script);
+    }
+
+    [Fact]
     public void SetTheme_UndefinedValue_Throws()
     {
         // Act & Assert
@@ -132,6 +154,7 @@ public sealed partial class ViewerScriptBuilderTests
         ViewerScriptBuilder.ScrollToAnchor("a"),
         ViewerScriptBuilder.SetTheme(EffectiveTheme.Dark),
         ViewerScriptBuilder.ScrollToRatio(0.5),
+        ViewerScriptBuilder.HighlightText("찾는 말", matchCase: false),
     };
 
     [Theory]

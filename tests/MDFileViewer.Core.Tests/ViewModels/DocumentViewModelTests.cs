@@ -181,6 +181,65 @@ public sealed class DocumentViewModelTests
     }
 
     [Fact]
+    public async Task OpenAsync_TakesLongerThanDelay_ShowsLoadingIndicatorUntilShown()
+    {
+        // Arrange — 읽기가 오래 걸린다(큰 파일, 느린 드라이브, 프로그램을 켠 직후)
+        var document = CreateDocument();
+        var changes = new List<string?>();
+        document.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+        var held = _codec.Hold(Path1);
+        var opening = document.OpenAsync(Path1);
+        await held.WaitUntilStartedAsync();
+
+        // Act·Assert — 바로 띄우지 않는다
+        Assert.False(document.IsLoadingIndicatorVisible);
+        _time.Advance(AppConstants.LoadingIndicatorDelay);
+        Assert.True(document.IsLoadingIndicatorVisible);
+        Assert.Contains(nameof(DocumentViewModel.IsLoadingIndicatorVisible), changes);
+
+        // 문서가 보이면 내린다
+        held.Complete(FakeTextFileCodec.Content("# 안내"));
+        await opening;
+        Assert.False(document.IsLoadingIndicatorVisible);
+    }
+
+    [Fact]
+    public async Task OpenAsync_FinishesBeforeDelay_NeverShowsLoadingIndicator()
+    {
+        // Arrange
+        var document = CreateDocument();
+        var changes = new List<string?>();
+        document.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+        // Act — 금방 끝난 뒤에 시간이 흘러도 뒤늦게 뜨지 않는다
+        await document.OpenAsync(Path1);
+        _time.Advance(AppConstants.LoadingIndicatorDelay);
+
+        // Assert
+        Assert.False(document.IsLoadingIndicatorVisible);
+        Assert.DoesNotContain(nameof(DocumentViewModel.IsLoadingIndicatorVisible), changes);
+    }
+
+    [Fact]
+    public async Task OpenAsync_FailsAfterDelay_HidesLoadingIndicator()
+    {
+        // Arrange
+        var document = CreateDocument();
+        var held = _codec.Hold(Path1);
+        var opening = document.OpenAsync(Path1);
+        await held.WaitUntilStartedAsync();
+        _time.Advance(AppConstants.LoadingIndicatorDelay);
+
+        // Act
+        held.Fail(new IOException("읽지 못함"));
+        await opening;
+
+        // Assert — 실패 화면 위에 표시가 남지 않는다
+        Assert.Equal(DocumentState.Failed, document.State);
+        Assert.False(document.IsLoadingIndicatorVisible);
+    }
+
+    [Fact]
     public async Task OpenAsync_NewerRequest_CancelsOlderOne()
     {
         // Arrange — 목록에서 ↑↓로 빠르게 옮기면 마지막 파일만 보여야 한다

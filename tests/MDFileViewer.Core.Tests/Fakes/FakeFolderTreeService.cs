@@ -75,6 +75,9 @@ internal sealed class FakeFolderTreeService : IFolderTreeService
         return Task.FromResult(listing.Access == FolderAccess.Ok && listing.Entries.Count > 0);
     }
 
+    /// <summary>등록한 폴더인가. 파일 열기가 묻는 "폴더가 있는가"(MainServices.DirectoryExists)에 물려, 트리와 같은 폴더 구성을 보게 한다.</summary>
+    public bool FolderExists(string folderPath) => Listing(folderPath).Access != FolderAccess.NotFound;
+
     /// <summary>테스트가 붙잡은 읽기를 끝낼 때 쓸 목록(지금 등록된 내용).</summary>
     public FolderListing Listing(string folderPath)
     {

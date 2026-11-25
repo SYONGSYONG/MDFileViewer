@@ -14,6 +14,10 @@ namespace MDFileViewer.Views;
 /// </summary>
 public partial class MainWindow
 {
+    // 메뉴 오른쪽에 보이는 키 이름. 키 자체는 OnTreePreviewKeyDown이 처리한다
+    private const string RenameGesture = "F2";
+    private const string DeleteGesture = "Del";
+
     private void OnTreeItemMouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         // 이벤트는 바깥 항목까지 올라가므로 실제로 누른 가장 안쪽 항목에서만 처리한다
@@ -44,9 +48,14 @@ public partial class MainWindow
             menu.Items.Add(new Separator());
             Add(menu, UiText.RevealInExplorer, _viewModel.OpenInExplorerCommand, node);
             Add(menu, UiText.CopyPath, _viewModel.CopyPathCommand, node);
+            menu.Items.Add(new Separator());
+            Add(menu, UiText.RenameMenu, _viewModel.RenameFileCommand, node, RenameGesture);
+            Add(menu, UiText.DeleteMenu, _viewModel.DeleteFileCommand, node, DeleteGesture);
         }
         else if (node.IsFolderLike)
         {
+            Add(menu, UiText.NewDocumentMenu, _viewModel.NewDocumentCommand, node);
+            menu.Items.Add(new Separator());
             Add(menu, UiText.OpenInExplorer, _viewModel.OpenInExplorerCommand, node);
             Add(menu, UiText.CopyPath, _viewModel.CopyPathCommand, node);
             menu.Items.Add(new Separator());
@@ -141,8 +150,32 @@ public partial class MainWindow
         }));
     }
 
-    private static void Add<T>(ContextMenu menu, string header, Core.Mvvm.RelayCommand<T> command, T parameter) =>
-        menu.Items.Add(new MenuItem { Header = header, Command = command, CommandParameter = parameter });
+    // 트리에 포커스가 있을 때 F2는 이름 바꾸기, Delete는 삭제 (01 F-27). 고른 노드가 md 파일일 때만 — 폴더는 다루지 않는다
+    private void OnTreePreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_viewModel is null || Keyboard.Modifiers != ModifierKeys.None
+            || _viewModel.Tree.SelectedNode is not { IsMarkdownFile: true } node)
+        {
+            return;
+        }
+
+        var command = e.Key switch
+        {
+            Key.F2 => _viewModel.RenameFileCommand,
+            Key.Delete => _viewModel.DeleteFileCommand,
+            _ => null,
+        };
+        if (command is null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        command.Execute(node);
+    }
+
+    private static void Add<T>(ContextMenu menu, string header, Core.Mvvm.RelayCommand<T> command, T parameter, string? gesture = null) =>
+        menu.Items.Add(new MenuItem { Header = header, Command = command, CommandParameter = parameter, InputGestureText = gesture ?? string.Empty });
 
     private static void Open(ContextMenu menu, FrameworkElement target)
     {

@@ -65,6 +65,17 @@ internal sealed class FakeDialogService : IDialogService
         return SaveFileResult;
     }
 
+    /// <summary>글자 입력 대화상자의 답. <c>null</c>이면 취소한 것이다.</summary>
+    public string? PromptResult { get; set; }
+
+    public List<TextPromptRequest> PromptRequests { get; } = [];
+
+    public string? PromptText(TextPromptRequest request)
+    {
+        PromptRequests.Add(request);
+        return PromptResult;
+    }
+
     public bool ConfirmConvertToUtf8(string fileName)
     {
         ConvertQuestions.Add(fileName);

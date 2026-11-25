@@ -20,4 +20,5 @@
     <SolidColorBrush x:Key="Status.Success" Color="#1F7A44" />
     <SolidColorBrush x:Key="Code.Background" Color="#F4F1EA" />
     <SolidColorBrush x:Key="Quote.Bar" Color="#D3CDC1" />
+    <SolidColorBrush x:Key="Find.Highlight" Color="#FFE27A" />
 </ResourceDictionary>

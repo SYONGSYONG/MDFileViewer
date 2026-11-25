@@ -42,6 +42,18 @@ public sealed class DocumentTabViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 같은 파일의 이름이 바뀌었다(01 F-27). <see cref="FilePath"/>를 바꾸는 것과 달리 읽을 때 안 것(인코딩·줄 끝, 읽지 못한 글자,
+    /// 바깥 변경 확인의 기준)을 지우지 않는다 — 내용은 그대로이고, 편집 중인 탭은 파일을 다시 읽지 않아 지우면 되찾지 못한다.
+    /// </summary>
+    internal void Rename(string newPath)
+    {
+        if (SetProperty(ref _filePath, newPath, nameof(FilePath)))
+        {
+            OnPropertyChanged(nameof(FileName));
+        }
+    }
+
     public string FileName => Path.GetFileName(FilePath);
 
     /// <summary>미리보기 탭(이름을 기울임꼴로 보여 준다). 다른 파일을 미리보기로 열면 이 탭의 파일이 바뀐다.</summary>

@@ -23,6 +23,12 @@ public sealed partial class DocumentViewModel : ObservableObject
     private readonly Func<string, FileMetadata> _readMetadata;
     private readonly ITextBufferFactory _bufferFactory;
     private readonly Debouncer _previewDebouncer;
+    private readonly object _loadingGate = new();
+    private ITimer? _loadingTimer;
+
+    // 늦게 울린 타이머가 이미 끝난 읽기의 표시를 켜지 않게, 읽기 상태가 바뀔 때마다 올린다
+    private int _loadingVersion;
+    private bool _isLoadingIndicatorVisible;
     private CancellationTokenSource? _openCancellation;
     private DocumentState _state = DocumentState.Empty;
 
@@ -65,7 +71,28 @@ public sealed partial class DocumentViewModel : ObservableObject
     public DocumentState State
     {
         get => _state;
-        private set => SetProperty(ref _state, value);
+        private set
+        {
+            if (SetProperty(ref _state, value))
+            {
+                UpdateLoadingIndicator(value == DocumentState.Loading);
+            }
+        }
+    }
+
+    /// <summary>
+    /// "불러오는 중" 표시를 띄울지 (03 §2.7). 읽기가 <see cref="AppConstants.LoadingIndicatorDelay"/>를 넘겨야 켜지고, 읽기가 끝나면(성공·실패·취소)
+    /// 꺼진다. 타이머 스레드에서 바뀔 수 있다.
+    /// </summary>
+    public bool IsLoadingIndicatorVisible
+    {
+        get
+        {
+            lock (_loadingGate)
+            {
+                return _isLoadingIndicatorVisible;
+            }
+        }
     }
 
     /// <summary>문서 화면(WebView2)을 보여 줄지. 다음 파일을 읽는 동안에는 이전 문서를 그대로 보여 준다.</summary>
@@ -302,6 +329,42 @@ public sealed partial class DocumentViewModel : ObservableObject
         UiText.LargeFileTitle,
         string.Format(UiText.LargeFileMessageFormat, DisplayFormat.ToMegabytes(metadata.SizeBytes)),
         UiText.LargeFileConfirm);
+
+    // 읽는 중이 다음 읽는 중으로 이어지면(빠르게 다른 파일을 고름) State가 바뀌지 않아 여기 오지 않는다 — 기다린 시간이 이어서 세어진다
+    private void UpdateLoadingIndicator(bool isLoading)
+    {
+        bool wasVisible;
+        lock (_loadingGate)
+        {
+            _loadingTimer?.Dispose();
+            var version = ++_loadingVersion;
+            _loadingTimer = isLoading
+                ? _timeProvider.CreateTimer(_ => ShowLoadingIndicator(version), state: null, AppConstants.LoadingIndicatorDelay, Timeout.InfiniteTimeSpan)
+                : null;
+            wasVisible = _isLoadingIndicatorVisible;
+            _isLoadingIndicatorVisible = false;
+        }
+
+        if (wasVisible)
+        {
+            OnPropertyChanged(nameof(IsLoadingIndicatorVisible));
+        }
+    }
+
+    private void ShowLoadingIndicator(int version)
+    {
+        lock (_loadingGate)
+        {
+            if (version != _loadingVersion)
+            {
+                return;
+            }
+
+            _isLoadingIndicatorVisible = true;
+        }
+
+        OnPropertyChanged(nameof(IsLoadingIndicatorVisible));
+    }
 
     private async Task<(TextFileContent Content, string BodyHtml)> ReadAndRenderAsync(string path, CancellationToken token)
     {

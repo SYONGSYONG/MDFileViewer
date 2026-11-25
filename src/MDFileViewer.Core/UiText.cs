@@ -58,6 +58,65 @@ public static class UiText
     public const string LinkOpenFailed = "링크를 열지 못했습니다";
     public const string UnexpectedErrorTitle = "오류";
 
+    // 파일 관리 — 새 문서·이름 바꾸기·삭제 (01 F-27)
+    public const string NewDocumentMenu = "새 문서…";
+
+    // 편집기 서식 (01 F-28). 링크를 넣을 때 주소 자리에 두는 글 — 선택해 두어 바로 덮어쓰게 한다
+    public const string LinkUrlPlaceholder = "주소";
+    public const string FormatToolbarName = "서식 도구 모음";
+    public const string HeadingParagraph = "본문";
+    public const string HeadingLevelFormat = "제목 {0}";
+    public const string HeadingGestureFormat = "Ctrl+Alt+{0}";
+    public const string HeadingToolTip = "제목 단계 (Ctrl+Alt+1~6)";
+    public const string BoldToolTip = "굵게 (Ctrl+B)";
+    public const string ItalicToolTip = "기울임 (Ctrl+I)";
+    public const string StrikethroughToolTip = "취소선 (Ctrl+Shift+X)";
+    public const string CodeToolTip = "코드 (Ctrl+`)";
+    public const string LinkToolTip = "링크 (Ctrl+K)";
+    public const string BulletListToolTip = "글머리 목록 (Ctrl+Shift+8)";
+    public const string NumberedListToolTip = "번호 목록 (Ctrl+Shift+7)";
+    public const string TaskListToolTip = "작업 목록 (Ctrl+Shift+9)";
+    public const string QuoteToolTip = "인용 (Ctrl+Shift+.)";
+    public const string LinkButtonText = "링크";
+    public const string ReplaceBarButtonText = "찾기·바꾸기";
+    public const string ReplaceBarToolTip = "찾기 (Ctrl+F) · 바꾸기 (Ctrl+H)";
+    public const string EditorFindBoxName = "찾을 말";
+    public const string ReplacementBoxName = "바꿀 말";
+    public const string ReplaceOneButton = "바꾸기";
+    public const string ReplaceOneToolTip = "선택한 곳을 바꾸고 다음으로 (바꿀 말에서 Enter)";
+    public const string ReplaceAllButton = "모두 바꾸기";
+    public const string MatchCaseToolTip = "대소문자 구분";
+    public const string EditorFindCountFormat = "{0}개";
+    public const string ReplacedAllFormat = "{0}곳을 바꿨습니다.";
+    public const string RenameMenu = "이름 바꾸기…";
+    public const string DeleteMenu = "삭제";
+    public const string NewDocumentTitle = "새 문서";
+    public const string RenameTitle = "이름 바꾸기";
+    public const string DeleteTitle = "문서 삭제";
+    public const string FileNameLabel = "파일 이름";
+    public const string NewDocumentDefaultName = "새 문서";
+    public const string CreateButton = "만들기";
+    public const string RenameButton = "바꾸기";
+    public const string DeleteButton = "삭제";
+    public const string RecycleButton = "휴지통으로 보내기";
+    public const string FileNameEmpty = "이름을 입력하세요.";
+    public const string FileNameInvalidCharacters = "이름에 쓸 수 없는 글자가 있습니다: \\ / : * ? \" < > |";
+    public const string FileNameReserved = "Windows가 따로 쓰는 이름이라 쓸 수 없습니다.";
+    public const string FileNameTooLong = "이름이 너무 깁니다.";
+    public const string FileNameExists = "같은 이름의 파일이나 폴더가 이미 있습니다.";
+    public const string RenameUnsavedMessage = "저장하지 않은 변경이 있는 문서입니다. 먼저 저장한 뒤 이름을 바꾸세요.";
+    public const string RecycleConfirmFormat = "'{0}'을(를) 휴지통으로 보낼까요?";
+    public const string DeletePermanentlyConfirmFormat = "'{0}'을(를) 완전히 삭제할까요?\n이 위치에는 휴지통이 없어 되살릴 수 없습니다.";
+    public const string DeleteUnsavedWarning = "저장하지 않은 변경 내용도 함께 사라집니다.";
+    public const string DocumentCreatedFormat = "만들었습니다: {0}";
+    public const string DocumentRenamedFormat = "이름을 바꿨습니다: {0}";
+    public const string DocumentRecycledFormat = "휴지통으로 보냈습니다: {0}";
+    public const string DocumentDeletedFormat = "삭제했습니다: {0}";
+    public const string FileOperationFailedTitle = "작업하지 못함";
+    public const string CreateFailedMessage = "문서를 만들지 못했습니다. 폴더에 쓸 권한이 있는지 확인하세요.";
+    public const string RenameFailedMessage = "이름을 바꾸지 못했습니다. 다른 프로그램이 파일을 쓰고 있거나 권한이 없을 수 있습니다.";
+    public const string DeleteFailedMessage = "삭제하지 못했습니다. 다른 프로그램이 파일을 쓰고 있거나 권한이 없을 수 있습니다.";
+
     // 인쇄·내보내기 (01 F-26)
     public const string PrintMenu = "인쇄…";
     public const string ExportPdfMenu = "PDF로 내보내기…";

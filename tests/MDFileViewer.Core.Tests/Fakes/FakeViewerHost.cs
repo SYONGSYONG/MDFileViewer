@@ -141,6 +141,17 @@ internal sealed class FakeViewerHost : IViewerHost
 
     public void RaisePathsDropped(params string[] paths) => PathsDropped?.Invoke(this, new PathsDroppedEventArgs(paths));
 
+    /// <summary>미리보기 강조 요청(찾는 말, 대소문자 구분). 말이 <c>null</c>이면 지우라는 요청이다.</summary>
+    public List<(string? Term, bool MatchCase)> TextHighlights { get; } = [];
+
+    public Exception? TextHighlightFailure { get; set; }
+
+    public Task SetTextHighlightAsync(string? term, bool matchCase, CancellationToken cancellationToken)
+    {
+        TextHighlights.Add((term, matchCase));
+        return TextHighlightFailure is null ? Task.CompletedTask : Task.FromException(TextHighlightFailure);
+    }
+
     public void RaiseZoom(double factor) => ZoomFactorChanged?.Invoke(this, factor);
 
     public void RaiseLink(string url) => LinkActivated?.Invoke(this, new LinkActivatedEventArgs(url));
