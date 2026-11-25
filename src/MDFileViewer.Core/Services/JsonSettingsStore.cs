@@ -150,6 +150,7 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
         "EDITOR" => settings with { Editor = Read<EditorSettings>(property) },
         "FAVORITES" => settings with { Favorites = Read<List<string>>(property) },
         "TABS" => settings with { Tabs = Read<TabsSettings>(property) },
+        "RECENT" => settings with { Recent = Read<RecentSettings>(property) },
         "DECLINEDSHELLREREGISTRATIONEXE" => settings with { DeclinedShellReregistrationExe = Read<string?>(property) },
         "OPENINSINGLEWINDOW" => settings with { OpenInSingleWindow = Read<bool>(property) },
         _ => settings,
@@ -169,6 +170,7 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
             ? layout.EditorSplitRatio
             : defaults.EditorSplitRatio;
         var tabs = settings.Tabs ?? TabsSettings.Empty;
+        var recent = settings.Recent ?? new RecentSettings();
 
         return settings with
         {
@@ -181,8 +183,16 @@ public sealed class JsonSettingsStore(string filePath, IAppLogger logger) : ISet
             Favorites = [.. (settings.Favorites ?? []).Where(path => !string.IsNullOrWhiteSpace(path))],
             Tabs = new TabsSettings([.. (tabs.Files ?? []).Where(tab => tab is not null && !string.IsNullOrWhiteSpace(tab.Path))], tabs.ActiveIndex),
             DeclinedShellReregistrationExe = string.IsNullOrWhiteSpace(settings.DeclinedShellReregistrationExe) ? null : settings.DeclinedShellReregistrationExe,
+            Recent = new RecentSettings
+            {
+                Documents = UsablePaths(recent.Documents, AppConstants.RecentDocumentsCapacity),
+                Folders = UsablePaths(recent.Folders, AppConstants.RecentFoldersCapacity),
+            },
         };
     }
+
+    private static List<string> UsablePaths(IReadOnlyList<string>? paths, int capacity) =>
+        [.. (paths ?? []).Where(path => !string.IsNullOrWhiteSpace(path)).Take(capacity)];
 
     private static bool IsUsable(WindowSettings? window) =>
         window is not null

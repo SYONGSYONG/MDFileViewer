@@ -10,7 +10,20 @@ internal sealed class FakeViewerHost : IViewerHost
 
     public event EventHandler<double>? ZoomFactorChanged;
 
-    public List<double> ScrollRatios { get; } = [];
+    /// <summary>편집기를 따라가라는 요청(맨 위 줄, 줄 수, 비율).</summary>
+    public List<(double Line, int TotalLines, double Ratio)> ScrollSyncs { get; } = [];
+
+    /// <summary>뷰어가 답할 읽는 곳. <see cref="ReadingPositionFailure"/>가 있으면 그것을 던진다.</summary>
+    public ViewerReadingPosition? ReadingPosition { get; set; }
+
+    public Exception? ReadingPositionFailure { get; set; }
+
+    public int ReadingPositionCount { get; private set; }
+
+    private HeldCall<bool>? _heldReadingPosition;
+
+    /// <summary>다음 읽는 곳 물음을 테스트가 끝내 줄 때까지 붙잡는다. 답은 붙잡기 전의 <see cref="ReadingPosition"/>이다.</summary>
+    public HeldCall<bool> HoldReadingPosition() => _heldReadingPosition = new HeldCall<bool>(honorsCancellation: false);
 
     public List<EffectiveTheme> Themes { get; } = [];
 
@@ -63,9 +76,30 @@ internal sealed class FakeViewerHost : IViewerHost
         return Task.CompletedTask;
     }
 
-    public Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken)
+    public Task SyncScrollAsync(double line, int totalLines, double ratio, CancellationToken cancellationToken)
     {
-        ScrollRatios.Add(ratio);
+        ScrollSyncs.Add((line, totalLines, ratio));
+        return Task.CompletedTask;
+    }
+
+    public async Task<ViewerReadingPosition?> GetReadingPositionAsync(CancellationToken cancellationToken)
+    {
+        ReadingPositionCount++;
+        var answer = ReadingPosition;
+        if (_heldReadingPosition is { } held)
+        {
+            _heldReadingPosition = null;
+            await held.Enter(cancellationToken);
+        }
+
+        return ReadingPositionFailure is null ? answer : throw ReadingPositionFailure;
+    }
+
+    public List<(int Line, double FallbackRatio)> ScrollLines { get; } = [];
+
+    public Task ScrollToLineAsync(int line, double fallbackRatio, CancellationToken cancellationToken)
+    {
+        ScrollLines.Add((line, fallbackRatio));
         return Task.CompletedTask;
     }
 

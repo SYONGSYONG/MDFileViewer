@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using MDFileViewer.Core;
 using MDFileViewer.Core.Models;
 using MDFileViewer.Core.ViewModels;
@@ -17,24 +18,76 @@ public partial class MainWindow
     private double _outlinePanelWidth = AppConstants.DefaultOutlinePanelWidth;
     private OutlineViewModel? _outline;
 
+    // 목차가 읽는 곳을 따라가게 하는 주기 (01 F-37, 02 §17.27). 패널이 보이는 동안에만 돈다
+    private DispatcherTimer? _outlineFollowTimer;
+
+    // 읽는 곳을 따라 목록의 선택을 옮기는 중 — 선택이 바뀌었다고 그 제목으로 다시 스크롤하지 않는다
+    private bool _isShowingActiveHeading;
+
     private void BindOutline(OutlineViewModel outline)
     {
         _outline = outline;
         outline.PropertyChanged += OnOutlinePropertyChanged;
+        _outlineFollowTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(AppConstants.OutlineFollowIntervalMs),
+        };
+
+        // FollowAsync는 실패를 안에서 로그로 남기고 던지지 않는다. 최소화한 창에서는 볼 사람이 없으니 묻지 않는다
+        _outlineFollowTimer.Tick += (_, _) =>
+        {
+            if (WindowState != WindowState.Minimized)
+            {
+                _ = outline.FollowAsync();
+            }
+        };
+        Closed += (_, _) => _outlineFollowTimer.Stop();
         ApplyOutlinePanel(outline.IsVisible);
     }
 
     private void OnOutlinePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(OutlineViewModel.IsVisible) && _outline is not null)
+        if (_outline is null)
+        {
+            return;
+        }
+
+        if (e.PropertyName == nameof(OutlineViewModel.IsVisible))
         {
             ApplyOutlinePanel(_outline.IsVisible);
+        }
+        else if (e.PropertyName == nameof(OutlineViewModel.ActiveHeading))
+        {
+            ShowActiveHeading(_outline.ActiveHeading);
+        }
+    }
+
+    // 읽는 절을 목록의 선택으로 보여 주고, 긴 목차에서는 그 항목이 보이게 목록을 스크롤한다. 포커스는 옮기지 않는다
+    private void ShowActiveHeading(OutlineHeading? heading)
+    {
+        _isShowingActiveHeading = true;
+        try
+        {
+            OutlineList.SelectedItem = heading;
+            if (heading is not null)
+            {
+                OutlineList.ScrollIntoView(heading);
+            }
+        }
+        finally
+        {
+            _isShowingActiveHeading = false;
         }
     }
 
     // 접을 때 너비를 기억해 두고 펼 때 되돌린다. 애니메이션 없이 바로 바꾼다(03 §8 모션) — 탐색 패널과 같다.
     private void ApplyOutlinePanel(bool isVisible)
     {
+        if (_outlineFollowTimer is { } timer)
+        {
+            timer.IsEnabled = isVisible;
+        }
+
         if (isVisible)
         {
             OutlineColumn.MinWidth = AppConstants.MinOutlinePanelWidth;
@@ -60,7 +113,7 @@ public partial class MainWindow
     // 키보드(↑/↓)나 클릭으로 고르면 그 제목으로 간다. 목록이 바뀌며 선택이 풀릴 때(추가된 항목 없음)는 아무것도 하지 않는다.
     private void OnOutlineSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.AddedItems.Count > 0 && e.AddedItems[0] is OutlineHeading heading)
+        if (!_isShowingActiveHeading && e.AddedItems.Count > 0 && e.AddedItems[0] is OutlineHeading heading)
         {
             GoToOutlineHeading(heading);
         }

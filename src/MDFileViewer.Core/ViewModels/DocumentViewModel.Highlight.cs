@@ -64,5 +64,6 @@ public sealed partial class DocumentViewModel
     private string? RenderHighlighted(string markdown, CancellationToken token) => MarkdownRenderer.RenderHighlightedBody(
         markdown,
         token,
-        exception => _logger.Warn("코드 블록 하나에 구문 색상을 입히지 못해 그 블록은 색 없이 둡니다.", exception));
+        exception => _logger.Warn("코드 블록 하나에 구문 색상을 입히지 못해 그 블록은 색 없이 둡니다.", exception),
+        withSourceLines: true);
 }

@@ -164,6 +164,12 @@ public static class AppConstants
     public const double MinTreePanelWidth = 160;
 
     /// <summary>목차 패널 너비 (01 F-21, 03 §2.6).</summary>
+    /// <summary>목차가 읽는 곳을 따라가려고 뷰어에 위치를 묻는 간격(ms) (01 F-37). 눈에 늦지 않으면서 스크롤 중에 부담이 없는 값.</summary>
+    public const int OutlineFollowIntervalMs = 250;
+
+    /// <summary>표 넣기로 넣는 표의 열 수 (01 F-38).</summary>
+    public const int InsertedTableColumns = 3;
+
     public const double DefaultOutlinePanelWidth = 260;
 
     public const double MinOutlinePanelWidth = 160;
@@ -174,6 +180,59 @@ public static class AppConstants
     public const double MinEditorSplitRatio = 0.2;
 
     public const double MaxEditorSplitRatio = 0.8;
+
+    /// <summary>빠른 열기가 모으는 파일 수의 상한 (01 F-30). 넘으면 일부만 찾는다고 알린다.</summary>
+    public const int QuickOpenMaxFiles = 20_000;
+
+    /// <summary>빠른 열기 목록에 보여 주는 최대 수 (01 F-30).</summary>
+    public const int QuickOpenMaxShown = 50;
+
+    /// <summary>빠른 열기가 모으는 동안 목록을 다시 그리는 간격(파일 수). 처음에는 빨리 보여 주고, 그 뒤로는 드물게 그린다.</summary>
+    public const int QuickOpenFirstRefreshCount = 50;
+
+    public const int QuickOpenRefreshBatch = 500;
+
+    /// <summary>
+    /// 빠른 열기·폴더 안 내용 검색이 훑는 폴더 수의 상한 (01 F-30·F-31). md가 거의 없는 큰 폴더(드라이브 루트 등)에서
+    /// 파일 수 상한에 닿지 못한 채 끝없이 훑지 않게 한다. 넘으면 일부만 찾았다고 알린다.
+    /// </summary>
+    public const int SearchMaxFolders = 50_000;
+
+    /// <summary>
+    /// 문서 영역에서 마우스의 뒤로·앞으로 버튼을 누르면 뷰어 스크립트가 가려는 주소 (01 F-32, 02 §17.22). 문서 영역은 다른 프로세스의 창이라
+    /// 마우스 입력이 앱 창으로 오지 않고, 웹 메시지는 꺼 두었으므로(02 §6.4) 링크와 같은 길(탐색 가로채기)로 알린다.
+    /// </summary>
+    public const string ViewerHistoryBackUrl = "https://" + AppAssetsHostName + "/history/back";
+
+    public const string ViewerHistoryForwardUrl = "https://" + AppAssetsHostName + "/history/forward";
+
+    /// <summary>폴더 안 내용 검색이 받는 가장 짧은 검색어 (01 F-31). 한 글자는 거의 모든 줄에 걸린다.</summary>
+    public const int SearchMinQueryLength = 2;
+
+    /// <summary>폴더 안 내용 검색이 한 번에 모으는 곳의 상한 (01 F-31). 넘으면 일부만 보여 준다고 알린다.</summary>
+    public const int SearchMaxMatches = 2_000;
+
+    /// <summary>폴더 안 내용 검색이 파일 하나에서 모으는 곳의 상한 (01 F-31).</summary>
+    public const int SearchMaxMatchesPerFile = 200;
+
+    /// <summary>검색 결과 줄의 미리보기 (01 F-31): 찾은 곳 앞에 보여 주는 글자 수와 전체 길이의 상한.</summary>
+    public const int SearchPreviewLead = 30;
+
+    public const int SearchPreviewMaxLength = 160;
+
+    /// <summary>문서의 블록에 원본 줄 번호를 다는 속성 (01 F-35, 02 §17.25). viewer.js의 이름과 같아야 한다.</summary>
+    public const string SourceLineAttribute = "data-line";
+
+    /// <summary>기억하는 최근 문서·최근 폴더의 수 (01 F-34).</summary>
+    public const int RecentDocumentsCapacity = 20;
+
+    public const int RecentFoldersCapacity = 10;
+
+    /// <summary>빠른 열기를 입력 없이 열었을 때 맨 위에 보여 주는 최근 문서의 수 (01 F-34).</summary>
+    public const int QuickOpenRecentShown = 10;
+
+    /// <summary>뒤로·앞으로가 기억하는 문서 수 (01 F-32). 넘으면 오래된 것부터 잊는다.</summary>
+    public const int NavigationHistoryCapacity = 100;
 
     /// <summary>설정 파일 이름 (01 F-14). `%APPDATA%\MDFileViewer` 아래에 둔다.</summary>
     public const string SettingsFileName = "settings.json";

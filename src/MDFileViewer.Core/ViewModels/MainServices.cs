@@ -22,6 +22,18 @@ public sealed record MainServices(IDialogService Dialogs, IShellLauncher Shell, 
     public Func<string> ReadStylesheet { get; init; } = () => File.ReadAllText(
         Path.Combine(AppContext.BaseDirectory, AppConstants.ResourcesFolderName, AppConstants.ViewerStylesheetFileName));
 
+    /// <summary>빠른 열기·폴더 안 내용 검색이 훑을 md 파일 (01 F-30·F-31). 테스트는 가짜 목록으로 바꾼다.</summary>
+    public IMarkdownFileFinder FileFinder { get; init; } = new MarkdownFileFinder();
+
+    /// <summary>최근에 본 문서 (01 F-34). 구성 루트가 설정에서 읽은 목록을 넣는다.</summary>
+    public RecentList RecentDocuments { get; init; } = new(AppConstants.RecentDocumentsCapacity);
+
+    /// <summary>최근에 일부러 연 폴더 (01 F-34).</summary>
+    public RecentList RecentFolders { get; init; } = new(AppConstants.RecentFoldersCapacity);
+
+    /// <summary>폴더 안 내용 검색 (01 F-31). 테스트는 가짜 파일로 바꾼다.</summary>
+    public IFolderSearch FolderSearch { get; init; } = new FolderSearch(new MarkdownFileFinder(), new TextFileCodec());
+
     /// <summary>트리에서 하는 새 문서·이름 바꾸기·삭제 (01 F-27). 테스트는 가짜 파일 시스템으로 바꾼다.</summary>
     public IFileOperations Files { get; init; } = new FileOperations();
 }

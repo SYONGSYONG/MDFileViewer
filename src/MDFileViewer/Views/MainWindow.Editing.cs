@@ -24,7 +24,7 @@ public partial class MainWindow
 
     // 스크롤은 초당 수십 번 오는데 뷰어 스크립트는 비동기라 쌓인다 — 진행 중이면 마지막 위치만 기억했다가 한 번 더 맞춘다
     private bool _isSyncingScroll;
-    private double? _pendingScrollRatio;
+    private ScrollSyncPosition? _pendingScrollSync;
 
     /// <summary>트리 패널 너비(DIP). 설정에 저장한다 (01 F-14). 접혀 있으면 접기 전 너비.</summary>
     public double TreePanelWidth
@@ -158,7 +158,7 @@ public partial class MainWindow
             TreeColumn.Width = new GridLength(_treePanelWidth);
             TreeSplitterColumn.Width = new GridLength(SplitterWidth);
             CollapsedNavigationColumn.Width = new GridLength(0);
-            FolderTree.Visibility = Visibility.Visible;
+            NavigationPanel.Visibility = Visibility.Visible;
             TreeSplitter.Visibility = Visibility.Visible;
             return;
         }
@@ -172,7 +172,7 @@ public partial class MainWindow
         TreeColumn.Width = new GridLength(0);
         TreeSplitterColumn.Width = new GridLength(0);
         CollapsedNavigationColumn.Width = new GridLength(CollapsedNavigationWidth);
-        FolderTree.Visibility = Visibility.Collapsed;
+        NavigationPanel.Visibility = Visibility.Collapsed;
         TreeSplitter.Visibility = Visibility.Collapsed;
     }
 
@@ -189,9 +189,7 @@ public partial class MainWindow
             return;
         }
 
-        var textView = Editor.TextArea.TextView;
-        var scrollable = textView.DocumentHeight - textView.ActualHeight;
-        _pendingScrollRatio = scrollable > 0 ? Math.Clamp(textView.VerticalOffset / scrollable, 0, 1) : 0;
+        _pendingScrollSync = ReadScrollSyncPosition();
         if (!_isSyncingScroll)
         {
             // SyncPreviewScrollAsync는 실패를 안에서 로그로 남기고 던지지 않는다
@@ -199,15 +197,33 @@ public partial class MainWindow
         }
     }
 
+    // 편집기 맨 위에 걸린 원본 줄과 그 줄이 지나간 정도(소수) — 자동 줄 바꿈으로 여러 줄이 된 문단 안에서도 미리보기가 따라온다 (01 F-36)
+    private ScrollSyncPosition ReadScrollSyncPosition()
+    {
+        var textView = Editor.TextArea.TextView;
+        var scrollable = textView.DocumentHeight - textView.ActualHeight;
+        var ratio = scrollable > 0 ? Math.Clamp(textView.VerticalOffset / scrollable, 0, 1) : 0;
+        if (textView.Document is not { } document)
+        {
+            return new ScrollSyncPosition(1, 1, ratio);
+        }
+
+        var topLine = textView.GetDocumentLineByVisualTop(textView.VerticalOffset);
+        var top = textView.GetVisualTopByDocumentLine(topLine.LineNumber);
+        var bottom = topLine.LineNumber < document.LineCount ? textView.GetVisualTopByDocumentLine(topLine.LineNumber + 1) : textView.DocumentHeight;
+        var passed = bottom > top ? Math.Clamp((textView.VerticalOffset - top) / (bottom - top), 0, 1) : 0;
+        return new ScrollSyncPosition(topLine.LineNumber + passed, document.LineCount, ratio);
+    }
+
     private async Task DrainScrollSyncAsync(DocumentViewModel document)
     {
         _isSyncingScroll = true;
         try
         {
-            while (_pendingScrollRatio is { } ratio)
+            while (_pendingScrollSync is { } position)
             {
-                _pendingScrollRatio = null;
-                await document.SyncPreviewScrollAsync(ratio);
+                _pendingScrollSync = null;
+                await document.SyncPreviewScrollAsync(position.Line, position.TotalLines, position.Ratio);
             }
         }
         finally
@@ -215,4 +231,8 @@ public partial class MainWindow
             _isSyncingScroll = false;
         }
     }
+
+    /// <param name="Line">편집기 맨 위의 원본 줄(1부터, 소수는 줄 안의 위치).</param>
+    /// <param name="Ratio">편집기의 세로 위치 비율(0~1).</param>
+    private readonly record struct ScrollSyncPosition(double Line, int TotalLines, double Ratio);
 }

@@ -297,6 +297,15 @@ public sealed partial class DocumentViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 보기 모드의 문서에서 지금 읽는 곳 (01 F-37). 보여 주는 문서가 없거나 편집 중이면 <c>null</c>. 뷰어의 실패는 그대로 던진다 —
+    /// 주기적으로 묻는 호출자가 되풀이되는 실패를 한 번만 기록할 수 있게.
+    /// </summary>
+    public Task<ViewerReadingPosition?> GetReadingPositionAsync() =>
+        State == DocumentState.Shown && !IsEditing
+            ? _viewer.GetReadingPositionAsync(CancellationToken.None)
+            : Task.FromResult<ViewerReadingPosition?>(null);
+
     /// <summary>현재 문서 안의 앵커로 스크롤한다. 보여 주는 문서가 없으면 아무것도 하지 않는다.</summary>
     public async Task ScrollToAnchorAsync(string anchorId)
     {
@@ -369,7 +378,7 @@ public sealed partial class DocumentViewModel : ObservableObject
     private async Task<(TextFileContent Content, string BodyHtml)> ReadAndRenderAsync(string path, CancellationToken token)
     {
         var content = await _codec.ReadAsync(path, token);
-        var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(content.Text), token);
+        var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(content.Text, withSourceLines: true), token);
         return (content, bodyHtml);
     }
 

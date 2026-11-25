@@ -19,6 +19,11 @@ public static class IconGlyphs
     public static readonly string FolderOpen = Glyph(0xE838);
     public static readonly string Lock = Glyph(0xE72E);
     public static readonly string OpenFolder = Glyph(0xE8DA);
+
+    // 뒤로·앞으로 (01 F-32, 03 §3). Fluent Icons 목록 이름 Back·Forward
+    public static readonly string GoBack = Glyph(0xE72B);
+    public static readonly string GoForward = Glyph(0xE72A);
+
     public static readonly string Refresh = Glyph(0xE72C);
     public static readonly string Document = Glyph(0xE8A5);
 

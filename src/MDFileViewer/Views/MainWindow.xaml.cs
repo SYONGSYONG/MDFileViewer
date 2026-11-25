@@ -22,7 +22,29 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Closing += OnClosing;
+        PreviewMouseDown += OnPreviewMouseDown;
         InitializeEditor();
+    }
+
+    // 마우스의 뒤로·앞으로 버튼 (01 F-32). 키 바인딩으로는 받을 수 없어 여기서 명령에 잇는다
+    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        var command = e.ChangedButton switch
+        {
+            MouseButton.XButton1 => _viewModel?.GoBackCommand,
+            MouseButton.XButton2 => _viewModel?.GoForwardCommand,
+            _ => null,
+        };
+        if (command is null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        if (command.CanExecute(null))
+        {
+            command.Execute(null);
+        }
     }
 
     /// <summary>`F1`·`?` 버튼 (01 F-12).</summary>
@@ -67,6 +89,8 @@ public partial class MainWindow : Window
         viewModel.Tabs.PropertyChanged += OnTabsPropertyChanged;
         ApplyNavigationPanel(viewModel.IsNavigationPanelVisible);
         BindFind(viewModel.Find);
+        BindQuickOpen(viewModel.QuickOpen);
+        BindSearch(viewModel);
         BindOutline(viewModel.Outline);
     }
 
@@ -142,6 +166,10 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainViewModel.IsNavigationPanelVisible) && _viewModel is not null)
         {
             ApplyNavigationPanel(_viewModel.IsNavigationPanelVisible);
+        }
+        else if (e.PropertyName == nameof(MainViewModel.IsSearchViewActive) && _viewModel is not null)
+        {
+            ApplySearchView(_viewModel.IsSearchViewActive);
         }
     }
 

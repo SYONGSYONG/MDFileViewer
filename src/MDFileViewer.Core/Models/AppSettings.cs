@@ -24,6 +24,9 @@ public sealed record AppSettings
 
     public TabsSettings Tabs { get; init; } = TabsSettings.Empty;
 
+    /// <summary>최근 문서·최근 폴더 (01 F-34). 창을 닫을 때 저장한다.</summary>
+    public RecentSettings Recent { get; init; } = new();
+
     /// <summary>
     /// 탐색기 메뉴가 다른 exe로 등록돼 있을 때 재등록 제안을 "나중에"로 거절한 exe 경로(2026-11-18 사용자 결정). 이 exe로 시작하면 다시 묻지 않는다.
     /// </summary>
@@ -45,6 +48,14 @@ public sealed record LayoutSettings
 
     /// <summary>목차 패널을 열어 두었는가 (01 F-21). 편집 모드로 잠시 숨긴 상태가 아니라 사용자가 고른 상태다.</summary>
     public bool IsOutlineVisible { get; init; }
+}
+
+/// <summary>최근 순 경로 목록 (01 F-34).</summary>
+public sealed record RecentSettings
+{
+    public IReadOnlyList<string> Documents { get; init; } = [];
+
+    public IReadOnlyList<string> Folders { get; init; } = [];
 }
 
 public sealed record EditorSettings

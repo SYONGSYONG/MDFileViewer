@@ -39,6 +39,27 @@ public partial class MainWindow
             return;
         }
 
+        // 표 안의 Tab은 다음 칸으로, Shift+Tab은 이전 칸으로 간다(01 F-38). 한글을 조합하는 중의 Tab은 Key.ImeProcessed로 와서 여기 걸리지 않는다
+        if (e.Key == Key.Tab && (Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift) && TryMoveInTable(Keyboard.Modifiers == ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (key == Key.T && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            InsertTable();
+            return;
+        }
+
+        // 목록·인용 줄의 Enter는 다음 항목 기호를 넣는다(01 F-33). 한글을 조합하는 중의 Enter는 Key.ImeProcessed로 와서 여기 걸리지 않는다
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && TryContinueList())
+        {
+            e.Handled = true;
+            return;
+        }
+
         // 클립보드가 그림이면 그림으로 붙인다(01 F-29). 한글을 조합하는 중의 키는 입력기의 것이다
         if (e.Key != Key.ImeProcessed && TryHandleImagePaste(key, Keyboard.Modifiers))
         {
@@ -65,6 +86,68 @@ public partial class MainWindow
         (ModifierKeys.Control | ModifierKeys.Alt, >= Key.D1 and <= Key.D6) => MarkdownFormat.Paragraph + (key - Key.D0),
         _ => null,
     };
+
+    // 선택이 있으면 편집기의 보통 Enter(선택을 지우고 줄 바꿈)에 맡긴다
+    private bool TryContinueList()
+    {
+        if (Editor.Visibility != Visibility.Visible || Editor.IsReadOnly || Editor.SelectionLength > 0 || Editor.Document is not { } document)
+        {
+            return false;
+        }
+
+        // 편집기가 Enter에 넣는 것과 같은 줄 끝을 쓴다 — 문서에 두 가지가 섞이지 않게
+        var newLine = ICSharpCode.AvalonEdit.Document.TextUtilities.GetNewLineFromDocument(document, Editor.TextArea.Caret.Line);
+        if (ListContinuation.OnEnter(document.Text, Editor.CaretOffset, newLine) is not { } edit)
+        {
+            return false;
+        }
+
+        ApplyTextEdit(edit);
+        return true;
+    }
+
+    // 여러 줄을 고른 Tab은 들여쓰기다 — 편집기에 맡긴다. 한 칸의 글을 고른 채(앞선 Tab이 고른다) 누르는 Tab은 여기서 받는다
+    private bool TryMoveInTable(bool backward)
+    {
+        if (Editor.Visibility != Visibility.Visible || Editor.IsReadOnly || Editor.TextArea.Selection is RectangleSelection
+            || Editor.Document is not { } document)
+        {
+            return false;
+        }
+
+        if (Editor.SelectionLength > 0
+            && document.GetLineByOffset(Editor.SelectionStart) != document.GetLineByOffset(Editor.SelectionStart + Editor.SelectionLength))
+        {
+            return false;
+        }
+
+        var newLine = ICSharpCode.AvalonEdit.Document.TextUtilities.GetNewLineFromDocument(document, Editor.TextArea.Caret.Line);
+        if (TableEditor.OnTab(document.Text, Editor.CaretOffset, backward, newLine) is not { } edit)
+        {
+            return false;
+        }
+
+        ApplyTextEdit(edit);
+        return true;
+    }
+
+    private void OnTableButtonClick(object sender, RoutedEventArgs e) => InsertTable();
+
+    // 표 넣기 (01 F-38). 고른 글은 건드리지 않고 커서가 있는 줄 아래에 넣는다. 코드 블록 안에서는 넣지 않는다
+    private void InsertTable()
+    {
+        if (Editor.Visibility != Visibility.Visible || Editor.IsReadOnly || Editor.Document is not { } document)
+        {
+            return;
+        }
+
+        var headers = Enumerable.Range(1, AppConstants.InsertedTableColumns).Select(number => string.Format(UiText.TableHeaderFormat, number)).ToList();
+        var newLine = ICSharpCode.AvalonEdit.Document.TextUtilities.GetNewLineFromDocument(document, Editor.TextArea.Caret.Line);
+        if (TableEditor.Insert(document.Text, Editor.CaretOffset, newLine, headers) is { } edit)
+        {
+            ApplyTextEdit(edit);
+        }
+    }
 
     private void OnFormatButtonClick(object sender, RoutedEventArgs e)
     {

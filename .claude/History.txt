@@ -330,3 +330,47 @@ A: 5개 모두 11-25에 쓰고 실행한 적 없던 테스트. 앱 결함 1건 �
 [2026-11-26 03:40]
 Q: 다음 기능 1~3 처리(빠른 열기+내용 검색, 뒤로/앞으로, Enter 목록 이어 쓰기)
 A: 사용자 결정 — 빠른 열기는 가운데 위 팝업·Ctrl+T, 내용 검색은 탐색 패널의 검색 화면·Ctrl+Shift+F, 뒤로/앞으로는 창 전체의 본 문서 순서·Alt+←/→, 수정분은 1.3.1로 먼저 커밋하고 기능은 1.4.0. 1.3.1 버전 올림(`Directory.Build.props`, 릴리즈 노트, README, `docs/manual.md`).
+
+[2026-11-26 03:52]
+Q: 다음 기능 1~3 처리 — 구현(빠른 열기, 폴더 안 내용 검색, 뒤로/앞으로, Enter 목록 이어 쓰기), 버전 1.4.0
+A: Core(`Services/ListContinuation.cs`·`NavigationHistory.cs`·`MarkdownFileFinder.cs`·`QuickOpenMatcher.cs`·`FolderSearch.cs`, `ViewModels/QuickOpenViewModel.cs`·`SearchViewModel.cs`·`MainViewModel.History.cs`·`.QuickOpen.cs`·`.Search.cs`), App(`Views/MainWindow.xaml`, `MainWindow.QuickOpen.cs`·`.Search.cs`), 매뉴얼·도움말·릴리즈 노트·README, 버전 1.4.0. 단위 테스트 1177개 통과, 코드 리뷰 CRITICAL·HIGH 없음(MEDIUM 4·LOW 2 반영), 새 E2E 4개 통과(`tests/MDFileViewer.E2ETests/QuickOpenAndSearchTests.cs`). 남은 것: 전체 E2E 회귀 미실행(사용자 보류), Alt+←/→ 키·마우스 뒤로/앞으로 버튼 실제 확인. 미커밋.
+
+[2026-11-26 03:59]
+Q: 추천 1 — 검색·빠른 열기 마무리
+A: 범위를 "사용자가 고른 폴더"로 고정(`MainViewModel.SearchScopeFolder`, 범위 안 문서를 열어도 좁아지지 않음), `node_modules`·`.git`·`.svn`·`.hg` 제외와 폴더 수 상한 50,000(`Services/MarkdownFileFinder.cs`), 문서 영역 위의 마우스 뒤로·앞으로(`Resources/viewer.js` → `HandleLinkAsync`). 단위 테스트 1185개 통과. 문서 01·02·05·매뉴얼 갱신. E2E는 작성만 했고 실행 전.
+
+[2026-11-26 04:01]
+Q: 마무리 작업 뒤 새 E2E 4개 실행
+A: 4개 모두 통과(`QuickOpenAndSearchTests`) — 문서 영역 위의 마우스 뒤로 버튼 확인. 05-tasks 17-6 완료 표시. 전체 회귀 55개와 Alt+←/→ 키 확인은 남음. 미커밋.
+
+[2026-11-26 04:25]
+Q: 추천 1·3 — 최근 문서·최근 폴더, 검색 결과의 줄로 정확히 이동 (1.4.0에 함께)
+A: 사용자 결정 — 기록은 설정에 저장, 최근 폴더는 폴더 열기 버튼 옆 ▾, 줄 이동은 검색 결과만. Core(`Services/RecentList.cs`, `ViewModels/MainViewModel.Recent.cs`, `AppSettings.Recent`, `QuickOpenMatcher`·`QuickOpenViewModel`, `MarkdownRenderer`의 `data-line`, `ViewerScriptBuilder.ScrollToLine`, `Resources/viewer.js`), App(`App.xaml.cs` 설정 연결, `Views/MainWindow.Menus.cs`·`MainWindow.xaml`의 ▾ 메뉴와 "최근" 표시, `WebViewHost.ScrollToLineAsync`). 문서 01(F-34·F-35)·02(§17.24·§17.25)·03·05·매뉴얼·릴리즈 노트 갱신. 단위 테스트 1213개, 전체 E2E 56개 통과. 미커밋.
+
+[2026-11-26 04:30]
+Q: (이어서) 1.4.0 추가분 코드 리뷰와 반영
+A: 전체 E2E 56개 통과 뒤 2차 리뷰 — CRITICAL·HIGH 없음. 반영: 빠른 열기가 최근 문서 확인을 기다리지 않고 폴더를 훑음(`QuickOpenViewModel.LoadRecentAsync`), 여러 창의 최근 기록 잇기(`RecentList.MergedWith`, `App.xaml.cs`), 줄 이동이 줄 번호 순서를 가정하지 않음(`viewer.js`), 범위 안 판정 통일(`Services/PathScope.cs`). 단위 테스트 1225개 통과. 미커밋.
+
+[2026-11-26 04:59]
+Q: 2차 리뷰 반영 뒤 전체 E2E 재실행
+A: 56개 모두 통과. 05-tasks 17-5 완료 표시. 17-2는 Alt+←/→ 키를 실제 앱에서 확인하지 않아 미완료로 둠. 1.4.0 전체 미커밋.
+
+[2026-11-26 06:14]
+Q: 뒤로·앞으로 확인 완료, 다음 기능 추천
+A: 05-tasks 17-2 완료 표시(사용자가 실제 앱에서 확인) — Phase 17 전체 완료. 다음 기능 후보를 제안. 1.4.0 전체 미커밋.
+
+[2026-11-26 06:27]
+Q: 다음 기능 1,3,4 (줄 단위 스크롤 동기화, 목차 따라가기, 표 도우미) — 1.4.0에 함께, 편집기→미리보기 한 방향, 표는 넣기+Tab 이동+정리
+A: Core `Services/TableEditor.cs`, `Models/ViewerReadingPosition.cs`, `OutlineViewModel.FollowAsync`, `IViewerHost.SyncScrollAsync`·`GetReadingPositionAsync`(ScrollToRatioAsync 제거), `viewer.js` syncToLine·readingPosition, App `MainWindow.Editing/Outline/Formatting.cs`, 도구 모음 표 버튼. 문서 01 F-36~F-38, 02 §17.26~17.28, 05 Phase 18. 단위 테스트 1271개 통과. 실제 앱 확인·E2E 전, 미커밋.
+
+[2026-11-26 06:33]
+Q: (이어서) Phase 18 코드 리뷰와 반영
+A: 리뷰 CRITICAL·HIGH 없음. 반영: 표 넣기가 기존 표 아래에 넣고 코드 울타리 안에서는 넣지 않음, 백틱 울타리 판정(`TableEditor.cs`), 다시 읽을 때 목차 표시 유지·`GoToAsync` finally(`OutlineViewModel.cs`). E2E `EditingPolishTests.cs` 4개 작성(실행 전). 미커밋.
+
+[2026-11-26 06:48]
+Q: (이어서) 새 E2E 4개 실행, 실패한 1개 재실행
+A: 목차 따라가기·표 Tab·표 버튼 통과. 스크롤 동기화는 테스트의 가정이 틀려 실패 → `EditingPolishTests.cs` 고친 뒤 통과. 05-tasks 18-1~18-3 완료 표시, 18-4는 전체 회귀 전이라 미완료. 미커밋.
+
+[2026-11-26 06:58]
+Q: 전체 E2E 돌리고 통과하면 커밋
+A: 전체 60개 중 59개 통과, Ctrl+휠 확대 테스트 1개 실패(110% 대신 125%) → 사용자 확인 뒤 그 1개 재실행해 통과. 05-tasks 18-4 완료 표시. 1.4.0 커밋(푸시·병합은 하지 않음).

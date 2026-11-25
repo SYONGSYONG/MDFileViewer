@@ -351,8 +351,9 @@ public sealed partial class DocumentViewModel
         IsDocumentVisible = false;
     }
 
-    /// <summary>편집기 스크롤을 미리보기에 맞춘다 (01 F-09 비율 스크롤 동기화).</summary>
-    public async Task SyncPreviewScrollAsync(double ratio)
+    /// <summary>편집기 스크롤을 미리보기에 맞춘다 (01 F-09·F-36 줄 단위 스크롤 동기화).</summary>
+    /// <param name="line">편집기 맨 위의 원본 줄(1부터, 소수는 줄 안의 위치).</param>
+    public async Task SyncPreviewScrollAsync(double line, int totalLines, double ratio)
     {
         if (!IsEditing || State != DocumentState.Shown)
         {
@@ -361,7 +362,7 @@ public sealed partial class DocumentViewModel
 
         try
         {
-            await _viewer.ScrollToRatioAsync(ratio, CancellationToken.None);
+            await _viewer.SyncScrollAsync(line, totalLines, ratio, CancellationToken.None);
         }
         catch (Exception exception)
         {
@@ -426,7 +427,7 @@ public sealed partial class DocumentViewModel
         State = DocumentState.Loading;
         try
         {
-            var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(text), token);
+            var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(text, withSourceLines: true), token);
             await _viewer.ShowDocumentAsync(bodyHtml, tab.FilePath, token);
             var format = tab.Format ?? new TextFileFormat(TextEncodingKind.Utf8, LineEnding.CrLf);
             var metadata = tab.KnownMetadata ?? new FileMetadata(0, _timeProvider.GetUtcNow());
@@ -499,7 +500,7 @@ public sealed partial class DocumentViewModel
             // 앞 미리보기의 색 입히기가 이 미리보기보다 늦게 끝나 옛 글로 되돌리지 않게 먼저 그만둔다 (02 §17.13)
             CancelHighlight();
             var text = buffer.GetText();
-            var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(text));
+            var bodyHtml = await Task.Run(() => MarkdownRenderer.RenderBody(text, withSourceLines: true));
             await _viewer.UpdateBodyAsync(bodyHtml, CancellationToken.None);
 
             // 그리는 사이 탭을 바꿨으면 화면은 다른 문서다 — 이 글의 색을 그 위에 입히지 않는다

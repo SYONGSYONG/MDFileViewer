@@ -829,8 +829,8 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
   비동기로 저장하고 끝나면 다시 닫는다). 하나라도 `[취소]`면 닫지 않는다.
 - **편집기 설정:** 줄 번호·자동 줄 바꿈(설정 저장), 탭 키 공백 4칸(`ConvertTabsToSpaces`, `IndentationSize = EditorTabSize`), 찾기
   (`SearchPanel.Install`), 구문 강조는 `Highlighting/Markdown-Light.xshd`·`Markdown-Dark.xshd`(03 §7)를 테마에 따라 바꾼다.
-- **스크롤 동기화:** 편집기 `ScrollOffsetChanged` → 세로 비율(0~1) → `IViewerHost.ScrollToRatioAsync(ratio)`(`window.scrollTo(0, ratio × (scrollHeight − innerHeight))`).
-  미리보기를 다시 그린 뒤에도 같은 비율로 맞춘다.
+- **스크롤 동기화:** 편집기 `ScrollOffsetChanged` → 맨 위 줄과 세로 비율 → `IViewerHost.SyncScrollAsync(line, totalLines, ratio)` (§17.26).
+  1.4.0 전에는 비율만 썼다(`ScrollToRatioAsync`, `window.scrollTo(0, ratio × (scrollHeight − innerHeight))`) — 지금은 줄 번호가 없는 문서의 대비책이다.
 
 - **변경 여부를 알리는 시점(2026-11-26):** `AvalonTextBuffer.IsModified`는 `UndoStack.IsOriginalFile`로 본다. AvalonEdit는 `TextChanged`를
   실행 취소 묶음이 닫히기 전에 보내므로 그때의 값은 이번 편집을 아직 모른다 — `TextChanged`에서만 `Changed`를 알리면 변경 표시가 편집 한 번씩
@@ -1391,6 +1391,153 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - **테스트:** `ImageLinksTests`(이름·경로·링크), `MainViewModelImagesTests`(저장 위치, 겹친 이름, 문서 폴더 안의 파일, 그림 아닌 항목, 실패 알림, 편집 중이 아닐 때).
   클립보드와 끌기는 단위 테스트로 보지 못한다 — 실행 확인 대상이다.
 
+### 17.21 빠른 열기·폴더 안 내용 검색 (01 F-30·F-31, 2026-11-26)
+
+새 패키지 없음.
+
+- **파일 모으기 — `IMarkdownFileFinder`(Core `MarkdownFileFinder`):** 범위 폴더 아래의 md 파일 경로를 `IAsyncEnumerable<string>`으로 낸다.
+  폴더를 너비 우선으로 훑고, 폴더 하나는 트리와 같은 규칙(`FileSystemEnumerable`, 숨김·시스템 제외, md 확장자는 `MarkdownPath`)으로 읽는다.
+  재분석 지점(정션·심볼릭 링크) 폴더는 들어가지 않는다 — 자기 조상을 가리키는 정션에서 끝나지 않는다. 읽지 못한 폴더는 건너뛴다.
+  UI 스레드 밖에서 돌고 취소 토큰을 폴더마다 확인한다. 파일 수 상한(`QuickOpenMaxFiles` 20,000)은 쓰는 쪽이 센다.
+  이름이 `node_modules`·`.git`·`.svn`·`.hg`인 폴더는 들어가지 않는다(숨김 속성이 없어도 — 수만 폴더가 들어 있고 찾는 문서는 없다).
+  점으로 시작하는 폴더를 통째로 빼지는 않는다(`.github`·`.claude`에는 문서가 있다). 훑은 폴더가 `SearchMaxFolders`(50,000)에 닿으면
+  `onFolderLimitReached`를 한 번 부르고 멈춘다 — md가 거의 없는 큰 폴더에서 파일 수 상한에 닿지 못한 채 끝없이 훑지 않게.
+- **거르기 — `QuickOpenMatcher`(Core, 순수 함수):** 01 F-30의 규칙대로 점수를 매긴다. 상대 경로를 한 번 만들어 두고 치는 대로 다시 거른다
+  (2만 개에서도 문자열 비교뿐이라 UI 스레드에서 한다).
+- **`QuickOpenViewModel`:** 열기(범위 폴더를 받아 모으기 시작)·닫기(모으기 취소)·입력·고른 줄 이동·고르기. 고르면 `MainViewModel`이
+  `NavigateToFileAsync`(고정 탭)로 연다. 모은 파일은 창을 닫으면 버린다 — 다음에 열 때 다시 모은다(그사이 파일이 바뀔 수 있고, 캐시 무효화를 두지 않는다).
+- **내용 검색 — `IFolderSearch`(Core `FolderSearch`):** `IMarkdownFileFinder`로 파일을 모아 하나씩 `ITextFileCodec`으로 읽고(인코딩 판별은
+  문서 열기와 같다) `TextSearch.FindAll`(F-28의 것, 상한 인수 `maxCount` 추가)로 찾는다. 결과는 파일 단위(`FolderSearchFileResult` — 경로,
+  찾은 곳들, 전체 줄 수)를 담은 `FolderSearchUpdate`(+ 그때까지 건너뛴 파일 수, 일부만 모았는지)로 `IAsyncEnumerable`에 내고, 끝에 파일 없는
+  소식을 한 번 더 낸다. 찾은 곳 하나가 결과 한 줄이다(한 줄에 두 번 나오면 두 줄 — "n곳"과 줄 수가 같다). 파일 하나를 읽고 찾는 일은
+  `Task.Run`으로 UI 스레드 밖에서 한다. 파일 크기는 생성자의 `readLength`(기본 `FileInfo.Length`)로 읽는다. `LargeFileWarningBytes`(5MB)를 넘는 파일과 읽기 실패는 건너뛰고 수를 센다. 한 파일 200곳(`SearchMaxMatchesPerFile`),
+  전체 2,000곳(`SearchMaxMatches`)에서 멈춘다. 찾은 줄의 미리보기는 찾은 곳 앞 30자부터 최대 160자다.
+- **`SearchViewModel`:** 검색어·대소문자 구분·범위·요약·결과. 결과는 파일 줄(`SearchFileRowViewModel`)과 찾은 줄(`SearchLineRowViewModel`)을
+  한 목록(`Rows`)에 편 것이고, 파일 줄을 접으면 그 줄들을 목록에서 뺀다. 새 검색은 앞 검색을 취소하고 결과를 비운 뒤 시작한다 —
+  늦게 도착한 앞 검색의 결과는 세대 확인으로 버린다. `Esc`(`StopCommand`)는 찾은 만큼 남기고 요약에 "그만둠"을 붙인다.
+  줄을 열 때는 그 결과를 낸 검색의 말·대소문자 구분을 쓴다(그 뒤 입력란을 바꿨어도). `MainServices.FolderSearch`로 주입한다.
+  줄을 고르면 `MainViewModel`이 미리보기 탭으로 열고(`NavigateToFileAsync(isPreview: true)`), `IViewerHost.ScrollToRatioAsync`(줄 번호 ÷ 전체 줄 수)와
+  `SetTextHighlightAsync`(F-28의 CSS Custom Highlight)를 부른다. 뷰어는 칠할 말을 기억했다가 문서가 바뀌어도 다시 칠하므로,
+  `MainViewModel`이 칠해 둔 문서 경로(`_searchHighlightPath`)를 기억했다가 다른 문서가 보이거나(`Document.FilePath` 변경) 새 검색을 시작하면
+  지운다. 검색으로 칠한 적이 없으면 건드리지 않는다(편집기 찾기의 칠을 지우지 않는다). 문서를 열지 못했으면 칠하지 않는다.
+- **탐색 패널 화면 전환:** `MainViewModel.IsSearchViewActive`. 검색을 열면 `IsNavigationPanelVisible`도 켠다.
+  전환 칸은 `Checked`로 받는다(`Click`은 UI 자동화·화면 낭독기의 선택에서 오지 않는다).
+- **범위 — `MainViewModel.SearchScopeFolder`:** 빠른 열기와 내용 검색이 함께 쓴다. 트리 선택이 바뀔 때(`OnTreeSelectionChanged`) 정한다:
+  사용자가 폴더 노드를 골랐거나(코드로 고른 것이 아님), 새 폴더가 지금 범위 밖이거나, 범위가 아직 없으면 새 폴더가 범위가 된다.
+  범위 안의 문서를 연 것이면(사용자가 트리에서 파일을 누른 것 포함) 그대로 둔다. 아래 "범위 유지"는 이 규칙의 한 경우다.
+- **범위 유지:** 검색 결과를 열면 트리 선택이 그 파일의 폴더로 옮겨 가 주소 표시줄이 바뀌지만, 그 때문에 검색 범위(`Search.ScopeFolder`)를
+  바꾸지는 않는다 — 하위 폴더의 결과 하나를 열었다고 다음 검색이 그 폴더로 좁아지지 않게. 사용자가 트리·주소 표시줄로 폴더를 옮기면 바뀐다.
+  빠른 열기도 같은 범위를 쓴다.
+- **칠의 주인:** 편집기 찾기(F-28)가 미리보기를 칠하면(`HighlightInPreview`) 검색은 그 칠을 자기 것으로 보지 않는다 — 나중에 지우지 않는다.
+- **결과 줄의 `Enter`:** 키보드 포커스가 있는 줄을 연다(없으면 고른 줄).
+- 검색어와 결과 줄 내용은 문서 내용이므로 로그에 쓰지 않는다(§13).
+
+### 17.22 뒤로·앞으로 (01 F-32, 2026-11-26)
+
+- **`NavigationHistory`(Core, 순수 클래스):** 경로 목록과 현재 위치. `Visit(path)`(연달아 같은 경로면 무시, 현재 뒤의 항목을 버리고 덧붙임,
+  `NavigationHistoryCapacity` 100개를 넘으면 앞에서 버림), `TryGoBack`·`TryGoForward`(현재 위치를 옮기고 경로를 돌려줌), `Remove(path)`(없어진 파일).
+- **기록 시점:** `DocumentViewModel.FilePath`가 바뀔 때(문서가 실제로 보였을 때) `MainViewModel`이 `Visit`한다. 뒤로·앞으로로 간 것은 기록하지 않는다
+  (가는 동안 켜 두는 표시로 가린다). 이름 바꾸기(F-27)로 경로가 바뀌면 새 경로가 방문으로 기록된다 — 옛 경로는 없어진 파일로 건너뛴다.
+- **기록 위치:** 가려던 문서의 탭이 실제로 활성이 된 뒤에만 위치를 옮긴다(읽지 못해 오류를 보여 주는 탭도 간 것으로 친다).
+  탭이 바뀌지 않았으면(저장하지 않은 변경에서 취소 등) 위치를 그대로 둔다 — 버튼 상태가 보이는 탭과 어긋나지 않게.
+- **가기:** 탭이 있으면 `ActivateTabAsync`, 없으면 `NavigateToFileAsync(isPreview: true)`. 파일이 없으면(`MainServices.FileExists`) 그 항목을 지우고 다음으로 간다.
+- 마우스 XButton1·XButton2는 창의 `PreviewMouseDown`에서 받는다(툴바·탐색 패널·편집기 위).
+- **문서 영역 위의 마우스 버튼:** 문서 영역(WebView2)은 다른 프로세스의 창이라 마우스 입력이 앱 창으로 오지 않는다. 웹 메시지는 꺼 두었으므로(§6.4)
+  새 통로를 열지 않고 링크와 같은 길을 쓴다 — `viewer.js`가 `mouseup`(button 3·4)에서 `AppConstants.ViewerHistoryBackUrl`·`ViewerHistoryForwardUrl`
+  (`https://appassets.example/history/…`)로 가려 하고, `WebViewHost`가 모든 탐색을 막아 `LinkActivated`로 넘기면 `MainViewModel.HandleLinkAsync`가
+  이 두 주소를 먼저 알아보고 뒤로·앞으로를 실행한다. 문서 안의 링크가 이 주소를 가리켜도 같은 일이 일어난다(해가 없다 — 본 문서 사이의 이동뿐이다).
+
+### 17.23 `Enter`로 목록 이어 쓰기 (01 F-33, 2026-11-26)
+
+- **`ListContinuation.OnEnter(text, caretOffset, newLine)`(Core, 순수 함수):** 커서가 있는 줄을 보고 `TextEdit`(F-28의 것)를 돌려준다.
+  목록·인용 줄이 아니거나 커서가 기호보다 앞이면 `null`(편집기의 보통 `Enter`). 줄 끝 문자는 문서가 쓰는 것(`\r\n`·`\n`)을 받는다.
+- 편집기의 `PreviewKeyDown`(F-28이 쓰는 처리기)에서 `Enter`(수정 키 없음, 선택 없음, `Key.ImeProcessed` 아님)일 때 부르고,
+  결과가 있으면 `ApplyTextEdit`(실행 취소 한 단계)로 적용한다.
+
+### 17.24 최근 문서·최근 폴더 (01 F-34, 2026-11-26)
+
+새 패키지 없음.
+
+- **`RecentList`(Core, 순수 클래스):** 경로 목록과 상한. `Touch(path)`(맨 앞으로 옮기거나 넣고, 넘치면 뒤에서 버림), `Remove`, `Clear`, `Paths`, `Changed`.
+  같은 경로는 대소문자를 가리지 않고 한 번만 둔다. `MainServices.RecentDocuments`(20, `RecentDocumentsCapacity`)·`RecentFolders`(10, `RecentFoldersCapacity`)로 주입한다.
+- **기록 시점:** 문서는 `DocumentViewModel.FilePath`가 바뀔 때(뒤로·앞으로로 간 것 포함). 폴더는 `NavigateToFolderAsync`가 폴더를 찾았을 때 —
+  폴더 열기 창·주소 표시줄·시작 인수·끌어다 놓기·최근 폴더 메뉴가 모두 이 길로 온다. 트리 클릭과 지난 세션 되살리기는 이 길이 아니라 기록하지 않는다.
+- **빠른 열기:** `QuickOpenViewModel.Open(root, recentPaths, currentPath)`. 모으기를 시작할 때 최근 문서의 존재를 UI 스레드 밖에서 확인하고
+  (폴더 훑기와 함께 진행한다 — 끊긴 네트워크 경로의 확인을 기다리느라 범위 폴더의 파일이 늦게 나오지 않게)
+  (`fileExists`, 끊긴 네트워크 경로에서 멈추지 않게) `QuickOpenItem.CreateRecent`로 만든다(`IsRecent`, 범위 밖이면 폴더 자리에 전체 폴더 경로).
+  `QuickOpenMatcher.Match(items, recent, query, maxItems)` — 입력이 비면 최근(`QuickOpenRecentShown` 10개까지) + 나머지 경로순, 입력이 있으면
+  둘을 합쳐(같은 파일은 최근 쪽 하나만) 기존 규칙으로 거른다.
+- **최근 폴더 메뉴:** 창이 열 때마다 `RecentFolders.Paths`로 만든다(트리 우클릭 메뉴와 같은 방식). 항목은 `OpenRecentFolderCommand`,
+  맨 아래는 `ClearRecentCommand`. 없어진 폴더(`MainServices.DirectoryExists`, UI 스레드 밖)는 알리고 목록에서 뺀다.
+- **저장:** `AppSettings.Recent`(`RecentSettings { Documents, Folders }`). 창을 닫을 때 다른 설정과 함께 저장한다 — 문서를 열 때마다 쓰면
+  설정 파일을 너무 자주 쓴다. 읽을 때 빈 경로는 버리고 상한을 넘는 뒤쪽은 자른다. 경로는 사용자 폴더 구조이므로 로그에 쓰지 않는다(§13).
+  설정 파일에는 경로가 남는다(마지막 폴더·즐겨찾기·열린 탭과 같은 종류) — 지우려면 최근 폴더 메뉴의 "최근 기록 지우기"를 쓴다.
+- **여러 창:** 닫을 때 설정 파일을 다시 읽어 그사이 다른 창이 남긴 기록을 이 창의 것 뒤에 잇는다(`RecentList.MergedWith`, 중복 제거·상한).
+  이 창에서 "최근 기록 지우기"를 했으면(`WasCleared`) 잇지 않는다 — 지운 것이 되살아나지 않게. 아직 열려 있는 다른 창이 나중에 닫히며
+  자기 기록을 다시 쓰는 것은 막지 않는다.
+- **범위 안 판정 — `PathScope.IsInside`:** 찾는 범위(§17.21)와 최근 문서의 "범위 밖" 표시가 같은 함수를 쓴다.
+
+### 17.25 검색 결과의 줄로 이동 (01 F-35, 2026-11-26)
+
+- **줄 번호 심기:** `MarkdownRenderer.RenderBody(markdown, withSourceLines: true)`·`RenderHighlightedBody(…, withSourceLines: true)`가
+  파싱한 뒤 블록(문단·제목·코드 블록·목록 항목·인용·표 줄·가로줄)에 `data-line="줄 번호(1부터)"` 속성을 단다(Markdig `Block.Line`,
+  front matter를 포함한 파일 기준 줄). 문서 표시 경로(`DocumentViewModel`의 보기·미리보기·구문 색상)만 켠다 — 도움말·릴리즈 노트 창은 쓰지 않는다.
+  두 함수가 같은 값을 써야 "색을 입힌 본문이 화면의 본문과 같은가" 비교(§17.13)가 맞는다.
+- **이동 — `IViewerHost.ScrollToLineAsync(line, fallbackRatio)`:** `ViewerScriptBuilder.ScrollToLine` → `window.mdfv.scrollToLine(line, ratio)`.
+  본문의 `[data-line]` 요소 중 줄 번호가 `line` 이하이면서 가장 큰 요소를 `scrollIntoView({ block: 'center' })`로 보여 준다
+  (문서 순서대로 커진다고 가정하지 않는다 — 각주는 정의가 어디 있든 문서 끝에 그려진다). 그런 요소가 없으면
+  `ratio`로 스크롤한다(F-31의 방식). 문서 안 원시 HTML이 `data-line`을 달고 있어도 스크롤 위치가 어긋날 뿐이다.
+- `MainViewModel.OpenSearchChoiceAsync`가 `ScrollToRatioAsync` 대신 부른다.
+- **내보내기:** `viewer.js`의 `exportHtml()`이 복사본에서 `data-line`을 지운다.
+
+### 17.26 편집기 → 미리보기 줄 단위 스크롤 동기화 (01 F-36, 2026-11-26)
+
+- **편집기 쪽 — `MainWindow.ReadScrollSyncPosition`:** `TextView.GetDocumentLineByVisualTop(VerticalOffset)`으로 맨 위에 걸린 원본 줄을 얻고,
+  그 줄의 위·아래 경계(`GetVisualTopByDocumentLine`) 사이에서 지나간 정도를 소수로 더한다 — 자동 줄 바꿈으로 화면 여러 줄이 된 한 줄 안에서도
+  값이 이어진다. 줄 수와 세로 비율(0~1)도 함께 보낸다. 스크롤이 몰려도 진행 중이면 마지막 값만 한 번 더 보내는 방식(`DrainScrollSyncAsync`)은 그대로다.
+- **전달:** `DocumentViewModel.SyncPreviewScrollAsync(line, totalLines, ratio)` → `IViewerHost.SyncScrollAsync` →
+  `ViewerScriptBuilder.SyncToLine` → `window.mdfv.syncToLine(line, totalLines, ratio)`. 뷰어 스크립트를 읽지 못했으면 같은 스크립트 안에서 비율로 맞춘다.
+  `IViewerHost.ScrollToRatioAsync`는 없앴다(쓰는 곳이 이것뿐이었다).
+- **뷰어 쪽 — `viewer.js` `syncToLine`:** `ratio`가 0·1이면 맨 위·맨 아래로 간다. 아니면 `[data-line]` 블록(§17.25) 중 줄 번호가 `line` 이하인
+  가장 큰 것(앞 블록)과 `line`보다 큰 가장 작은 것(뒤 블록)을 찾아, 두 블록의 세로 위치를 줄 번호 비례로 나눈 곳을 `window.scrollTo`로 맨 위에 둔다.
+  앞 블록이 없으면 문서 처음(1번 줄, 위치 0)부터, 뒤 블록이 없으면 문서 끝(`totalLines + 1`번 줄, `scrollHeight`)까지를 나눈다.
+  `.footnotes` 안의 블록은 세지 않는다(문서 끝에 그려져 줄 번호 순서가 뒤집힌다). 블록이 하나도 없으면 비율로 스크롤한다.
+- 검색 결과 이동(§17.25 `scrollToLine`)과 다른 함수로 둔 까닭: 그쪽은 "그 줄이 든 블록을 가운데에"이고 이쪽은 "그 줄을 맨 위에, 블록 사이도 이어서"다.
+
+### 17.27 목차가 읽는 곳을 따라가기 (01 F-37, 2026-11-26)
+
+- **알리는 길:** 웹 메시지는 꺼져 있다(§6). 뷰어가 스크롤할 때마다 탐색 가로채기(§17.22의 마우스 버튼 방식)로 알리면 취소되는 탐색이 초당 여러 번
+  생기므로 쓰지 않는다. 대신 **앱이 묻는다** — 목차 패널이 보이는 동안 `DispatcherTimer`(`AppConstants.OutlineFollowIntervalMs` = 250ms)가
+  `OutlineViewModel.FollowAsync()`를 부른다. 패널이 숨으면 타이머를 끄고, 최소화한 창에서는 묻지 않는다.
+- **물음 — `IViewerHost.GetReadingPositionAsync`:** `ViewerScriptBuilder.ReadingPosition` → `window.mdfv.readingPosition()`이
+  `"스크롤 위치\n제목 id"`를 돌려주고 `ViewerReadingPosition.TryParse`가 읽는다(뷰어 스크립트가 없으면 빈 글 → `null`).
+  본문의 `h1[id]`~`h6[id]` 중 위쪽 경계가 화면 맨 위에서 80px 이내인 마지막 것이 읽는 절이다. 맨 아래까지 스크롤했으면 마지막 제목이다.
+  `DocumentViewModel.GetReadingPositionAsync`는 문서가 보이고 편집 중이 아닐 때만 묻는다.
+- **`OutlineViewModel.ActiveHeading`:** 답의 id와 `AnchorId`가 같은 제목. id가 비었으면 `null`, 목차에 없는 id(본문의 원시 HTML 제목)면 앞의 값을 둔다.
+  앞선 물음이 끝나지 않았으면 건너뛰고, 묻는 사이 문서가 바뀌었으면(`_request`) 답을 버린다. 뷰어의 실패는 처음 한 번만 로그에 남긴다(간격마다 쌓이지 않게).
+- **고른 제목 지키기:** `GoToAsync`가 고른 제목을 `ActiveHeading`으로 두고 기억한다. 그 뒤 첫 답의 스크롤 위치를 적어 두고, 위치가 그대로인 동안에는
+  답의 제목을 무시한다(끝의 짧은 절은 제목이 맨 위까지 오지 못해 앞 절이 답으로 온다). 이동 전에 보낸 물음의 답이 이동 뒤에 와서 덮지 않게
+  `_choiceVersion`으로 가른다.
+- **다시 읽기:** 제목 목록이 바뀔 때(`SetHeadings`) 새 목록에 같은 `AnchorId`가 있으면 표시를 이어 간다 — 저장·새로고침 때 표시가 깜빡이지 않게.
+- **표시 — `MainWindow.ShowActiveHeading`:** 목록의 `SelectedItem`을 바꾸고 `ScrollIntoView`한다. 이때 `SelectionChanged`가 그 제목으로 다시
+  스크롤시키지 않게 `_isShowingActiveHeading`으로 막는다. 선택으로 표시하므로 따로 색 토큰을 두지 않는다.
+
+### 17.28 표 편집 도우미 (01 F-38, 2026-11-26)
+
+- **Core `Services/TableEditor`** — 편집기 부품을 모르는 순수 함수(§17.19 `MarkdownFormatter`, §17.23 `ListContinuation`과 같은 방식). `TextEdit`를 돌려주고
+  창의 `ApplyTextEdit`가 실행 취소 한 단계로 적용한다.
+  - `Insert(text, caretOffset, newLine, headers)`: 커서 줄이 비었으면 그 줄을 바꾸고, 아니면 줄 끝에 빈 줄을 두고 넣는다. 앞·뒤 줄이 글이면 빈 줄을 더한다.
+    커서가 표 줄이면 이어진 표 줄의 마지막 아래에 넣고, 코드 울타리 안이면 `null`(넣지 않는다).
+    제목 글은 창이 `UiText.TableHeaderFormat`("제목 N")으로 `AppConstants.InsertedTableColumns`(3)개 만들어 넘긴다.
+  - `OnTab(text, caretOffset, backward, newLine)`: 표 안이 아니면 `null`(편집기의 보통 `Tab`).
+- **표 찾기:** 커서 줄에서 위아래로 `|`로 시작하는(들여쓰기 허용) 줄이 이어진 덩어리를 잡고, 그 둘째 줄의 칸이 모두 `:?-+:?` 꼴이어야 표다.
+  커서 줄보다 위에서 코드 울타리(``` · `~~~`)가 열린 채면 표로 보지 않는다(백틱 울타리는 같은 줄 뒤쪽에 백틱이 없어야 울타리다). 칸은 이스케이프되지 않은 `|`로 나눈다(`\|`는 칸 안의 글자).
+- **지금 칸:** 커서 앞의 `|` 수 − 1(줄을 닫는 `|` 뒤는 마지막 칸으로). 옮겨 갈 칸은 구분 줄을 건너뛰고, 마지막 칸 다음은 새 빈 줄이다.
+- **다시 쓰기:** 열 수는 칸이 가장 많은 줄에 맞추고(칸을 버리지 않는다), 열 너비는 가장 긴 칸의 화면 너비(최소 3, 한글·한자·전각은 2칸)다.
+  줄마다 `| 칸 | 칸 |` 꼴로, 제목 줄의 들여쓰기를 모든 줄에 쓴다. 줄 끝은 넘겨받은 `newLine`이다. 이미 가지런하면 글은 그대로고 선택만 옮긴다.
+- **키 — `MainWindow.Formatting.cs`:** `PreviewKeyDown`에서 `Tab`·`Shift+Tab`을 받아 `TryMoveInTable`(읽기 전용·사각형 선택·여러 줄 선택이면 넘긴다),
+  `Ctrl+Shift+T`와 도구 모음 `표` 버튼(`FormatTableButton`)은 `InsertTable`.
+
 ## 변경 이력
 
 - 2026-11-17: 최초 작성 — 스택, 의존성(승인 3·요청 4), 구조, 렌더링 안 A/B, 셸 통합 레지스트리, 설정 스키마, PoC 6건, 테스트 전략.
@@ -1442,3 +1589,11 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - 2026-11-26: §6.2 첫 문서 준비 — `MarkdownRenderer.WarmUp`, `WebViewHost.PreloadTemplateAsync`, `App.PrepareFirstDocumentAsync`.
 - 2026-11-26: §14.3 E2E가 탐색기 메뉴 재등록 확인 창을 미리 거절한다(`AppSession.DeclineShellReregistration`).
 - 2026-11-26: §17.1 변경 여부를 알리는 시점 — `AvalonTextBuffer`가 `UndoStack.IsOriginalFile` 변경도 알린다.
+- 2026-11-26: §17.21 빠른 열기·폴더 안 내용 검색, §17.22 뒤로·앞으로, §17.23 `Enter`로 목록 이어 쓰기 (01 F-30~F-33).
+- 2026-11-26: §17.21 도구 폴더 제외·폴더 수 상한·`SearchScopeFolder`, §17.22 문서 영역 위의 마우스 버튼(`viewer.js` → 탐색 가로채기).
+- 2026-11-26: 코드 리뷰 반영 — §17.21 검색 범위 유지·칠의 주인·전환 칸 `Checked`·포커스 줄 `Enter`, §17.22 기록 위치를 옮기는 시점.
+- 2026-11-26: §17.21 내용 검색의 실제 모양 — `FolderSearchUpdate`, 찾은 곳 하나가 결과 한 줄, `SearchViewModel.Rows`, 칠을 지우는 시점.
+- 2026-11-26: 3차 코드 리뷰 반영 — §17.28 표 넣기가 표·코드 울타리를 피함, 백틱 울타리 판정; §17.27 다시 읽을 때 표시를 이어 감.
+- 2026-11-26: §17.26 편집기 → 미리보기 줄 단위 스크롤 동기화(`SyncScrollAsync`, `syncToLine`), §17.27 목차가 읽는 곳을 따라가기(`GetReadingPositionAsync`, `OutlineViewModel.ActiveHeading`), §17.28 표 편집 도우미(`TableEditor`) (01 F-36~F-38). §17.1 스크롤 동기화 고침.
+- 2026-11-26: 2차 코드 리뷰 반영 — §17.24 존재 확인과 폴더 훑기를 함께, 여러 창의 기록 잇기, `PathScope`; §17.25 줄 번호 순서를 가정하지 않음.
+- 2026-11-26: §17.24 최근 문서·최근 폴더(`RecentList`, `AppSettings.Recent`), §17.25 검색 결과의 줄로 이동(`data-line`, `ScrollToLineAsync`) (01 F-34·F-35).

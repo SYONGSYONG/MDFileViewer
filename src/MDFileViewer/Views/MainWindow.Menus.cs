@@ -74,6 +74,38 @@ public partial class MainWindow
         Open(menu, item);
     }
 
+    // 최근 폴더 메뉴 (01 F-34, 03 §3). 목록이 그때그때 달라 열 때마다 만든다. 경로의 밑줄이 단축 글자로 먹지 않게 두 번 쓴다
+    private void OnRecentFoldersClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu();
+        var folders = viewModel.RecentFolders.Paths;
+        foreach (var folder in folders)
+        {
+            menu.Items.Add(new MenuItem
+            {
+                Header = folder.Replace("_", "__", StringComparison.Ordinal),
+                Command = viewModel.OpenRecentFolderCommand,
+                CommandParameter = folder,
+            });
+        }
+
+        if (folders.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = UiText.RecentFoldersEmpty, IsEnabled = false });
+        }
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = UiText.ClearRecentMenu, Command = viewModel.ClearRecentCommand });
+        menu.PlacementTarget = RecentFoldersButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     private void OnTabContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         e.Handled = true;

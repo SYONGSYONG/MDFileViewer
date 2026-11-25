@@ -80,7 +80,12 @@ public sealed partial class MainViewModel
     /// 편집기에서 찾는 말을 미리보기에도 형광펜처럼 칠한다 (01 F-28). <paramref name="term"/>이 비었거나 <c>null</c>이면 지운다.
     /// 참고용 표시라 실패해도 창으로 알리지 않는다.
     /// </summary>
-    public void HighlightInPreview(string? term, bool matchCase) => Track(HighlightInPreviewAsync(term, matchCase));
+    public void HighlightInPreview(string? term, bool matchCase)
+    {
+        // 이제 칠은 편집기 찾기의 것이다 — 검색이 칠해 둔 것으로 알고 나중에 지우지 않게 한다 (01 F-31)
+        _searchHighlightPath = null;
+        Track(HighlightInPreviewAsync(term, matchCase));
+    }
 
     private async Task HighlightInPreviewAsync(string? term, bool matchCase)
     {

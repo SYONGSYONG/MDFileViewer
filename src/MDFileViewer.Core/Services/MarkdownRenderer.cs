@@ -57,11 +57,16 @@ public static class MarkdownRenderer
     /// 코드 블록은 이미 색을 입혀 기억해 둔 것만 색을 입혀 낸다(사전 조회뿐이라 표시를 늦추지 않는다, 02 §17.13).
     /// 나머지는 문서를 보여 준 뒤 <see cref="RenderHighlightedBody"/>가 입힌다.
     /// </remarks>
-    public static string RenderBody(string markdown)
+    /// <param name="withSourceLines">
+    /// 블록마다 원본 줄 번호(<c>data-line</c>, 1부터)를 단다 — 검색 결과의 줄로 스크롤할 때 쓴다 (01 F-35, 02 §17.25).
+    /// 문서 표시 경로만 켠다. <see cref="RenderHighlightedBody(string, CancellationToken, Action{Exception}?, bool)"/>와 같은 값을 써야
+    /// 두 결과를 비교할 수 있다.
+    /// </param>
+    public static string RenderBody(string markdown, bool withSourceLines = false)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         var document = Markdown.Parse(markdown, Pipeline);
-        return ToBodyHtml(document, CodeHighlighter.TryGetCached);
+        return ToBodyHtml(document, CodeHighlighter.TryGetCached, withSourceLines);
     }
 
     /// <summary>
@@ -88,15 +93,17 @@ public static class MarkdownRenderer
     /// 부르는 쪽이 비교해 같으면 바꾸지 않는다. 그사이 다른 문서가 같은 블록을 기억에 넣었을 수 있어 "새로 입혔는가"로는 판단할 수 없다.
     /// </returns>
     /// <exception cref="OperationCanceledException">코드 줄 사이에서 취소를 알아챘다.</exception>
-    public static string? RenderHighlightedBody(string markdown, CancellationToken cancellationToken, Action<Exception>? onBlockFailure = null) =>
-        RenderHighlightedBody(markdown, cancellationToken, onBlockFailure, CodeHighlighter.Highlight);
+    public static string? RenderHighlightedBody(
+        string markdown, CancellationToken cancellationToken, Action<Exception>? onBlockFailure = null, bool withSourceLines = false) =>
+        RenderHighlightedBody(markdown, cancellationToken, onBlockFailure, CodeHighlighter.Highlight, withSourceLines);
 
     /// <param name="highlightBlock">블록 하나에 색을 입힌다. 테스트가 실패하는 것으로 바꾼다.</param>
     internal static string? RenderHighlightedBody(
         string markdown,
         CancellationToken cancellationToken,
         Action<Exception>? onBlockFailure,
-        Func<string, string, CancellationToken, string?> highlightBlock)
+        Func<string, string, CancellationToken, string?> highlightBlock,
+        bool withSourceLines = false)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         cancellationToken.ThrowIfCancellationRequested();
@@ -125,13 +132,17 @@ public static class MarkdownRenderer
 
             hasHighlighted |= highlighted is not null;
             return highlighted;
-        });
+        }, withSourceLines);
         return hasHighlighted ? html : null;
     }
 
-    private static string ToBodyHtml(MarkdownDocument document, Func<string, string, string?> highlightCode)
+    private static string ToBodyHtml(MarkdownDocument document, Func<string, string, string?> highlightCode, bool withSourceLines)
     {
         KeepShortHyphenatedWordsInTableCells(document);
+        if (withSourceLines)
+        {
+            MarkSourceLines(document);
+        }
 
         // Markdig의 `ToHtml`과 같은 일을 하되 코드 블록 렌더러만 바꿔 끼운다. 줄 끝은 `ToHtml`처럼 `\n`으로 맞춘다(기본값은 OS 줄 끝).
         using var writer = new StringWriter { NewLine = "\n" };
@@ -145,6 +156,20 @@ public static class MarkdownRenderer
         renderer.Render(document);
         writer.Flush();
         return RawMetaTagStart.Replace(writer.ToString(), EscapedTagStart);
+    }
+
+    // 화면에서 한 덩어리로 보이는 블록에 원본 줄 번호를 단다. 목록·인용 같은 그릇은 달지 않는다 — 안의 첫 블록이 같은 줄을 갖는다.
+    // 원시 HTML 블록은 Markdig가 속성을 쓰지 않아 달 수 없다(그 앞의 블록으로 간다)
+    private static void MarkSourceLines(MarkdownDocument document)
+    {
+        foreach (var block in document.Descendants<Block>())
+        {
+            if (block is ParagraphBlock or HeadingBlock or CodeBlock or ListItemBlock or TableRow or ThematicBreakBlock)
+            {
+                block.GetAttributes().AddProperty(
+                    AppConstants.SourceLineAttribute, (block.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
     }
 
     /// <summary>목차용 제목 목록 (01 F-21, 02 §17.12).</summary>

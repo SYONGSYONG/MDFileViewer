@@ -52,6 +52,10 @@ public sealed partial class MainViewModel : ObservableObject
         InitializeDropCommand();
         InitializeExportCommands();
         InitializeFileCommands();
+        InitializeHistoryCommands();
+        InitializeRecent(services);
+        InitializeQuickOpen(services);
+        InitializeSearch(services);
         Zoom = CreateZoom(viewer);
         Outline = new OutlineViewModel(document, services.Logger);
         Find = new FindViewModel(viewer, services.Time, services.Logger, () => Document.IsDocumentVisible && !Document.IsEditing);
@@ -168,10 +172,18 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>트리를 폴더까지 펼쳐 선택하고 그 폴더도 펼쳐 md 파일을 보여 준다. 폴더가 없으면 상태 표시줄로 알린다.</summary>
     public async Task NavigateToFolderAsync(string folderPath)
     {
-        if (await Tree.RevealAsync(folderPath, CancellationToken.None) is null)
+        if (await Tree.RevealAsync(folderPath, CancellationToken.None) is not { } node)
         {
             ShowStatus(string.Format(UiText.PathNotFoundFormat, folderPath));
+            return;
         }
+
+        // 일부러 연 폴더만 최근 폴더로 기억한다(01 F-34) — 트리에서 눌러 지나간 폴더는 이 길로 오지 않는다
+        RecentFolders.Touch(node.FullPath);
+
+        // 일부러 연 폴더는 찾는 범위도 된다(01 F-30). 보통은 트리 선택이 바뀌며 정해지지만, 이미 그 폴더가 골라져 있었으면
+        // 선택이 바뀌지 않아 알림이 오지 않는다 — 그때도 범위를 맞춘다
+        SearchScopeFolder = node.FullPath;
     }
 
     /// <summary>
@@ -214,6 +226,17 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>뷰어에서 눌린 링크를 현재 문서 기준으로 분류해 처리한다 (01 F-05).</summary>
     public async Task HandleLinkAsync(string url)
     {
+        // 문서 영역 위에서 누른 마우스의 뒤로·앞으로 버튼 (01 F-32) — 뷰어 스크립트가 이 주소로 가려 한다
+        if (HistoryCommandFor(url) is { } historyCommand)
+        {
+            if (historyCommand.CanExecute(null))
+            {
+                await historyCommand.ExecuteAsync();
+            }
+
+            return;
+        }
+
         if (Document.FilePath is not { } currentDocument)
         {
             return;
@@ -305,6 +328,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var folder = node.IsMarkdownFile ? node.Parent : node;
         CurrentFolderPath = folder is null || !folder.IsFolderLike ? null : folder.FullPath;
+        UpdateSearchScope(CurrentFolderPath, isFolderChosenByUser: !node.IsMarkdownFile && !_isSelectingInCode);
         AddressText = CurrentFolderPath ?? string.Empty;
         UpdateTitle();
         if (node.IsMarkdownFile && !_isSelectingInCode)
@@ -322,6 +346,9 @@ public sealed partial class MainViewModel : ObservableObject
                 break;
             case nameof(DocumentViewModel.FilePath):
                 WatchActiveFile();
+                RecordVisit();
+                RecordRecentDocument();
+                ClearSearchHighlightForOtherDocument();
                 break;
             case nameof(DocumentViewModel.ActiveTab):
                 OnActiveTabChanged();

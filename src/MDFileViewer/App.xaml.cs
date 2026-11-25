@@ -257,7 +257,12 @@ public partial class App : Application
         var tree = new FolderTreeViewModel(new FolderTreeService(_logger), _logger, favorites, watcher, timeProvider);
         var document = new DocumentViewModel(
             new TextFileCodec(), viewer, dialogs, _logger, timeProvider, FileMetadataReader.Read, new AvalonTextBufferFactory());
-        var services = new MainServices(dialogs, shell, _logger, timeProvider) { Watcher = watcher };
+        var services = new MainServices(dialogs, shell, _logger, timeProvider)
+        {
+            Watcher = watcher,
+            RecentDocuments = new RecentList(_settings.Recent.Documents, AppConstants.RecentDocumentsCapacity),
+            RecentFolders = new RecentList(_settings.Recent.Folders, AppConstants.RecentFoldersCapacity),
+        };
         return new MainViewModel(tree, document, viewer, services) { Theme = new ThemeViewModel(systemTheme, _settings.Theme) };
     }
 
@@ -329,9 +334,19 @@ public partial class App : Application
             Editor = new EditorSettings { ShowLineNumbers = window.ShowLineNumbers, WordWrap = window.WordWrap },
             Favorites = viewModel.Tree.FavoriteFolders.Paths,
             Tabs = viewModel.Tabs.Snapshot(),
+
+            // 문서를 열 때마다 설정 파일을 쓰지 않도록 닫을 때 함께 저장한다 (01 F-34, 02 §17.24).
+            // 그사이 다른 창이 닫으며 남긴 기록은 파일에서 읽어 잇는다
+            Recent = MergeRecent(viewModel, _settingsStore.TryLoad()?.Recent ?? new RecentSettings()),
         };
         WarnIfNotSaved(_settingsStore.Save(_settings));
     }
+
+    private static RecentSettings MergeRecent(MainViewModel viewModel, RecentSettings saved) => new()
+    {
+        Documents = viewModel.RecentDocuments.MergedWith(saved.Documents ?? []),
+        Folders = viewModel.RecentFolders.MergedWith(saved.Folders ?? []),
+    };
 
     // 저장 실패의 원인은 저장소가 로그에 남긴다. 여기서는 무엇을 잃는지만 남긴다.
     private void WarnIfNotSaved(bool isSaved)

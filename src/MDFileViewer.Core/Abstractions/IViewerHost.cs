@@ -16,8 +16,20 @@ public interface IViewerHost
 
     Task ScrollToAnchorAsync(string anchorId, CancellationToken cancellationToken);
 
-    /// <summary>문서 세로 위치를 비율(0~1)로 맞춘다 — 편집기와 미리보기 스크롤 동기화 (01 F-09, 02 §17.1).</summary>
-    Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken);
+    /// <summary>
+    /// 편집기의 맨 위 줄이 미리보기의 맨 위에 오게 맞춘다 — 편집기와 미리보기 스크롤 동기화 (01 F-09·F-36, 02 §17.26).
+    /// <paramref name="line"/>은 원본 줄(1부터, 소수는 줄 안의 위치), <paramref name="ratio"/>는 편집기의 세로 위치 비율(0~1)이다.
+    /// </summary>
+    Task SyncScrollAsync(double line, int totalLines, double ratio, CancellationToken cancellationToken);
+
+    /// <summary>지금 읽는 곳(스크롤 위치와 지나온 마지막 제목) — 목차가 따라가는 데 쓴다 (01 F-37, 02 §17.27). 알 수 없으면 <c>null</c>.</summary>
+    Task<ViewerReadingPosition?> GetReadingPositionAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 원본의 <paramref name="line"/>번 줄(1부터)이 든 블록이 보이게 스크롤한다 — 검색 결과 열기 (01 F-35, 02 §17.25).
+    /// 줄 번호를 단 블록이 없는 문서는 <paramref name="fallbackRatio"/>(0~1)로 스크롤한다.
+    /// </summary>
+    Task ScrollToLineAsync(int line, double fallbackRatio, CancellationToken cancellationToken);
 
     /// <summary>문서 테마를 바꾼다. 문서를 아직 보여 주지 않았으면 기억해 두었다가 처음 보여 줄 때 쓴다 (02 §6.6·§17.3).</summary>
     Task ApplyThemeAsync(EffectiveTheme theme, CancellationToken cancellationToken);

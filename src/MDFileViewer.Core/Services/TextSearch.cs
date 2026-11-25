@@ -53,8 +53,9 @@ public static class TextSearch
     /// <summary>
     /// 찾는 말이 나오는 곳을 앞에서부터 모두(겹친 곳은 앞의 것만). 모두 바꾸기가 이 목록을 뒤에서부터 바꾼다 —
     /// 문서를 통째로 갈아 끼우지 않아 바뀌지 않은 곳의 커서·표시가 남는다.
+    /// <paramref name="maxCount"/>곳을 찾으면 멈춘다 — 폴더 안 내용 검색(01 F-31)이 한 파일에서 모으는 수를 막는다.
     /// </summary>
-    public static IReadOnlyList<TextMatch> FindAll(string text, string pattern, bool matchCase)
+    public static IReadOnlyList<TextMatch> FindAll(string text, string pattern, bool matchCase, int maxCount = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(text);
         if (string.IsNullOrEmpty(pattern))
@@ -64,7 +65,9 @@ public static class TextSearch
 
         var comparison = Comparison(matchCase);
         var matches = new List<TextMatch>();
-        for (var index = text.IndexOf(pattern, comparison); index >= 0; index = text.IndexOf(pattern, index + pattern.Length, comparison))
+        for (var index = text.IndexOf(pattern, comparison);
+             index >= 0 && matches.Count < maxCount;
+             index = text.IndexOf(pattern, index + pattern.Length, comparison))
         {
             matches.Add(new TextMatch(index, pattern.Length));
         }

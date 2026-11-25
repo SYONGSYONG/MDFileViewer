@@ -21,6 +21,25 @@ public static class UiText
     public const string DocumentDisplayFailed = "문서를 표시하지 못했습니다";
     public const string DecodingErrorsNotice = "일부 글자를 읽을 수 없습니다 — 저장할 수 없습니다";
 
+    // 빠른 열기·폴더 안 내용 검색 (01 F-30·F-31, 03 §2.8·§2.9)
+    public const string SearchScopeMissing = "먼저 트리에서 폴더를 고르세요";
+    public const string QuickOpenBoxName = "빠른 열기 — 파일 이름";
+    public const string QuickOpenRecentTag = "최근";
+    public const string RecentFoldersToolTip = "최근 폴더";
+    public const string RecentFoldersEmpty = "최근에 연 폴더가 없습니다";
+    public const string ClearRecentMenu = "최근 기록 지우기";
+    public const string QuickOpenListName = "찾은 파일";
+    public const string QuickOpenPlaceholder = "파일 이름으로 열기";
+    public const string QuickOpenCollecting = "파일을 모으는 중…";
+    public const string QuickOpenNoMatch = "맞는 파일이 없습니다";
+    public const string QuickOpenMoreFormat = "…외 {0:N0}개";
+    public const string QuickOpenTooManyFiles = "파일이 많아 일부만 찾습니다";
+
+    // 뒤로·앞으로 (01 F-32)
+    public const string GoBackToolTip = "뒤로 (Alt+←)";
+    public const string GoForwardToolTip = "앞으로 (Alt+→)";
+    public const string HistoryNoDocument = "갈 문서가 없습니다";
+
     // 편집·저장 (01 F-07·F-10, 03 §10.2·§10.3)
     public const string ReadOnlyNotice = "읽기 전용 파일이라 저장할 수 없습니다";
     public const string DecodingSaveBlockedNotice = "읽을 수 없는 글자가 있어 저장할 수 없습니다";
@@ -77,6 +96,9 @@ public static class UiText
     public const string NumberedListToolTip = "번호 목록 (Ctrl+Shift+7)";
     public const string TaskListToolTip = "작업 목록 (Ctrl+Shift+9)";
     public const string QuoteToolTip = "인용 (Ctrl+Shift+.)";
+    public const string TableToolTip = "표 넣기 (Ctrl+Shift+T)";
+    public const string TableButtonText = "표";
+    public const string TableHeaderFormat = "제목 {0}";
     public const string LinkButtonText = "링크";
     public const string ReplaceBarButtonText = "찾기·바꾸기";
     public const string ReplaceBarToolTip = "찾기 (Ctrl+F) · 바꾸기 (Ctrl+H)";
@@ -177,6 +199,23 @@ public static class UiText
     public const string RegisterShellMenu = "탐색기 메뉴 등록";
     public const string UnregisterShellMenu = "탐색기 메뉴 해제";
     public const string AboutMenu = "정보";
+    public const string NavigationTreeTab = "트리";
+    public const string NavigationSearchTab = "검색";
+    public const string NavigationSearchTabToolTip = "폴더 안에서 찾기 (Ctrl+Shift+F)";
+    public const string SearchBoxName = "폴더 안에서 찾을 말";
+    public const string SearchBoxToolTip = "찾을 말을 쓰고 Enter (2글자 이상)";
+    public const string SearchResultsName = "검색 결과";
+    public const string SearchQueryTooShort = "2글자 이상 입력하세요";
+    public const string SearchSummaryFormat = "파일 {0:N0}개, {1:N0}곳";
+    public const string SearchSearchingFormat = "찾는 중… 파일 {0:N0}개, {1:N0}곳";
+    public const string SearchNoResult = "결과 없음";
+    public const string SearchTruncated = "결과가 많아 일부만 보여 줍니다";
+    public const string SearchSkippedFormat = "건너뛴 파일 {0:N0}개";
+    public const string SearchScopeTruncated = "폴더가 많아 일부만 찾았습니다";
+    public const string SearchStopped = "그만둠";
+    public const string SearchFailed = "다 찾지 못했습니다";
+    public const string SearchFileHeaderFormat = "{0} ({1:N0}곳)";
+    public const string SearchLineAutomationFormat = "{0}번 줄: {1}";
     public const string ExpandNavigationToolTip = "탐색 패널 펴기 (Ctrl+B)";
     public const string ToggleNavigationToolTip = "탐색 패널 접기/펴기 (Ctrl+B)";
     public const string TabStripName = "문서 탭";

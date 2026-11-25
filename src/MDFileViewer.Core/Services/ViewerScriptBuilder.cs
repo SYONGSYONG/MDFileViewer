@@ -92,6 +92,47 @@ public static class ViewerScriptBuilder
     }
 
     /// <summary>
+    /// 원본의 <paramref name="line"/>번 줄이 든 블록으로 스크롤하라고 뷰어 스크립트에 시킨다 (01 F-35, 02 §17.25).
+    /// 그런 블록이 없으면 <paramref name="fallbackRatio"/>로 스크롤한다.
+    /// </summary>
+    public static string ScrollToLine(int line, double fallbackRatio)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(line);
+        if (double.IsNaN(fallbackRatio))
+        {
+            throw new ArgumentOutOfRangeException(nameof(fallbackRatio), fallbackRatio, "비율이 숫자가 아닙니다.");
+        }
+
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var ratio = Math.Clamp(fallbackRatio, 0, 1).ToString("0.####", culture);
+        return $"if(window.mdfv){{window.mdfv.scrollToLine({line.ToString(culture)},{ratio});}}";
+    }
+
+    /// <summary>
+    /// 편집기의 맨 위 줄이 미리보기의 맨 위에 오게 스크롤하라고 뷰어 스크립트에 시킨다 (01 F-36, 02 §17.26).
+    /// 뷰어 스크립트를 읽지 못했으면 비율로 맞춘다.
+    /// </summary>
+    /// <param name="line">편집기 맨 위의 원본 줄(1부터). 소수 부분은 그 줄이 얼마나 지나갔는지다.</param>
+    /// <param name="totalLines">원본의 줄 수 — 마지막 블록 안에서의 위치를 잡는 데 쓴다.</param>
+    /// <param name="ratio">편집기의 세로 위치 비율(0~1). 0과 1은 미리보기도 맨 위·맨 아래로 보낸다.</param>
+    public static string SyncToLine(double line, int totalLines, double ratio)
+    {
+        if (double.IsNaN(line) || line < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(line), line, "줄 번호는 1 이상이어야 합니다.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(totalLines);
+        var byRatio = ScrollToRatio(ratio);
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var ratioText = Math.Clamp(ratio, 0, 1).ToString("0.####", culture);
+        return $"if(window.mdfv){{window.mdfv.syncToLine({line.ToString("0.###", culture)},{totalLines.ToString(culture)},{ratioText});}}else{{{byRatio}}}";
+    }
+
+    /// <summary>지금 읽는 곳을 묻는다 (01 F-37, 02 §17.27). 답은 <see cref="ViewerReadingPosition.TryParse"/>가 읽는다. 뷰어 스크립트를 읽지 못했으면 빈 글이다.</summary>
+    public const string ReadingPosition = "(window.mdfv?window.mdfv.readingPosition():\"\")";
+
+    /// <summary>
     /// 본문에서 <paramref name="term"/>이 나오는 곳을 칠하라고 뷰어 스크립트에 시킨다 (01 F-28, 02 §17.19). 비었으면 지운다.
     /// 본문을 바꾸면 칠한 것이 사라지므로 본문을 바꾼 뒤에 다시 보낸다.
     /// </summary>

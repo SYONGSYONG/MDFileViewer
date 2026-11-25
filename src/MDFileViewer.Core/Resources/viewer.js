@@ -35,6 +35,13 @@
   var headElement = Object.getOwnPropertyDescriptor(Document.prototype, 'head').get.call(doc);
   var querySelectorAll = Element.prototype.querySelectorAll;
   var getAttribute = Element.prototype.getAttribute;
+  var removeAttribute = Element.prototype.removeAttribute;
+  var scrollIntoView = Element.prototype.scrollIntoView;
+  var closest = Element.prototype.closest;
+  var getRect = Element.prototype.getBoundingClientRect;
+
+  // 블록에 단 원본 줄 번호(AppConstants.SourceLineAttribute와 같아야 한다)
+  var LINE_ATTRIBUTE = 'data-line';
   var setAttribute = Element.prototype.setAttribute;
   var appendChild = Node.prototype.appendChild;
   var textContentOf = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent').get;
@@ -266,7 +273,117 @@
       replaceWith.call(holder, replacement);
     }
 
+    // 줄 번호는 화면에서 줄을 찾는 데만 쓴다 — 내보낸 파일에는 남기지 않는다 (01 F-35)
+    var marked = querySelectorAll.call(clone, '[' + LINE_ATTRIBUTE + ']');
+    for (var markedIndex = 0; markedIndex < marked.length; markedIndex++) {
+      removeAttribute.call(marked[markedIndex], LINE_ATTRIBUTE);
+    }
+
     return getInnerHtml.call(clone);
+  }
+
+  // 원본의 line번 줄(1부터)이 든 블록을 화면 가운데쯤에 보여 준다 (01 F-35, 02 §17.25). 줄 번호가 line 이하인 블록 중 가장 큰 것이
+  // 그 줄이 든 블록이다 — 문서 순서대로 커진다고 가정하지 않는다(각주는 정의가 어디 있든 문서 끝에 그려진다).
+  // 그런 블록이 없으면 비율로 스크롤한다.
+  // 본문의 원시 HTML이 data-line을 달고 있으면 엉뚱한 곳으로 갈 수 있다 — 스크롤 위치만 틀릴 뿐이다
+  function scrollToLine(line, fallbackRatio) {
+    var content = getElementById.call(doc, CONTENT_ID);
+    var target = null;
+    var targetLine = 0;
+    if (content) {
+      var blocks = querySelectorAll.call(content, '[' + LINE_ATTRIBUTE + ']');
+      for (var index = 0; index < blocks.length; index++) {
+        // 숫자가 아닌 값(본문의 원시 HTML이 단 것)은 NaN이라 아래 비교에서 걸러진다
+        var blockLine = parseInt(getAttribute.call(blocks[index], LINE_ATTRIBUTE), 10);
+        if (blockLine <= line && blockLine >= targetLine) {
+          target = blocks[index];
+          targetLine = blockLine;
+        }
+      }
+    }
+
+    if (target) {
+      scrollIntoView.call(target, { block: 'center' });
+      return;
+    }
+
+    window.scrollTo(0, fallbackRatio * Math.max(0, rootElement.scrollHeight - window.innerHeight));
+  }
+
+  // 각주는 정의가 원본 어디에 있든 문서 끝에 그려진다 — 편집기를 따라갈 때 세면 그 줄에서 문서 끝으로 튄다
+  var FOOTNOTES_SELECTOR = '.footnotes';
+
+  // 편집기의 맨 위 줄(line, 1부터, 줄 안의 위치는 소수)이 미리보기의 맨 위에 오게 스크롤한다 (01 F-36, 02 §17.26).
+  // 그 줄을 사이에 둔 두 블록의 위치를 줄 번호로 나눠 잡는다 — 여러 줄짜리 문단·코드 블록 안에서도 부드럽게 따라간다.
+  // 편집기가 맨 위·맨 아래면(ratio 0·1) 미리보기도 끝까지 간다. 줄 번호를 단 블록이 없으면 비율로 스크롤한다
+  function syncToLine(line, totalLines, ratio) {
+    var scrollable = Math.max(0, rootElement.scrollHeight - window.innerHeight);
+    if (ratio <= 0 || ratio >= 1) {
+      window.scrollTo(0, ratio >= 1 ? scrollable : 0);
+      return;
+    }
+
+    var content = getElementById.call(doc, CONTENT_ID);
+    var before = null;
+    var beforeLine = 0;
+    var after = null;
+    var afterLine = Infinity;
+    var blocks = content ? querySelectorAll.call(content, '[' + LINE_ATTRIBUTE + ']') : [];
+    for (var index = 0; index < blocks.length; index++) {
+      if (closest.call(blocks[index], FOOTNOTES_SELECTOR)) {
+        continue;
+      }
+
+      // 숫자가 아닌 값(본문의 원시 HTML이 단 것)은 NaN이라 두 비교 모두에서 걸러진다
+      var blockLine = parseInt(getAttribute.call(blocks[index], LINE_ATTRIBUTE), 10);
+      if (blockLine <= line && blockLine >= beforeLine) {
+        before = blocks[index];
+        beforeLine = blockLine;
+      } else if (blockLine > line && blockLine < afterLine) {
+        after = blocks[index];
+        afterLine = blockLine;
+      }
+    }
+
+    if (!before && !after) {
+      window.scrollTo(0, ratio * scrollable);
+      return;
+    }
+
+    // 첫 블록보다 앞이면 문서 처음부터, 마지막 블록 안이면 문서 끝까지를 나눈다
+    var scrollY = window.scrollY;
+    var startLine = before ? beforeLine : 1;
+    var startTop = before ? getRect.call(before).top + scrollY : 0;
+    var endLine = after ? afterLine : Math.max(totalLines, line) + 1;
+    var endTop = after ? getRect.call(after).top + scrollY : rootElement.scrollHeight;
+    var progress = endLine > startLine ? (line - startLine) / (endLine - startLine) : 0;
+    window.scrollTo(0, startTop + progress * (endTop - startTop));
+  }
+
+  // 화면 맨 위에서 이만큼(px) 안에 든 제목까지를 "지나온 제목"으로 본다 — 제목이 맨 위에 딱 닿기 전에도 그 절을 읽는 중이다
+  var READING_OFFSET = 80;
+  var HEADING_SELECTOR = 'h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]';
+
+  // 문서의 맨 아래로 본다는 허용 오차(px) — 배율에 따라 스크롤 위치가 소수로 나온다
+  var BOTTOM_TOLERANCE = 2;
+
+  // 지금 읽는 곳: "스크롤 위치\n제목 id" (01 F-37, 02 §17.27). 앱이 주기적으로 물어 목차에 표시한다 — 웹 메시지는 꺼져 있다.
+  // 지나온 제목 중 마지막이 읽는 절이다. 첫 제목보다 위면 id가 비어 있다.
+  // 맨 아래까지 내리면 마지막 제목으로 본다 — 끝의 짧은 절은 제목이 맨 위까지 올라오지 못한다
+  function readingPosition() {
+    var content = getElementById.call(doc, CONTENT_ID);
+    var scrollY = window.scrollY;
+    var id = '';
+    var headings = content ? querySelectorAll.call(content, HEADING_SELECTOR) : [];
+    if (headings.length > 0 && scrollY > 0 && scrollY + window.innerHeight >= rootElement.scrollHeight - BOTTOM_TOLERANCE) {
+      id = getAttribute.call(headings[headings.length - 1], 'id');
+    } else {
+      for (var index = 0; index < headings.length && getRect.call(headings[index]).top <= READING_OFFSET; index++) {
+        id = getAttribute.call(headings[index], 'id');
+      }
+    }
+
+    return Math.round(scrollY) + '\n' + id;
   }
 
   // 본문에서 term이 나오는 곳을 모두 칠한다. DOM을 바꾸지 않는 방식(CSS Custom Highlight)이라 스크롤·선택·그림을 건드리지 않는다.
@@ -337,9 +454,30 @@
     }
   }
 
+  // 마우스의 뒤로·앞으로 버튼 (01 F-32, 02 §17.22). 문서 영역은 앱 창과 다른 프로세스의 창이라 앱이 이 버튼을 받지 못한다.
+  // 웹 메시지는 꺼져 있으므로 링크와 같은 길로 알린다 — 앱이 이 주소로 가는 탐색을 가로채 뒤로·앞으로를 실행한다(주소는 AppConstants와 같아야 한다).
+  var HISTORY_URLS = { 3: 'https://appassets.example/history/back', 4: 'https://appassets.example/history/forward' };
+  var listen = EventTarget.prototype.addEventListener;
+
+  function onHistoryButton(event) {
+    var url = HISTORY_URLS[event.button];
+    if (!url) {
+      return;
+    }
+
+    // 브라우저가 스스로 뒤로·앞으로 가지 않게 막는다
+    event.preventDefault();
+    if (event.type === 'mouseup') {
+      window.location.assign(url);
+    }
+  }
+
+  listen.call(window, 'mousedown', onHistoryButton, true);
+  listen.call(window, 'mouseup', onHistoryButton, true);
+
   // 본문의 이름 있는 요소(<img name="mdfv">)가 덮지 못하게 바꿀 수 없는 속성으로 둔다
   Object.defineProperty(window, 'mdfv', {
-    value: Object.freeze({ renderDiagrams: renderDiagrams, prepareOutput: prepareOutput, isOutputReady: isOutputReady, exportHtml: exportHtml, highlightText: highlightText }),
+    value: Object.freeze({ renderDiagrams: renderDiagrams, prepareOutput: prepareOutput, isOutputReady: isOutputReady, exportHtml: exportHtml, scrollToLine: scrollToLine, syncToLine: syncToLine, readingPosition: readingPosition, highlightText: highlightText }),
     writable: false,
     configurable: false,
     enumerable: false

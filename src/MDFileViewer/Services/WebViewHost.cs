@@ -116,8 +116,31 @@ public sealed partial class WebViewHost : IViewerHost
     public Task ScrollToAnchorAsync(string anchorId, CancellationToken cancellationToken) =>
         RunInGateAsync(core => ExecuteScriptAsync(core, ViewerScriptBuilder.ScrollToAnchor(anchorId)), cancellationToken);
 
-    public Task ScrollToRatioAsync(double ratio, CancellationToken cancellationToken) =>
-        RunInGateAsync(core => _isTemplateLoaded ? ExecuteScriptAsync(core, ViewerScriptBuilder.ScrollToRatio(ratio)) : Task.CompletedTask, cancellationToken);
+    public Task SyncScrollAsync(double line, int totalLines, double ratio, CancellationToken cancellationToken) =>
+        RunInGateAsync(
+            core => _isTemplateLoaded ? ExecuteScriptAsync(core, ViewerScriptBuilder.SyncToLine(line, totalLines, ratio)) : Task.CompletedTask,
+            cancellationToken);
+
+    public async Task<ViewerReadingPosition?> GetReadingPositionAsync(CancellationToken cancellationToken)
+    {
+        string? answer = null;
+        await RunInGateAsync(
+            async core =>
+            {
+                if (_isTemplateLoaded)
+                {
+                    // 스크립트 결과는 JSON으로 온다(문자열이면 따옴표로 싸인 JSON 문자열)
+                    answer = System.Text.Json.JsonSerializer.Deserialize<string>(await ExecuteScriptAsync(core, ViewerScriptBuilder.ReadingPosition));
+                }
+            },
+            cancellationToken);
+        return ViewerReadingPosition.TryParse(answer);
+    }
+
+    public Task ScrollToLineAsync(int line, double fallbackRatio, CancellationToken cancellationToken) =>
+        RunInGateAsync(
+            core => _isTemplateLoaded ? ExecuteScriptAsync(core, ViewerScriptBuilder.ScrollToLine(line, fallbackRatio)) : Task.CompletedTask,
+            cancellationToken);
 
     /// <summary>
     /// 테마를 바꾼다. 바탕색은 바로 바꿔 흰 화면이 번쩍이지 않게 하고(02 §6.6), 템플릿이 아직 없으면 기억만 한다 — 템플릿을 불러온 뒤 문서보다 먼저 넣는다.

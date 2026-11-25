@@ -74,7 +74,7 @@ public sealed class DocumentViewModelHighlightTests
     public async Task Open_HighlightedBodySameAsShown_DoesNotReplaceBody()
     {
         // Arrange — 블록이 모두 기억에 있어 처음 표시부터 색이 나온 경우다. 색 입힌 결과가 화면의 본문과 같다
-        var document = CreateDocument((markdown, _) => MarkdownRenderer.RenderBody(markdown));
+        var document = CreateDocument((markdown, _) => MarkdownRenderer.RenderBody(markdown, withSourceLines: true));
 
         // Act
         await document.OpenAsync(Guide);

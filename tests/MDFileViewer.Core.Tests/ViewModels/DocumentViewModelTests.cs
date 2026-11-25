@@ -54,7 +54,7 @@ public sealed class DocumentViewModelTests
         // Assert
         Assert.True(opened);
         var (body, path) = Assert.Single(_viewer.Shown);
-        Assert.Contains("<h1 id=\"안내\">안내</h1>", body, StringComparison.Ordinal);
+        Assert.Contains("<h1 id=\"안내\" data-line=\"1\">안내</h1>", body, StringComparison.Ordinal);
         Assert.Equal(Path1, path);
         Assert.Equal(DocumentState.Shown, document.State);
         Assert.True(document.IsDocumentVisible);
