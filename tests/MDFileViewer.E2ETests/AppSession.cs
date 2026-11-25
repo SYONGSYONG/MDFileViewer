@@ -91,6 +91,7 @@ public sealed class AppSession : IDisposable
             startInfo.Environment[SettingsVariableName] = Path.Combine(ownedSettingsFolder, "settings.json");
         }
 
+        DeclineShellReregistration(startInfo);
         var application = Application.Launch(startInfo);
         var automation = new UIA3Automation();
         try
@@ -113,6 +114,23 @@ public sealed class AppSession : IDisposable
     /// </summary>
     public static Process StartWithoutWindow(IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment) =>
         Process.Start(CreateStartInfo(arguments, environment)) ?? throw new InvalidOperationException("앱 프로세스를 시작하지 못했습니다.");
+
+    /// <summary>
+    /// 설정 파일이 아직 없으면 "탐색기 메뉴 다시 등록"을 이미 거절한 설정으로 만들어 둔다. 이 PC에 설치본이 탐색기 메뉴를 등록해 두면
+    /// 테스트 exe를 띄울 때마다 다시 등록할지 묻는 창이 뜨고(App.OfferShellReregistration), 기본 버튼이 "다시 등록"이라 테스트가 보낸
+    /// `Enter`가 실제 레지스트리를 테스트 exe 경로로 바꿀 수 있다(2026-11-26 임시 빌드에서 겪음). 나머지 설정은 기본값이다.
+    /// </summary>
+    private static void DeclineShellReregistration(ProcessStartInfo startInfo)
+    {
+        if (startInfo.Environment[SettingsVariableName] is not { Length: > 0 } settingsPath || File.Exists(settingsPath))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        var settings = new Dictionary<string, object> { ["version"] = 1, ["declinedShellReregistrationExe"] = startInfo.FileName };
+        File.WriteAllText(settingsPath, System.Text.Json.JsonSerializer.Serialize(settings));
+    }
 
     private static ProcessStartInfo CreateStartInfo(IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment)
     {

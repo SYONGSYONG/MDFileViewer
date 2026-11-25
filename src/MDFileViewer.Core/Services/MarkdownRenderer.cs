@@ -65,6 +65,21 @@ public static class MarkdownRenderer
     }
 
     /// <summary>
+    /// 예열에 쓰는 견본. 흔한 문법(제목·강조·링크·목록·체크 목록·표·코드 블록·인용·원시 HTML)을 한 번씩 지나가게 한다.
+    /// 표 칸의 하이픈 단어는 줄 바꿈 방지 정규식까지 돌게 하려고 넣었다.
+    /// </summary>
+    internal const string WarmUpSample =
+        "---\ntitle: t\n---\n\n## 제목\n\n글 **굵게** *기울임* ~~취소~~ `코드` [링크](https://example.com)\n\n" +
+        "- 항목\n  - 중첩\n- [x] 끝냄\n\n1. 하나\n\n| 이름 | 날짜 |\n|------|-----:|\n| a | 2026-11-26 |\n\n" +
+        "```csharp\nvar x = 1;\n```\n\n> 인용\n\n<img src=\"a.png\" width=\"1\">\n";
+
+    /// <summary>
+    /// 변환기를 한 번 돌려 둔다. 켠 뒤 첫 변환만 60~70ms 더 걸리던 것(98KB 문서 85ms, 그다음부터 15~25ms — 2026-11-26 Release 측정,
+    /// 02 §6.1)을 사용자가 첫 문서를 고르기 전에 치른다. UI 스레드 밖에서 부른다.
+    /// </summary>
+    public static void WarmUp() => RenderBody(WarmUpSample);
+
+    /// <summary>
     /// 코드 블록에 구문 색상을 입힌 본문 HTML을 만든다 (01 F-22, 02 §17.13). 토큰화가 느리므로 문서를 보여 준 뒤 UI 스레드 밖에서 부른다.
     /// </summary>
     /// <param name="onBlockFailure">블록 하나에 색을 입히다 실패했다. 그 블록만 색 없이 두고 나머지는 계속 입힌다.</param>

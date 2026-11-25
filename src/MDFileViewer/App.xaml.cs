@@ -156,10 +156,31 @@ public partial class App : Application
         var previous = new SessionState(_settings.LastFolder, _settings.Tabs);
         var initialized = viewModel.InitializeAsync(parsed.Request, previous, CancellationToken.None);
         await Task.WhenAll(viewerReady, initialized);
+        _ = PrepareFirstDocumentAsync(viewer, viewModel.CurrentFolderPath);
 
         // 시작 인수를 다 연 뒤에 넘겨받은 요청을 연다 — 순서가 바뀌면 지난 탭 복원이나 시작 파일이 넘겨받은 파일을 덮는다
         _mainWindowReady.TrySetResult((window, viewModel));
         OfferShellReregistration(window);
+    }
+
+    /// <summary>
+    /// 켠 뒤 처음 여는 문서만 더 걸리던 일 두 가지(변환기 첫 실행, 뷰어 템플릿 로드)를 창이 뜬 뒤 미리 해 둔다 (01 §7 문서 표시 0.3초,
+    /// 02 §6.2). 기다리지 않는다 — 그사이 사용자가 문서를 열면 뷰어의 잠금이 순서를 맞춘다. 실패해도 첫 문서가 전처럼 열리므로 로그만 남긴다.
+    /// </summary>
+    /// <param name="folderPath">트리에서 열린 폴더. 없으면 문서가 어느 루트에 있을지 몰라 템플릿은 미리 불러오지 않는다.</param>
+    private async Task PrepareFirstDocumentAsync(WebViewHost viewer, string? folderPath)
+    {
+        try
+        {
+            // 둘을 묶어 기다린다 — 한쪽이 실패해도 다른 쪽의 예외가 관찰되지 않은 채 버려지지 않게
+            var warmUp = Task.Run(MarkdownRenderer.WarmUp);
+            var preload = folderPath is null ? Task.CompletedTask : viewer.PreloadTemplateAsync(folderPath, CancellationToken.None);
+            await Task.WhenAll(warmUp, preload);
+        }
+        catch (Exception exception)
+        {
+            _logger.Warn("첫 문서 준비를 미리 하지 못했습니다.", exception);
+        }
     }
 
     /// <summary>

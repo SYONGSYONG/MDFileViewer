@@ -80,6 +80,16 @@ public sealed partial class WebViewHost : IViewerHost
         return _ready;
     }
 
+    /// <summary>
+    /// <paramref name="folderPath"/>가 있는 루트로 템플릿을 미리 불러온다. 템플릿은 첫 문서를 보여 줄 때 불러와서 켠 뒤 첫 문서만
+    /// 40~90ms 더 걸렸다(2026-11-26 Release 측정, 02 §6.2). 이미 템플릿이 있으면(문서를 보여 줬으면) 아무것도 하지 않는다 —
+    /// 다른 루트로 다시 불러오면 보이던 문서가 지워진다. 첫 문서가 다른 루트에 있으면 전처럼 그때 다시 불러온다.
+    /// </summary>
+    public Task PreloadTemplateAsync(string folderPath, CancellationToken cancellationToken) =>
+        RunInGateAsync(
+            core => _isTemplateLoaded ? Task.CompletedTask : EnsureTemplateForRootAsync(core, DocumentUrlMapper.GetRootFolder(folderPath)),
+            cancellationToken);
+
     public async Task ShowDocumentAsync(string bodyHtml, string documentPath, CancellationToken cancellationToken)
     {
         await RunInGateAsync(core => ShowInGateAsync(core, bodyHtml, documentPath), cancellationToken);

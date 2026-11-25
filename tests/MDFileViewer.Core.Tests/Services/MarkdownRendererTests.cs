@@ -4,6 +4,36 @@ namespace MDFileViewer.Core.Tests.Services;
 
 public sealed class MarkdownRendererTests
 {
+    // 켠 뒤 첫 변환만 느린 것을 미리 치르는 견본이다(02 §6.1). 흔한 문법을 한 번씩 지나가야 예열이 된다.
+    [Fact]
+    public void WarmUpSample_CoversCommonSyntax()
+    {
+        // Act
+        var html = MarkdownRenderer.RenderBody(MarkdownRenderer.WarmUpSample);
+
+        // Assert
+        Assert.Contains("<h2", html, StringComparison.Ordinal);
+        Assert.Contains("<strong>", html, StringComparison.Ordinal);
+        Assert.Contains("<a href=", html, StringComparison.Ordinal);
+        Assert.Contains("<li", html, StringComparison.Ordinal);
+        Assert.Contains("type=\"checkbox\"", html, StringComparison.Ordinal);
+        Assert.Contains("<table>", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"nobr\"", html, StringComparison.Ordinal);
+        Assert.Contains("<pre><code", html, StringComparison.Ordinal);
+        Assert.Contains("<blockquote>", html, StringComparison.Ordinal);
+        Assert.Contains("<img", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WarmUp_DoesNotThrow()
+    {
+        // Act
+        var exception = Record.Exception(MarkdownRenderer.WarmUp);
+
+        // Assert
+        Assert.Null(exception);
+    }
+
     [Fact]
     public void RenderBody_PipeTable_RendersTableWithHeader()
     {

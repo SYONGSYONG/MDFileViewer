@@ -124,6 +124,9 @@ public sealed class FileManagementTests : IDisposable
         Assert.True(File.Exists(createdPath));
         Assert.Equal(0, new FileInfo(createdPath).Length);
         Assert.Equal(UiText.EditingBadge, session.FindById("EditingBadge").Name);
+
+        // 편집 모드에서는 탐색 패널이 접혀 트리가 없다 — 보기 모드로 돌아가 트리에 새 파일이 있는지 본다
+        EditorActions.Press(session, VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_E);
         session.FindSelectable(session.FindById("FolderTree"), CreatedFileName);
     }
 

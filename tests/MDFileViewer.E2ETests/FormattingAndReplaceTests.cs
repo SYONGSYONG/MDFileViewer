@@ -13,8 +13,9 @@ public sealed class FormattingAndReplaceTests : IDisposable
     private const string ReplaceFileName = "replace.md";
     private const string LargeFileName = "slow.md";
 
-    // 읽고 바꾸는 데 0.2초(LoadingIndicatorDelay)를 넘길 만큼 크되, 큰 파일 확인(5MB)에는 걸리지 않는 크기
-    private const int LargeParagraphCount = 120_000;
+    // 읽고 바꾸는 데 0.2초(LoadingIndicatorDelay)를 넘길 만큼 크되, 큰 파일 확인(5MB)에는 걸리지 않는 크기.
+    // 문단 하나가 UTF-8로 69바이트라 약 4.1MB다(120,000개는 8.3MB라 확인 창에 걸렸다)
+    private const int LargeParagraphCount = 60_000;
 
     private static readonly TimeSpan LoadingPollInterval = TimeSpan.FromMilliseconds(20);
     private static readonly TimeSpan LoadingTimeout = TimeSpan.FromSeconds(60);
@@ -59,8 +60,11 @@ public sealed class FormattingAndReplaceTests : IDisposable
         EditorActions.Save(session, FormatFileName);
         Assert.Equal($"**{PlainText}**", File.ReadAllText(_samples.PathOf(FormatFileName)));
 
-        // 편집기 안의 Ctrl+B는 탐색 패널을 접지 않는다(1.2.0에서 바뀐 점)
-        Assert.True(session.FindById("FolderTree") is { IsOffscreen: false }, "편집기 안의 Ctrl+B가 탐색 패널을 접었습니다.");
+        // 편집기 안의 Ctrl+B는 탐색 패널을 건드리지 않는다(1.2.0에서 바뀐 점). 편집 모드에서는 패널이 접혀 있으므로
+        // (MainViewModel.OnEditStateChanged) 패널 단축키로 먹었다면 트리가 펼쳐져 보인다
+        Assert.True(
+            session.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("FolderTree")) is not { IsOffscreen: false },
+            "편집기 안의 Ctrl+B가 탐색 패널을 펼쳤습니다.");
 
         EditorActions.Press(session, VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_B);
         EditorActions.WaitForUnsavedMark(session, FormatFileName);

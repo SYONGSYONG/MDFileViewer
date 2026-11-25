@@ -18,6 +18,17 @@ public sealed class AvalonTextBuffer : ITextBuffer
             Version++;
             Changed?.Invoke(this, EventArgs.Empty);
         };
+
+        // TextChanged는 실행 취소 묶음이 닫히기 전에 온다 — 그때의 IsOriginalFile은 이번 편집을 아직 모른다(AvalonEdit 6.3.1에서 확인,
+        // 2026-11-26). TextChanged만 들으면 변경 표시가 편집 한 번씩 늦어, 한 번만 고친 문서는 "변경 없음"으로 남아 저장되지 않았다.
+        // 값이 실제로 바뀐 뒤에 한 번 더 알린다(되돌려서 원본과 같아질 때도 같다).
+        Document.UndoStack.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UndoStack.IsOriginalFile))
+            {
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+        };
     }
 
     public event EventHandler? Changed;

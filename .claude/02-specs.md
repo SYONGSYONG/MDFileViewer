@@ -238,6 +238,12 @@ public interface IRegistryAccess             // HKCU 기준, 루트 경로를 �
      그래서 `WebViewHost`는 첫 문서를 보여 줄 때, 그리고 루트가 바뀔 때(다른 드라이브·UNC 공유)마다 매핑을 바꾼 뒤 템플릿을 다시 로드한다.
      같은 루트 안에서 문서를 바꿀 때는 다시 로드하지 않는다. 루트를 바꿀 때 매핑만 바꾸고 다시 로드하지 않으면 새 루트의 그림이 보이지 않았다
      (2026-11-17, Runtime 157, E2E `RelativeImage_IsDrawnBeforeAndAfterSwitchingDocumentRoot`를 코드를 일부러 깨서 돌려 확인).
+   - **첫 문서 준비(2026-11-26):** 켠 뒤 첫 문서만 0.28~0.37초로 01 §7의 0.3초를 넘었다(그다음은 0.07~0.13초). 첫 문서에서만 드는 일 가운데
+     변환기 첫 실행(81~87ms, 그다음 15~25ms)과 템플릿 로드(39~88ms)를 미리 한다 — 창이 뜨고 초기화가 끝난 뒤 `App.PrepareFirstDocumentAsync`가
+     `MarkdownRenderer.WarmUp`(견본 한 번 변환, 스레드 풀)과 `WebViewHost.PreloadTemplateAsync`(트리에 열린 폴더의 루트)를 부르고 기다리지 않는다.
+     템플릿이 이미 있으면(문서를 보여 줬으면) 미리 불러오지 않는다 — 다른 루트로 다시 로드하면 보이던 문서가 지워진다. 열린 폴더가 없으면
+     루트를 몰라 템플릿은 건너뛴다. 첫 문서가 다른 루트에 있으면 전처럼 그때 다시 로드한다. 실패는 로그만 남긴다(첫 문서는 전처럼 열린다).
+     고친 뒤 첫 문서 0.18~0.23초(Release 발행본, 98KB 문서, 05 11-4).
    - 문서 표시·본문 교체·앵커 스크롤은 잠금 하나(`SemaphoreSlim`)로 한 번에 하나씩 한다. 템플릿을 다시 로드하는 중에 다른 스크립트가 끼어들면
      빈 페이지에서 실행되고, 두 요청이 동시에 템플릿을 로드하면 앞 탐색이 취소되며 그 완료 이벤트(실패)를 뒤 요청이 받을 수 있어서다.
      WebView2 준비는 잠금 안에서 기다린다(기다리는 사이 복구가 컨트롤을 바꿨으면 새 컨트롤을 기다려야 한다). 잠금을 기다리는 사이
@@ -666,6 +672,9 @@ WebView2에만 쓰는 값은 App의 `WebViewHost` 안에 이름 있는 상수로
 - 05의 E2E 시나리오를 FlaUI(UIA3)로 자동화한다. 빌드한 `MDFileViewer.exe`를 인수와 함께 실행하고 창을 조작한다.
 - E2E는 실제 데스크톱 세션이 필요하므로 단위·통합 테스트와 따로 실행한다(`dotnet test tests/MDFileViewer.E2ETests`).
 - 테스트할 exe 경로는 E2E csproj가 빌드할 때 어셈블리 메타데이터(`AppExePath`)로 넣는다. 앱 프로젝트는 빌드 순서만 참조한다(`ReferenceOutputAssembly="false"`).
+- 설정 파일이 없는 세션은 `AppSession.DeclineShellReregistration`이 "탐색기 메뉴 다시 등록"을 거절한 설정(`declinedShellReregistrationExe` = 테스트 exe)을
+  미리 만든다(2026-11-26). 설치본이 메뉴를 등록해 둔 PC에서는 테스트 exe를 띄울 때마다 확인 창이 뜨고, 기본 버튼이 "다시 등록"이라
+  테스트가 보낸 `Enter`가 실제 레지스트리를 바꿀 수 있다. 호출자가 준 설정 파일이 이미 있으면 건드리지 않는다.
 - 키보드·마우스 입력을 보내는 E2E는 앱 창이 맨 앞이어야 한다. Windows의 포커스 가로채기 방지 때문에 테스트가 띄운 창이 맨 앞으로
   오지 않을 수 있다(PoC-3에서 `Activate()`만으로는 실패). Phase 4에서 `AppSession.BringToForeground`(`AttachThreadInput` +
   `SetForegroundWindow` + `BringWindowToTop`)를 넣었다. 이 방식은 다른 창에 입력을 보내지 않는다. 맨 앞이 아니면 입력을 보내지 않고 테스트를 실패로 처리한다.
@@ -822,6 +831,11 @@ dotnet run --project src/MDFileViewer -- "D:\Docs"
   (`SearchPanel.Install`), 구문 강조는 `Highlighting/Markdown-Light.xshd`·`Markdown-Dark.xshd`(03 §7)를 테마에 따라 바꾼다.
 - **스크롤 동기화:** 편집기 `ScrollOffsetChanged` → 세로 비율(0~1) → `IViewerHost.ScrollToRatioAsync(ratio)`(`window.scrollTo(0, ratio × (scrollHeight − innerHeight))`).
   미리보기를 다시 그린 뒤에도 같은 비율로 맞춘다.
+
+- **변경 여부를 알리는 시점(2026-11-26):** `AvalonTextBuffer.IsModified`는 `UndoStack.IsOriginalFile`로 본다. AvalonEdit는 `TextChanged`를
+  실행 취소 묶음이 닫히기 전에 보내므로 그때의 값은 이번 편집을 아직 모른다 — `TextChanged`에서만 `Changed`를 알리면 변경 표시가 편집 한 번씩
+  늦고, 한 번만 고친 문서는 저장되지 않는다. `UndoStack.PropertyChanged(IsOriginalFile)`에서도 `Changed`를 알린다(되돌려 원본과 같아질 때 포함).
+  E2E `BoldButton_…`·`FormatShortcuts_…`·`ReplaceBar_…`가 편집 한 번 뒤의 변경 표시와 저장을 본다.
 
 ### 17.2 줌 (01 F-06)
 
@@ -1425,4 +1439,6 @@ WebView2의 찾기 API(`CoreWebView2.Find`)를 기본 찾기 창 없이 쓰고, 
 - 2026-11-25: 파일 열기(`NavigateToFileAsync`)가 문서 열기와 트리 펼치기를 함께 진행한다 — 폴더 존재는 `MainServices.DirectoryExists`로 먼저 확인. 미리보기 형광펜은 칠할 것도 지울 것도 없으면 스크립트를 보내지 않는다(§17.19). 측정은 05 14-4.
 - 2026-11-25: §13 — 창을 닫은 뒤 프로세스가 남는 문제(종료 마지막 단계의 멈춤) 재현과 처리: `ProcessTerminator`, `ShutdownWatchdog`, 시작·종료 로그 보강.
 - 2026-11-25: §17.20 그림 붙여넣기(F-29) — `ImageLinks`, `IFileOperations.CopyFile`·`WriteFile`, 붙이기 키를 편집기보다 먼저 받는 이유.
-
+- 2026-11-26: §6.2 첫 문서 준비 — `MarkdownRenderer.WarmUp`, `WebViewHost.PreloadTemplateAsync`, `App.PrepareFirstDocumentAsync`.
+- 2026-11-26: §14.3 E2E가 탐색기 메뉴 재등록 확인 창을 미리 거절한다(`AppSession.DeclineShellReregistration`).
+- 2026-11-26: §17.1 변경 여부를 알리는 시점 — `AvalonTextBuffer`가 `UndoStack.IsOriginalFile` 변경도 알린다.
